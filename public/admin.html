@@ -73,13 +73,13 @@
 </head>
 <body>
 
-<div id="app" hidden>
+<div id="app">
   <header>
     <h1>Laidlaw Auto Services · Admin</h1>
     <div class="sp">
       <a href="/">View site</a>
       <button class="btn ghost small" id="refresh" style="color:#fff;border-color:#4A5663">Refresh</button>
-      <button class="btn ghost small" id="logout" style="color:#fff;border-color:#4A5663">Sign out</button>
+      <button class="btn safety small" id="logout">Log out</button>
     </div>
   </header>
   <main>
@@ -154,7 +154,12 @@ function signOut() {
   location.replace('/login.html');
 }
 
-$('logout').addEventListener('click', signOut);
+// Revoke the token on the server, then leave (leave anyway if the server can't be reached)
+$('logout').addEventListener('click', async () => {
+  $('logout').disabled = true;
+  try { await fetch('/admin/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }); } catch (e) {}
+  signOut();
+});
 $('refresh').addEventListener('click', () => load());
 
 async function load() {
@@ -165,7 +170,6 @@ async function load() {
     $('appError').textContent = err.message;
     return;
   }
-  $('app').hidden = false;
   render();
 }
 
