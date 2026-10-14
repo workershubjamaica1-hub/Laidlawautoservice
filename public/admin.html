@@ -68,6 +68,9 @@
   .badge[data-s="completed"] { background: var(--green); color: #fff; }
   .badge[data-s="cancelled"] { background: var(--ink-soft); color: #fff; }
 
+  .userform { display: grid; grid-template-columns: 1fr 1fr 1.3fr 120px auto; gap: 10px; margin-bottom: 14px; }
+  .badge.off { background: var(--red); color: #fff; }
+  @media (max-width: 900px) { .userform { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 640px) { main { padding: 14px; } .toolbar { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -77,7 +80,7 @@
   <header>
     <h1>Laidlaw Auto Services · Admin</h1>
     <div class="sp">
-      <a href="/">View site</a>
+      <span id="who" style="color:#fff;font-weight:600"></span>
       <button class="btn ghost small" id="refresh" style="color:#fff;border-color:#4A5663">Refresh</button>
       <button class="btn safety small" id="logout">Log out</button>
     </div>
@@ -89,6 +92,7 @@
     <div class="tabs" role="group" aria-label="Section">
       <button data-tab="requests" aria-pressed="true">Service requests</button>
       <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
+      <button data-tab="users" id="usersTab" aria-pressed="false" hidden>Users</button>
     </div>
 
     <div class="panel" id="requestsPanel">
@@ -109,6 +113,20 @@
       <p class="empty" id="reqEmpty" hidden>No matching requests.</p>
     </div>
 
+    <div class="panel" id="usersPanel" hidden>
+      <form id="userForm" class="userform">
+        <input id="uName" placeholder="Full name" aria-label="Full name" required>
+        <input id="uEmail" type="email" placeholder="Email" aria-label="Email" required>
+        <input id="uPass" type="text" placeholder="Temporary password (8+ characters)" aria-label="Temporary password" required minlength="8" autocomplete="off">
+        <select id="uRole" aria-label="Role"><option value="staff">Staff</option><option value="admin">Admin</option><option value="customer">Customer</option></select>
+        <button class="btn safety" type="submit">Add user</button>
+      </form>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr></thead>
+        <tbody id="userBody"></tbody>
+      </table></div>
+    </div>
+
     <div class="panel" id="vehiclesPanel" hidden>
       <div class="toolbar">
         <input id="vehSearch" type="search" placeholder="Search owner, vehicle or VIN" aria-label="Search vehicles">
@@ -126,8 +144,11 @@
 <script>
 const $ = id => document.getElementById(id);
 const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'completed': 'Completed', 'cancelled': 'Cancelled' };
-let token = sessionStorage.getItem('adminToken') || '';
+let token = '';
+try { token = localStorage.getItem('authToken') || ''; } catch (e) {}
 let data = null;
+let users = [];
+let me = null; // the signed-in user; admins see the Users tab and delete buttons, staff do not
 
 // Builds an element; text is always set via textContent so user-entered data can't inject HTML
 function el(tag, props = {}, ...kids) {
@@ -150,14 +171,14 @@ async function api(path, options = {}) {
 }
 
 function signOut() {
-  sessionStorage.removeItem('adminToken');
-  location.replace('/login.html');
+  try { localStorage.removeItem('authToken'); } catch (e) {}
+  location.replace('/');
 }
 
 // Revoke the token on the server, then leave (leave anyway if the server can't be reached)
 $('logout').addEventListener('click', async () => {
   $('logout').disabled = true;
-  try { await fetch('/admin/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }); } catch (e) {}
+  try { await fetch('/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }); } catch (e) {}
   signOut();
 });
 $('refresh').addEventListener('click', () => load());
@@ -165,12 +186,20 @@ $('refresh').addEventListener('click', () => load());
 async function load() {
   $('appError').textContent = '';
   try {
+    if (!me) {
+      me = (await api('/auth/me')).user;
+      if (me.role === 'customer') return location.replace('/app.html');
+      $('who').textContent = me.name + ' (' + me.role + ')';
+      $('usersTab').hidden = me.role !== 'admin';
+    }
     data = await api('/admin/overview');
+    if (me.role === 'admin') users = await api('/admin/users');
   } catch (err) {
     $('appError').textContent = err.message;
     return;
   }
   render();
+  renderUsers();
 }
 
 function render() {
@@ -199,7 +228,7 @@ function renderRequests() {
         await load();
       } catch (err) { $('appError').textContent = err.message; sel.value = r.status; }
     });
-    const del = el('button', { className: 'btn danger small', textContent: 'Delete' });
+    const del = el('button', { className: 'btn danger small', textContent: 'Delete', hidden: me.role !== 'admin' });
     armDelete(del, async () => { await api('/admin/service-request/' + r.id, { method: 'DELETE' }); await load(); });
     return el('tr', {},
       el('td', { textContent: r.id }),
@@ -219,16 +248,55 @@ function renderVehicles() {
   $('vehEmpty').hidden = rows.length > 0;
   $('vehBody').replaceChildren(...rows.map(v => {
     const n = jobs.get(v.id) || 0;
-    const del = el('button', { className: 'btn danger small', textContent: 'Delete' });
+    const del = el('button', { className: 'btn danger small', textContent: 'Delete', hidden: me.role !== 'admin' });
     armDelete(del, async () => { await api('/admin/vehicle/' + v.id, { method: 'DELETE' }); await load(); },
       n ? `Delete + ${n} job${n > 1 ? 's' : ''}?` : 'Confirm?');
     return el('tr', {},
-      el('td', { textContent: v.id }), el('td', { textContent: v.owner }),
+      el('td', { textContent: v.id }), el('td', {}, v.owner, v.account ? el('br') : null, v.account ? el('small', { textContent: v.account.email }) : null),
       el('td', {}, v.type, el('br'), el('small', { textContent: v.category })),
       el('td', { textContent: v.year }), el('td', { textContent: v.vin || '—' }),
       el('td', { textContent: n }), el('td', { className: 'act' }, del));
   }));
 }
+
+function renderUsers() {
+  if (me.role !== 'admin') return;
+  $('userBody').replaceChildren(...users.map(u => {
+    const isMe = u.id === me.id;
+    const role = el('select', { ariaLabel: 'Role', disabled: isMe },
+      ...['customer', 'staff', 'admin'].map(r => el('option', { value: r, textContent: r, selected: r === u.role })));
+    role.addEventListener('change', () => patchUser(u.id, { role: role.value }));
+    const toggle = el('button', { className: 'btn ghost small', textContent: u.active ? 'Disable' : 'Enable', hidden: isMe });
+    toggle.addEventListener('click', () => patchUser(u.id, { active: !u.active }));
+    const reset = el('button', { className: 'btn ghost small', textContent: 'Reset password' });
+    reset.addEventListener('click', () => {
+      const box = el('input', { type: 'text', placeholder: 'New password (8+)', autocomplete: 'off', style: 'width:150px;padding:4px 6px' });
+      const ok = el('button', { className: 'btn safety small', textContent: 'Save' });
+      ok.addEventListener('click', () => patchUser(u.id, { password: box.value }));
+      reset.replaceWith(box, ' ', ok); box.focus();
+    });
+    const del = el('button', { className: 'btn danger small', textContent: 'Delete', hidden: isMe });
+    armDelete(del, async () => { await api('/admin/users/' + u.id, { method: 'DELETE' }); await load(); });
+    return el('tr', {},
+      el('td', { textContent: u.name + (isMe ? ' (you)' : '') }), el('td', { textContent: u.email }),
+      el('td', {}, role),
+      el('td', {}, el('span', { className: u.active ? 'badge' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' })),
+      el('td', { textContent: fmtDate(u.createdAt) }),
+      el('td', { className: 'act' }, toggle, ' ', reset, ' ', del));
+  }));
+}
+async function patchUser(id, body) {
+  try { await api('/admin/users/' + id, { method: 'PATCH', body: JSON.stringify(body) }); await load(); }
+  catch (err) { $('appError').textContent = err.message; renderUsers(); }
+}
+$('userForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await api('/admin/users', { method: 'POST', body: JSON.stringify({
+      name: $('uName').value, email: $('uEmail').value, password: $('uPass').value, role: $('uRole').value }) });
+    e.target.reset(); await load();
+  } catch (err) { $('appError').textContent = err.message; }
+});
 
 // Two-step delete (the viewer may block confirm() dialogs): first click arms, second click deletes
 function armDelete(btn, action, armedLabel = 'Confirm?') {
@@ -248,12 +316,13 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
   $('requestsPanel').hidden = b.dataset.tab !== 'requests';
   $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';
+  $('usersPanel').hidden = b.dataset.tab !== 'users';
 }));
 $('reqSearch').addEventListener('input', renderRequests);
 $('reqStatus').addEventListener('change', renderRequests);
 $('vehSearch').addEventListener('input', renderVehicles);
 
-if (token) load(); else location.replace('/login.html');
+if (token) load(); else location.replace('/');
 </script>
 </body>
 </html>

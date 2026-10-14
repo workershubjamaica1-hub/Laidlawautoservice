@@ -3,590 +3,140 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Laidlaw Auto Services</title>
+<title>Sign in | Laidlaw Auto Services</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --ink: #1D2731;
-    --ink-soft: #4A5663;
-    --surface: #E6E9EC;
-    --card: #FBFBFA;
-    --line: #C9CFD5;
-    --safety: #F2B705;
-    --red: #B83A2B;
-    --green: #2F7A4D;
-    --blue: #2D5F8A;
+    --ink: #1D2731; --ink-soft: #4A5663; --surface: #E6E9EC; --card: #FBFBFA; --line: #C9CFD5;
+    --safety: #F2B705; --red: #B83A2B;
     --display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
     --body: 'Barlow', 'Segoe UI', Arial, sans-serif;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--surface); color: var(--ink); font: 16px/1.5 var(--body); }
-  button, input, select, textarea { font: inherit; color: inherit; }
+  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--surface); color: var(--ink); font: 16px/1.5 var(--body); }
+  button, input { font: inherit; color: inherit; }
   :focus-visible { outline: 3px solid var(--safety); outline-offset: 2px; }
+  [hidden] { display: none !important; }
 
-  header {
-    background: var(--ink); color: #fff;
-    display: flex; align-items: center; gap: 14px;
-    padding: 14px 24px;
-    border-bottom: 6px solid var(--safety);
-  }
-  header svg { flex: none; }
-  header h1 { font: 700 30px/1 var(--display); margin: 0; letter-spacing: .01em; }
-  header p { margin: 0 0 0 auto; color: #B9C3CC; font-size: 15px; }
+  header { background: var(--ink); color: #fff; display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 6px solid var(--safety); }
+  header h1 { font: 700 28px/1 var(--display); margin: 0; }
 
-  main {
-    display: grid;
-    grid-template-columns: 300px minmax(0, 1fr) 340px;
-    gap: 20px; padding: 20px 24px; max-width: 1400px; margin: 0 auto;
-  }
-  section { min-width: 0; }
-  h2 { font: 700 26px/1.1 var(--display); margin: 0 0 12px; }
-  h3 { font: 600 19px/1.2 var(--display); margin: 0 0 8px; }
+  main { flex: 1; display: grid; place-items: center; padding: 24px 16px; }
+  .card { width: 100%; max-width: 400px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 24px; }
+  h2 { font: 700 28px/1.1 var(--display); margin: 0 0 4px; }
+  .sub { color: var(--ink-soft); margin: 0 0 8px; font-size: 15px; }
 
-  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
-  .panel + .panel { margin-top: 16px; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .tabs button { padding: 9px; background: #fff; border: 0; font-weight: 600; cursor: pointer; color: var(--ink-soft); }
+  .tabs button[aria-selected="true"] { background: var(--ink); color: #fff; }
 
-  label { display: block; font-size: 14px; font-weight: 600; color: var(--ink-soft); margin: 10px 0 4px; }
-  input, select, textarea {
-    width: 100%; padding: 9px 10px; background: #fff;
-    border: 1px solid var(--line); border-radius: 4px;
-  }
-  textarea { resize: vertical; min-height: 84px; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
-  .btn {
-    display: inline-block; margin-top: 14px; padding: 10px 16px;
-    background: var(--ink); color: #fff; border: 0; border-radius: 4px;
-    font-weight: 600; cursor: pointer;
-  }
-  .btn:hover { background: #2C3A47; }
-  .btn.safety { background: var(--safety); color: var(--ink); }
-  .btn.safety:hover { background: #FFC81F; }
-  .btn.small { margin: 0; padding: 5px 10px; font-size: 14px; }
-  .btn.ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
-  .btn.ghost:hover { background: var(--surface); }
-  .error { color: var(--red); font-size: 14px; margin: 8px 0 0; min-height: 1em; }
-
-  /* Garage */
-  .vehicle {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 0; border-top: 1px solid var(--line);
-  }
-  .vehicle:first-child { border-top: 0; }
-  .vehicle .info { flex: 1; min-width: 0; }
-  .vehicle strong { display: block; font: 600 18px/1.2 var(--display); }
-  .vehicle small { color: var(--ink-soft); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .plate {
-    flex: none; width: 44px; height: 32px; display: grid; place-items: center;
-    background: var(--safety); border: 2px solid var(--ink); border-radius: 4px;
-    font: 700 16px/1 var(--display);
-  }
-  .remove { background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 20px; line-height: 1; padding: 4px; }
-  .remove:hover { color: var(--red); }
-  .empty { color: var(--ink-soft); margin: 0; }
-
-  /* Vehicle search */
-  .search { position: relative; }
-  .results {
-    position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px);
-    margin: 0; padding: 4px 0; list-style: none; max-height: 280px; overflow-y: auto;
-    background: #fff; border: 1px solid var(--line); border-radius: 4px;
-    box-shadow: 0 6px 16px rgba(29, 39, 49, .18);
-  }
-  .results[hidden] { display: none; }
-  .results li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; cursor: pointer; }
-  .results li[aria-selected="true"], .results li:hover { background: var(--surface); }
-  .results li small { color: var(--ink-soft); white-space: nowrap; }
-  .results li.none { cursor: default; color: var(--ink-soft); }
-  .results li.none:hover { background: none; }
-  .found { margin: 6px 0 0; font-size: 14px; color: var(--ink-soft); min-height: 1.5em; }
-  .found strong { color: var(--green); }
-
-  /* Job board */
-  .board-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-  .filters button {
-    background: transparent; border: 1px solid var(--line); border-radius: 20px;
-    padding: 4px 12px; cursor: pointer; font-size: 14px;
-  }
-  .filters button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
-
-  .ticket {
-    background: var(--card); border: 1px solid var(--line); border-left: 8px solid var(--safety);
-    border-radius: 6px; padding: 14px 16px; margin-bottom: 12px;
-    display: grid; grid-template-columns: auto 1fr auto; gap: 4px 16px; align-items: start;
-  }
-  .ticket[data-status="in-progress"] { border-left-color: var(--blue); }
-  .ticket[data-status="completed"] { border-left-color: var(--green); }
-  .ticket[data-status="cancelled"] { border-left-color: var(--line); opacity: .75; }
-  .ticket .num { font: 700 34px/1 var(--display); color: var(--ink-soft); grid-row: span 2; min-width: 2ch; }
-  .ticket .title { font: 600 20px/1.2 var(--display); }
-  .ticket .meta { color: var(--ink-soft); font-size: 14px; }
-  .ticket .desc { grid-column: 2 / 4; margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .ticket select { width: auto; padding: 5px 8px; font-size: 14px; }
-  .status-label { font-size: 14px; font-weight: 600; }
-
-  /* Assistant */
-  .chat { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; margin-bottom: 10px; }
-  .msg { padding: 10px 12px; border-radius: 6px; font-size: 15px; }
-  .msg.you { background: var(--ink); color: #fff; align-self: flex-end; max-width: 88%; }
-  .msg.bot { background: var(--surface); border: 1px solid var(--line); }
-  .msg .tip { margin-top: 8px; font-size: 14px; color: var(--ink-soft); }
-  .msg .suggest { margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
-  .urgency { font-weight: 600; }
-  .urgency.high { color: var(--red); }
-  .urgency.medium { color: #8A6400; }
-  .urgency.low { color: var(--green); }
-
-  @media (max-width: 1100px) {
-    main { grid-template-columns: 300px minmax(0, 1fr); }
-    #assistant { grid-column: 1 / -1; }
-  }
-  @media (max-width: 720px) {
-    main { grid-template-columns: 1fr; padding: 16px; }
-    header { flex-wrap: wrap; }
-    header p { margin: 0; width: 100%; }
-    .ticket { grid-template-columns: auto 1fr; }
-    .ticket .desc { grid-column: 1 / -1; }
-    .ticket .actions { grid-column: 1 / -1; }
-  }
+  label { display: block; font-size: 14px; font-weight: 600; color: var(--ink-soft); margin: 14px 0 4px; }
+  input { width: 100%; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
+  .pw { position: relative; }
+  .pw input { padding-right: 64px; }
+  .show { position: absolute; right: 4px; top: 4px; bottom: 4px; padding: 0 10px; background: none; border: 0; color: var(--ink-soft); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .hint { font-size: 13px; color: var(--ink-soft); margin: 4px 0 0; }
+  .btn { width: 100%; margin-top: 18px; padding: 11px 16px; background: var(--safety); color: var(--ink); border: 0; border-radius: 4px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #FFC81F; }
+  .btn:disabled { opacity: .6; cursor: wait; }
+  .error { color: var(--red); font-size: 14px; margin: 10px 0 0; min-height: 1.4em; }
 </style>
 </head>
 <body>
-<header>
-  <svg width="34" height="34" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#F2B705" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>
-  </svg>
-  <h1>Laidlaw Auto Services</h1>
-  <p>Add your vehicle, book a repair, or ask what that noise is.</p>
-</header>
-
+<header><h1>Laidlaw Auto Services</h1></header>
 <main>
-  <!-- Garage -->
-  <section aria-labelledby="garage-h">
-    <h2 id="garage-h">Your garage</h2>
-    <div class="panel">
-      <div id="vehicle-list"><p class="empty">No vehicles yet. Add one below to start booking services.</p></div>
+  <div class="card">
+    <h2 id="title">Welcome back</h2>
+    <p class="sub" id="sub">Sign in to manage your vehicles and service requests.</p>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-login" aria-selected="true" aria-controls="form">Sign in</button>
+      <button role="tab" id="tab-register" aria-selected="false" aria-controls="form">Create account</button>
     </div>
-    <form class="panel" id="vehicle-form" novalidate>
-      <h3>Add a vehicle</h3>
-      <label for="owner">Owner name</label>
-      <input id="owner" name="owner" autocomplete="name" required>
-      <label for="type">Vehicle</label>
-      <div class="search">
-        <input id="type" name="type" placeholder="Start typing, e.g. hilux" autocomplete="off" required
-          role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="type-results">
-        <ul class="results" id="type-results" role="listbox" hidden></ul>
+
+    <form id="form" novalidate>
+      <div id="nameRow" hidden>
+        <label for="name">Full name</label>
+        <input id="name" autocomplete="name">
       </div>
-      <p class="found" id="type-found" aria-live="polite"></p>
-      <label for="year">Year</label>
-      <input id="year" name="year" type="number" inputmode="numeric" placeholder="2016" required>
-      <label for="vin">VIN (optional)</label>
-      <input id="vin" name="vin" maxlength="17" placeholder="17 characters" style="text-transform:uppercase">
-      <button class="btn" type="submit">Add vehicle</button>
-      <p class="error" id="vehicle-error" role="alert"></p>
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" inputmode="email" required autofocus>
+      <label for="pw">Password</label>
+      <div class="pw">
+        <input id="pw" type="password" autocomplete="current-password" required>
+        <button type="button" class="show" id="show" aria-controls="pw">Show</button>
+      </div>
+      <p class="hint" id="pwHint" hidden>At least 8 characters.</p>
+      <button class="btn" id="submit" type="submit">Sign in</button>
+      <p class="error" id="error" role="alert"></p>
     </form>
-  </section>
-
-  <!-- Job board -->
-  <section aria-labelledby="jobs-h">
-    <div class="board-head">
-      <h2 id="jobs-h">Service requests</h2>
-    </div>
-    <form class="panel" id="request-form" novalidate style="margin-bottom:16px">
-      <h3>Book a service</h3>
-      <div class="row">
-        <div>
-          <label for="vehicleId">Vehicle</label>
-          <select id="vehicleId" name="vehicleId" required></select>
-        </div>
-        <div>
-          <label for="category">Category</label>
-          <select id="category" name="category" required></select>
-        </div>
-      </div>
-      <label for="description">What's happening?</label>
-      <textarea id="description" name="description" placeholder="Grinding noise from the front left when braking, started last week." required></textarea>
-      <button class="btn safety" type="submit">Book service</button>
-      <p class="error" id="request-error" role="alert"></p>
-    </form>
-
-    <div class="filters" role="group" aria-label="Filter by status">
-      <button type="button" data-filter="all" aria-pressed="true">All</button>
-      <button type="button" data-filter="pending" aria-pressed="false">Pending</button>
-      <button type="button" data-filter="in-progress" aria-pressed="false">In progress</button>
-      <button type="button" data-filter="completed" aria-pressed="false">Completed</button>
-      <button type="button" data-filter="cancelled" aria-pressed="false">Cancelled</button>
-    </div>
-    <div id="request-list"></div>
-  </section>
-
-  <!-- Assistant -->
-  <section id="assistant" aria-labelledby="ai-h">
-    <h2 id="ai-h">Ask the mechanic</h2>
-    <div class="panel">
-      <div class="chat" id="chat" aria-live="polite">
-        <div class="msg bot">Describe a symptom, like "truck sags at the back when loaded" or "temperature gauge keeps rising". Pick your vehicle first for advice that fits it, and I'll suggest what to book.</div>
-      </div>
-      <form id="ai-form" novalidate>
-        <label for="ai-vehicle">About which vehicle?</label>
-        <select id="ai-vehicle"></select>
-        <label for="question">Your question</label>
-        <textarea id="question" name="question" rows="3" required></textarea>
-        <button class="btn" type="submit">Ask</button>
-        <p class="error" id="ai-error" role="alert"></p>
-      </form>
-    </div>
-  </section>
+  </div>
 </main>
-
 <script>
-const state = { vehicles: [], requests: [], categories: { vehicle: [], service: [] }, catalog: {}, filter: 'all' };
-const labelOf = (list, value) => (list.find(c => c.value === value) || {}).label || value;
-const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'completed': 'Completed', 'cancelled': 'Cancelled' };
-const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id);
+let mode = 'login';
 
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+// Where each kind of user lands after signing in
+const home = role => role === 'customer' ? '/app.html' : '/admin.html';
 
-async function api(path, options = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-  let data = {};
-  try { data = await res.json(); } catch (_) {}
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
-  return data;
-}
-
-async function load() {
+// Already signed in? Check the saved session, then skip this page
+(async () => {
+  let token = '';
+  try { token = localStorage.getItem('authToken') || ''; } catch (e) {}
+  if (!token) return;
   try {
-    const [vehicles, requests, categories, catalog] = await Promise.all([
-      api('/vehicles'), api('/service-requests'), api('/categories'), api('/vehicle-catalog')
-    ]);
-    Object.assign(state, { vehicles, requests, categories, catalog });
-    render();
-  } catch (e) {
-    $('request-list').innerHTML = `<p class="error">Can't reach the server. Start it with "npm start" and refresh.</p>`;
-  }
+    const res = await fetch('/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+    if (res.ok) return location.replace(home((await res.json()).user.role));
+  } catch (e) {}
+  try { localStorage.removeItem('authToken'); } catch (e) {}
+})();
+
+function setMode(m) {
+  mode = m;
+  const reg = m === 'register';
+  $('tab-login').setAttribute('aria-selected', !reg);
+  $('tab-register').setAttribute('aria-selected', reg);
+  $('nameRow').hidden = !reg;
+  $('pwHint').hidden = !reg;
+  $('pw').autocomplete = reg ? 'new-password' : 'current-password';
+  $('title').textContent = reg ? 'Create your account' : 'Welcome back';
+  $('sub').textContent = reg ? 'Customers: sign up to add your vehicles and book services.' : 'Sign in to manage your vehicles and service requests.';
+  $('submit').textContent = reg ? 'Create account' : 'Sign in';
+  $('error').textContent = '';
 }
+$('tab-login').addEventListener('click', () => setMode('login'));
+$('tab-register').addEventListener('click', () => setMode('register'));
 
-function render() { renderVehicles(); renderSelects(); renderRequests(); }
+$('show').addEventListener('click', () => {
+  const hidden = $('pw').type === 'password';
+  $('pw').type = hidden ? 'text' : 'password';
+  $('show').textContent = hidden ? 'Hide' : 'Show';
+});
 
-function renderVehicles() {
-  const list = $('vehicle-list');
-  if (!state.vehicles.length) {
-    list.innerHTML = '<p class="empty">No vehicles yet. Add one below to start booking services.</p>';
-    return;
-  }
-  list.innerHTML = state.vehicles.map(v => `
-    <div class="vehicle">
-      <span class="plate" aria-hidden="true">'${String(v.year).slice(-2)}</span>
-      <div class="info">
-        <strong>${esc(v.type)}</strong>
-        <small>${esc(labelOf(state.categories.vehicle, v.category))}, ${esc(v.owner)}${v.vin ? ', VIN ' + esc(v.vin) : ''}</small>
-      </div>
-      <button class="remove" data-remove="${v.id}" aria-label="Remove ${esc(v.type)}" title="Remove vehicle">×</button>
-    </div>`).join('');
-}
-
-function renderSelects() {
-  const vSel = $('vehicleId');
-  const current = vSel.value;
-  vSel.innerHTML = state.vehicles.length
-    ? state.vehicles.map(v => `<option value="${v.id}">${esc(v.year)} ${esc(v.type)}</option>`).join('')
-    : '<option value="">Add a vehicle first</option>';
-  if (state.vehicles.some(v => String(v.id) === current)) vSel.value = current;
-
-  const cSel = $('category');
-  if (!cSel.options.length) {
-    cSel.innerHTML = state.categories.service.map(c => `<option value="${c.value}">${esc(c.label)}</option>`).join('');
-  }
-  const aSel = $('ai-vehicle');
-  const aCurrent = aSel.value;
-  aSel.innerHTML = '<option value="">Not specific to a vehicle</option>' +
-    state.vehicles.map(v => `<option value="${v.id}">${esc(v.year)} ${esc(v.type)} (${esc(labelOf(state.categories.vehicle, v.category))})</option>`).join('');
-  if (state.vehicles.some(v => String(v.id) === aCurrent)) aSel.value = aCurrent;
-}
-
-function vehicleName(id) {
-  const v = state.vehicles.find(v => v.id === id);
-  return v ? `${v.year} ${v.type}` : 'Removed vehicle';
-}
-
-function renderRequests() {
-  const list = $('request-list');
-  const items = state.requests
-    .filter(r => state.filter === 'all' || r.status === state.filter)
-    .slice().reverse();
-  if (!items.length) {
-    list.innerHTML = `<p class="empty">${state.requests.length
-      ? 'No requests with this status.'
-      : 'No service requests yet. Book one above, or ask the mechanic what your car might need.'}</p>`;
-    return;
-  }
-  list.innerHTML = items.map(r => `
-    <article class="ticket" data-status="${r.status}">
-      <span class="num" aria-label="Job ${r.id}">${r.id}</span>
-      <div>
-        <div class="title">${esc(labelOf(state.categories.service, r.category))}: ${esc(vehicleName(r.vehicleId))}</div>
-        <div class="meta">Booked ${new Date(r.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</div>
-      </div>
-      <div class="actions">
-        <label class="status-label" for="status-${r.id}" style="margin:0 0 2px">Status</label>
-        <select id="status-${r.id}" data-status-for="${r.id}">
-          ${Object.entries(STATUS_LABELS).map(([k, l]) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${l}</option>`).join('')}
-        </select>
-      </div>
-      <p class="desc">${esc(r.description)}</p>
-    </article>`).join('');
-}
-
-// Add vehicle
-$('vehicle-form').addEventListener('submit', async (e) => {
+$('form').addEventListener('submit', async e => {
   e.preventDefault();
-  const f = e.target;
-  $('vehicle-error').textContent = '';
-  // If nothing was picked from the list, use the only match or ask them to choose
-  if (!picked) {
-    const matches = searchCatalog(state.catalog, f.type.value);
-    if (matches.length === 1 || (matches[0] && matches[0].score === 100)) pickVehicle(matches[0]);
-    else if (f.type.value.trim()) {
-      $('vehicle-error').textContent = matches.length
-        ? 'Several vehicles match. Pick yours from the list.'
-        : 'Vehicle type not recognized in Jamaica catalog. Check the spelling and try again.';
-      showResults();
-      return;
-    }
-  }
+  $('error').textContent = '';
+  const body = { email: $('email').value, password: $('pw').value };
+  if (mode === 'register') body.name = $('name').value;
+  $('submit').disabled = true;
   try {
-    const v = await api('/vehicle', { method: 'POST', body: {
-      owner: f.owner.value, type: picked ? picked.name : f.type.value, year: f.year.value, vin: f.vin.value.trim()
-    }});
-    state.vehicles.push(v);
-    f.reset();
-    clearPick();
-    render();
-    $('vehicleId').value = v.id;
-    $('ai-vehicle').value = v.id;
-  } catch (err) { $('vehicle-error').textContent = err.message; }
-});
-
-// Model suggestions follow the chosen vehicle type
-// --- Vehicle search ---
-// Matches typed text against the catalog: ignores case, spaces and dashes ("dmax", "c class"),
-// matches partial words ("ken t6"), and tolerates one typo in longer words ("hilix").
-const normalize = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
-function oneEditApart(a, b) {
-  if (Math.abs(a.length - b.length) > 1) return false;
-  let i = 0, j = 0, edits = 0;
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) { i++; j++; continue; }
-    if (++edits > 1) return false;
-    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
-  }
-  return edits + (a.length - i) + (b.length - j) <= 1;
-}
-function scoreModel(query, model) {
-  const q = normalize(query);
-  if (!q) return 0;
-  const full = normalize(model);
-  if (full === q) return 100;
-  if (full.startsWith(q)) return 80;
-  const words = model.toLowerCase().split(/[\s-]+/).map(normalize).filter(Boolean);
-  const tokens = query.toLowerCase().split(/[\s-]+/).map(normalize).filter(Boolean);
-  if (words.some(w => w.startsWith(q))) return 70;
-  if (full.includes(q)) return 60;
-  let fuzzy = false;
-  const allMatch = tokens.every(t => {
-    if (full.includes(t)) return true;
-    if (t.length >= 4 && words.some(w => oneEditApart(t, w.slice(0, t.length)) || oneEditApart(t, w))) { fuzzy = true; return true; }
-    return false;
-  });
-  if (!allMatch) return 0;
-  return fuzzy ? 30 : 50;
-}
-function searchCatalog(catalog, query, limit = 8) {
-  const results = [];
-  for (const [category, models] of Object.entries(catalog)) {
-    for (const name of models) {
-      const score = scoreModel(query, name);
-      if (score) results.push({ name, category, score });
-    }
-  }
-  return results.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name)).slice(0, limit);
-}
-function findExact(catalog, name) {
-  const n = normalize(name);
-  for (const [category, models] of Object.entries(catalog)) {
-    const match = models.find(m => normalize(m) === n);
-    if (match) return { name: match, category };
-  }
-  return null;
-}
-
-let picked = null;      // { name, category } chosen from the catalog
-let results = [];
-let active = -1;
-const input = $('type');
-const list = $('type-results');
-
-function clearPick() { picked = null; $('type-found').textContent = ''; }
-
-function pickVehicle(r) {
-  picked = { name: r.name, category: r.category };
-  input.value = r.name;
-  $('type-found').innerHTML = `Found: <strong>${esc(r.name)}</strong>, ${esc(labelOf(state.categories.vehicle, r.category))}`;
-  hideResults();
-}
-
-function hideResults() {
-  list.hidden = true;
-  input.setAttribute('aria-expanded', 'false');
-  input.removeAttribute('aria-activedescendant');
-  active = -1;
-}
-
-function showResults() {
-  const q = input.value.trim();
-  if (!q) { hideResults(); return; }
-  results = searchCatalog(state.catalog, q);
-  active = results.length ? 0 : -1;
-  list.innerHTML = results.length
-    ? results.map((r, i) => `<li role="option" id="opt-${i}" data-i="${i}" aria-selected="${i === active}">
-        <span>${esc(r.name)}</span><small>${esc(labelOf(state.categories.vehicle, r.category))}</small></li>`).join('')
-    : '<li class="none" role="option" aria-disabled="true">No match in the Jamaica catalog. Check the spelling.</li>';
-  list.hidden = false;
-  input.setAttribute('aria-expanded', 'true');
-  if (active >= 0) input.setAttribute('aria-activedescendant', 'opt-0');
-}
-
-function moveActive(step) {
-  if (!results.length) return;
-  active = (active + step + results.length) % results.length;
-  list.querySelectorAll('li').forEach((li, i) => li.setAttribute('aria-selected', String(i === active)));
-  input.setAttribute('aria-activedescendant', `opt-${active}`);
-  list.querySelector(`#opt-${active}`).scrollIntoView({ block: 'nearest' });
-}
-
-input.addEventListener('input', () => { clearPick(); $('vehicle-error').textContent = ''; showResults(); });
-input.addEventListener('focus', () => { if (!picked) showResults(); });
-input.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowDown') { e.preventDefault(); list.hidden ? showResults() : moveActive(1); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); moveActive(-1); }
-  else if (e.key === 'Enter' && !list.hidden && active >= 0) { e.preventDefault(); pickVehicle(results[active]); }
-  else if (e.key === 'Escape') hideResults();
-});
-// mousedown (not click) so the pick happens before the input loses focus
-list.addEventListener('mousedown', (e) => {
-  const li = e.target.closest('li[data-i]');
-  if (li) { e.preventDefault(); pickVehicle(results[Number(li.dataset.i)]); }
-});
-input.addEventListener('blur', () => setTimeout(hideResults, 100));
-
-// Remove vehicle
-$('vehicle-list').addEventListener('click', async (e) => {
-  const id = e.target.dataset.remove;
-  if (!id) return;
-  const v = state.vehicles.find(v => v.id === Number(id));
-  if (!confirm(`Remove ${v.year} ${v.type} and its service requests?`)) return;
-  try {
-    await api(`/vehicle/${id}`, { method: 'DELETE' });
-    state.vehicles = state.vehicles.filter(v => v.id !== Number(id));
-    state.requests = state.requests.filter(r => r.vehicleId !== Number(id));
-    render();
-  } catch (err) { alert(err.message); }
-});
-
-// Book service
-$('request-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const f = e.target;
-  $('request-error').textContent = '';
-  try {
-    const r = await api('/service-request', { method: 'POST', body: {
-      vehicleId: f.vehicleId.value, category: f.category.value, description: f.description.value
-    }});
-    state.requests.push(r);
-    f.description.value = '';
-    state.filter = 'all';
-    syncFilters();
-    renderRequests();
-  } catch (err) { $('request-error').textContent = err.message; }
-});
-
-// Change status
-$('request-list').addEventListener('change', async (e) => {
-  const id = e.target.dataset.statusFor;
-  if (!id) return;
-  try {
-    const updated = await api(`/service-request/${id}`, { method: 'PATCH', body: { status: e.target.value } });
-    const i = state.requests.findIndex(r => r.id === updated.id);
-    state.requests[i] = updated;
-    renderRequests();
-  } catch (err) { alert(err.message); renderRequests(); }
-});
-
-// Filters
-function syncFilters() {
-  document.querySelectorAll('.filters button').forEach(b =>
-    b.setAttribute('aria-pressed', String(b.dataset.filter === state.filter)));
-}
-document.querySelector('.filters').addEventListener('click', (e) => {
-  const f = e.target.dataset.filter;
-  if (!f) return;
-  state.filter = f;
-  syncFilters();
-  renderRequests();
-});
-
-// Assistant
-function addMsg(html, who) {
-  const div = document.createElement('div');
-  div.className = `msg ${who}`;
-  div.innerHTML = html;
-  $('chat').appendChild(div);
-  $('chat').scrollTop = $('chat').scrollHeight;
-  return div;
-}
-
-$('ai-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const q = $('question').value.trim();
-  $('ai-error').textContent = '';
-  if (!q) { $('ai-error').textContent = 'Type a question first.'; return; }
-  addMsg(esc(q), 'you');
-  $('question').value = '';
-  try {
-    const aiVehicle = $('ai-vehicle').value;
-    const res = await api('/ai-assist', { method: 'POST', body: { question: q, vehicleId: aiVehicle || undefined } });
-    const canBook = !!res.category && res.urgency !== 'unknown';
-    const catLabel = labelOf(state.categories.service, res.category);
-    const urg = { high: 'Get it checked soon', medium: 'Book when you can', low: 'Routine' }[res.urgency];
-    const msg = addMsg(`
-      ${esc(res.answer)}
-      ${res.tip ? `<div class="tip">${esc(res.tip)}</div>` : ''}
-      ${canBook ? `<div class="suggest">
-        <span>Suggested: <strong>${esc(catLabel)}</strong>${urg ? `, <span class="urgency ${res.urgency}">${urg}</span>` : ''}</span>
-        <button class="btn small safety" type="button">Book ${esc(catLabel.toLowerCase())} service</button>
-      </div>` : ''}`, 'bot');
-    const btn = msg.querySelector('button');
-    if (btn) btn.addEventListener('click', () => {
-      $('category').value = res.category;
-      if (aiVehicle) $('vehicleId').value = aiVehicle;
-      $('description').value = q;
-      $('request-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      (state.vehicles.length ? $('description') : $('owner')).focus({ preventScroll: true });
-      if (!state.vehicles.length) $('request-error').textContent = 'Add a vehicle first, then book the service.';
+    const res = await fetch(mode === 'register' ? '/auth/register' : '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
-  } catch (err) { $('ai-error').textContent = err.message; }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not sign in.');
+    localStorage.setItem('authToken', data.token);
+    location.replace(home(data.user.role));
+  } catch (err) {
+    $('error').textContent = err.message;
+    if (mode === 'login') $('pw').select();
+  } finally {
+    $('submit').disabled = false;
+  }
 });
-
-load();
 </script>
 </body>
 </html>

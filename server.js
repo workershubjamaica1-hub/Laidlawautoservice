@@ -36,6 +36,12 @@ const handle = fn => (req, res) => fn(req, res).catch(err => {
   res.status(500).json({ error: 'Something went wrong on the server. Try again.' });
 });
 
+// --- Accounts (see auth.js). Customers only ever see their own data; staff and admins see everything. ---
+const auth = require('./auth')({ supabase, handle });
+const { requireAuth } = auth;
+app.use('/auth', auth.router);
+const isCustomer = req => req.user.role === 'customer';
+
 // Vehicle categories
 const VEHICLE_CATEGORIES = [
   { value: 'car',         label: 'Car' },
@@ -127,14 +133,17 @@ app.get('/vehicle-catalog/search', (req, res) => {
 });
 
 // --- Vehicle Profiles ---
-app.get('/vehicles', handle(async (req, res) => {
-  const { data, error } = await supabase.from('vehicles').select('*').order('id');
+app.get('/vehicles', requireAuth, handle(async (req, res) => {
+  let query = supabase.from('vehicles').select('*').order('id');
+  if (isCustomer(req)) query = query.eq('user_id', req.user.id);
+  const { data, error } = await query;
   if (error) throw error;
   res.json(data.map(toVehicle));
 }));
 
-app.post('/vehicle', handle(async (req, res) => {
-  const { owner, year, vin } = req.body;
+app.post('/vehicle', requireAuth, handle(async (req, res) => {
+  const { year, vin } = req.body;
+  const owner = String(req.body.owner || req.user.name || '').trim();
   if (!owner || !req.body.type || !year) {
     return res.status(400).json({ error: 'Owner, make and model, and year are required.' });
   }
@@ -159,7 +168,8 @@ app.post('/vehicle', handle(async (req, res) => {
     return res.status(400).json({ error: 'A VIN has 17 letters and numbers (no I, O or Q).' });
   }
   const { data, error } = await supabase.from('vehicles').insert({
-    owner: owner.trim(),
+    owner,
+    user_id: req.user.id,
     type,                // must match vehicleCatalog.js exactly
     category,            // e.g. "small-truck"
     year: y,
@@ -169,28 +179,38 @@ app.post('/vehicle', handle(async (req, res) => {
   res.status(201).json(toVehicle(data));
 }));
 
-app.delete('/vehicle/:id', handle(async (req, res) => {
+app.delete('/vehicle/:id', requireAuth, handle(async (req, res) => {
+  if (req.user.role === 'staff') return res.status(403).json({ error: 'Only admins can remove vehicles.' });
   const id = Number(req.params.id);
   // Its service requests are removed automatically (ON DELETE CASCADE)
-  const { data, error } = await supabase.from('vehicles').delete().eq('id', id).select('id');
+  let query = supabase.from('vehicles').delete().eq('id', id);
+  if (isCustomer(req)) query = query.eq('user_id', req.user.id);
+  const { data, error } = await query.select('id');
   if (error) throw error;
   if (!data.length) return res.status(404).json({ error: 'Vehicle not found.' });
   res.json({ deleted: id });
 }));
 
 // --- Service Requests ---
-app.get('/service-requests', handle(async (req, res) => {
+app.get('/service-requests', requireAuth, handle(async (req, res) => {
   let query = supabase.from('service_requests').select('*').order('id');
+  if (isCustomer(req)) {
+    const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
+    if (mine.error) throw mine.error;
+    query = query.in('vehicle_id', mine.data.map(v => v.id));
+  }
   if (req.query.vehicleId) query = query.eq('vehicle_id', Number(req.query.vehicleId));
   const { data, error } = await query;
   if (error) throw error;
   res.json(data.map(toRequest));
 }));
 
-app.post('/service-request', handle(async (req, res) => {
+app.post('/service-request', requireAuth, handle(async (req, res) => {
   const { vehicleId, category, description } = req.body;
   const vid = Number(vehicleId);
-  const { data: found, error: findError } = await supabase.from('vehicles').select('id').eq('id', vid).maybeSingle();
+  let vehicleQuery = supabase.from('vehicles').select('id').eq('id', vid);
+  if (isCustomer(req)) vehicleQuery = vehicleQuery.eq('user_id', req.user.id);
+  const { data: found, error: findError } = await vehicleQuery.maybeSingle();
   if (findError) throw findError;
   if (!found) {
     return res.status(400).json({ error: 'Choose a vehicle you have added.' });
@@ -211,14 +231,24 @@ app.post('/service-request', handle(async (req, res) => {
   res.status(201).json(toRequest(data));
 }));
 
-app.patch('/service-request/:id', handle(async (req, res) => {
+app.patch('/service-request/:id', requireAuth, handle(async (req, res) => {
   const { status } = req.body;
   if (!STATUSES.includes(status)) {
     return res.status(400).json({ error: `Status must be one of: ${STATUSES.join(', ')}.` });
   }
+  const id = Number(req.params.id);
+  if (isCustomer(req)) {
+    // Customers can only cancel their own requests; staff change status from the admin portal
+    if (status !== 'cancelled') return res.status(403).json({ error: 'You can only cancel a request.' });
+    const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
+    if (mine.error) throw mine.error;
+    const own = await supabase.from('service_requests').select('id').eq('id', id).in('vehicle_id', mine.data.map(v => v.id)).maybeSingle();
+    if (own.error) throw own.error;
+    if (!own.data) return res.status(404).json({ error: 'Request not found.' });
+  }
   // updated_at is set by a database trigger
   const { data, error } = await supabase.from('service_requests')
-    .update({ status }).eq('id', Number(req.params.id)).select().maybeSingle();
+    .update({ status }).eq('id', id).select().maybeSingle();
   if (error) throw error;
   if (!data) return res.status(404).json({ error: 'Request not found.' });
   res.json(toRequest(data));
@@ -285,7 +315,7 @@ function diagnose(question, vehicleCategory) {
   return { answer, tip, category: best.service, urgency: best.urgency };
 }
 
-app.post('/ai-assist', handle(async (req, res) => {
+app.post('/ai-assist', requireAuth, handle(async (req, res) => {
   const { question, vehicleId } = req.body;
   let { vehicleCategory } = req.body;
   if (!question || !question.trim()) {
@@ -293,18 +323,22 @@ app.post('/ai-assist', handle(async (req, res) => {
   }
   // Accept either a vehicleId (looked up) or a vehicleCategory directly
   if (vehicleId) {
-    const { data: v, error } = await supabase.from('vehicles').select('category').eq('id', Number(vehicleId)).maybeSingle();
+    let vq = supabase.from('vehicles').select('category').eq('id', Number(vehicleId));
+    if (isCustomer(req)) vq = vq.eq('user_id', req.user.id);
+    const { data: v, error } = await vq.maybeSingle();
     if (error) throw error;
     if (v) vehicleCategory = v.category;
   }
   res.json({ question, vehicleCategory: vehicleCategory || null, ...diagnose(question, vehicleCategory) });
 }));
 
-// --- Admin portal (login + dashboard API live in auth.js and adminRoutes.js) ---
-app.use('/admin', require('./adminRoutes')({ supabase, handle, toVehicle, toRequest, STATUSES }));
+// --- Staff/admin portal API (adminRoutes.js) ---
+app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, toVehicle, toRequest, STATUSES }));
 
 const PORT = process.env.PORT || 3000;
 const BUSINESS_NAME = process.env.BUSINESS_NAME || 'Laidlaw Auto Services';
-app.listen(PORT, () => {
-  console.log(`${BUSINESS_NAME} running at http://localhost:${PORT} (${process.env.NODE_ENV || 'development'})`);
-});
+auth.seed()
+  .catch(err => console.error('Could not set up accounts. Have you run schema-users.sql in Supabase?', err.message || err))
+  .finally(() => app.listen(PORT, () => {
+    console.log(`${BUSINESS_NAME} running at http://localhost:${PORT} (${process.env.NODE_ENV || 'development'})`);
+  }));
