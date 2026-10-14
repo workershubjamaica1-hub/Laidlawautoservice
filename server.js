@@ -335,6 +335,9 @@ app.post('/ai-assist', requireAuth, handle(async (req, res) => {
 // --- Staff/admin portal API (adminRoutes.js) ---
 app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, toVehicle, toRequest, STATUSES }));
 
+// Streaming chat with the mechanic assistant (ai.js). The older /ai-assist above is kept for simple one-shot use.
+app.post('/ai-chat', requireAuth, handle(require('./ai')({ supabase, diagnose, isCustomer })));
+
 const PORT = process.env.PORT || 3000;
 const BUSINESS_NAME = process.env.BUSINESS_NAME || 'Laidlaw Auto Services';
 auth.seed()

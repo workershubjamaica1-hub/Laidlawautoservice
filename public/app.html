@@ -137,6 +137,14 @@
   .msg.bot { background: var(--surface); border: 1px solid var(--line); }
   .msg .tip { margin-top: 8px; font-size: 14px; color: var(--ink-soft); }
   .msg .suggest { margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; }
+  .msg.bot p { margin: 0 0 8px; }
+  .msg.bot p:last-child { margin-bottom: 0; }
+  .msg.bot ul, .msg.bot ol { margin: 0 0 8px; padding-left: 22px; }
+  .msg.you { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .msg.bot.typing::after { content: '\258D'; animation: blink 1s steps(2) infinite; margin-left: 2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .chat-actions { display: flex; gap: 8px; }
+  .chat-actions .btn { margin-top: 10px; }
   .urgency { font-weight: 600; }
   .urgency.high { color: var(--red); }
   .urgency.medium { color: #8A6400; }
@@ -230,15 +238,18 @@
   <section id="assistant" aria-labelledby="ai-h">
     <h2 id="ai-h">Ask the mechanic</h2>
     <div class="panel">
-      <div class="chat" id="chat" aria-live="polite">
-        <div class="msg bot">Describe a symptom, like "truck sags at the back when loaded" or "temperature gauge keeps rising". Pick your vehicle first for advice that fits it, and I'll suggest what to book.</div>
+      <div class="chat" id="chat" role="log" aria-live="polite">
+        <div class="msg bot">Describe a symptom, like "truck sags at the back when loaded" or "temperature gauge keeps rising". Pick your vehicle first for advice that fits it. You can keep chatting: I'll ask follow-up questions, go as technical as you need, and suggest what to book.</div>
       </div>
       <form id="ai-form" novalidate>
         <label for="ai-vehicle">About which vehicle?</label>
         <select id="ai-vehicle"></select>
-        <label for="question">Your question</label>
-        <textarea id="question" name="question" rows="3" required></textarea>
-        <button class="btn" type="submit">Ask</button>
+        <label for="question">Your message</label>
+        <textarea id="question" name="question" rows="2" maxlength="4000" placeholder="Type your question. Enter to send, Shift+Enter for a new line." required></textarea>
+        <div class="chat-actions">
+          <button class="btn" id="ai-send" type="submit">Send</button>
+          <button class="btn ghost" id="ai-new" type="button">New chat</button>
+        </div>
         <p class="error" id="ai-error" role="alert"></p>
       </form>
     </div>
@@ -578,36 +589,140 @@ function addMsg(html, who) {
   return div;
 }
 
-$('ai-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
+// Chat history sent with every message so the mechanic remembers the conversation
+let chatHistory = [];
+let chatBusy = false;
+
+const BOOK_TAG = /\[\[BOOK:([a-z-]+)\|([a-z]+)\]\]/;
+
+// Safe formatting: escape everything first, then allow **bold**, bullet lists, numbered lists and paragraphs
+function formatReply(text) {
+  const inline = t => esc(t).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  return text.trim().split(/\n{2,}/).map(block => {
+    const lines = block.split('\n');
+    if (lines.every(l => /^\s*[-*•]\s+/.test(l))) {
+      return '<ul>' + lines.map(l => '<li>' + inline(l.replace(/^\s*[-*•]\s+/, '')) + '</li>').join('') + '</ul>';
+    }
+    if (lines.every(l => /^\s*\d+[.)]\s+/.test(l))) {
+      return '<ol>' + lines.map(l => '<li>' + inline(l.replace(/^\s*\d+[.)]\s+/, '')) + '</li>').join('') + '</ol>';
+    }
+    return '<p>' + lines.map(inline).join('<br>') + '</p>';
+  }).join('');
+}
+
+function addMsg(html, who) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + who;
+  div.innerHTML = html;
+  $('chat').appendChild(div);
+  $('chat').scrollTop = $('chat').scrollHeight;
+  return div;
+}
+
+function setBusy(busy) {
+  chatBusy = busy;
+  $('ai-send').disabled = busy;
+  $('ai-send').textContent = busy ? 'Thinking...' : 'Send';
+}
+
+// While the answer streams in, hide a booking tag that is still arriving
+const visibleText = t => t.replace(BOOK_TAG, '').replace(/\[\[[^\]]*$/, '').trimEnd();
+
+function addBookButton(msgDiv, tag, question) {
+  const category = tag[1], urgency = tag[2];
+  if (!state.categories.service.some(c => c.value === category)) return;
+  const catLabel = labelOf(state.categories.service, category);
+  const urg = { high: 'Get it checked soon', medium: 'Book when you can', low: 'Routine' }[urgency];
+  const box = document.createElement('div');
+  box.className = 'suggest';
+  box.innerHTML = '<span>Suggested: <strong>' + esc(catLabel) + '</strong>' +
+    (urg ? ', <span class="urgency ' + esc(urgency) + '">' + urg + '</span>' : '') + '</span>' +
+    '<button class="btn small safety" type="button">Book ' + esc(catLabel.toLowerCase()) + ' service</button>';
+  msgDiv.appendChild(box);
+  box.querySelector('button').addEventListener('click', () => {
+    const aiVehicle = $('ai-vehicle').value;
+    $('category').value = category;
+    if (aiVehicle) $('vehicleId').value = aiVehicle;
+    $('description').value = question;
+    $('request-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    (state.vehicles.length ? $('description') : $('owner')).focus({ preventScroll: true });
+    if (!state.vehicles.length) $('request-error').textContent = 'Add a vehicle first, then book the service.';
+  });
+}
+
+async function sendChat() {
+  if (chatBusy) return;
   const q = $('question').value.trim();
   $('ai-error').textContent = '';
-  if (!q) { $('ai-error').textContent = 'Type a question first.'; return; }
+  if (!q) { $('ai-error').textContent = 'Type a message first.'; return; }
+  chatHistory.push({ role: 'user', content: q });
   addMsg(esc(q), 'you');
   $('question').value = '';
+  setBusy(true);
+  const bubble = addMsg('', 'bot typing');
+  let reply = '';
   try {
-    const aiVehicle = $('ai-vehicle').value;
-    const res = await api('/ai-assist', { method: 'POST', body: { question: q, vehicleId: aiVehicle || undefined } });
-    const canBook = !!res.category && res.urgency !== 'unknown';
-    const catLabel = labelOf(state.categories.service, res.category);
-    const urg = { high: 'Get it checked soon', medium: 'Book when you can', low: 'Routine' }[res.urgency];
-    const msg = addMsg(`
-      ${esc(res.answer)}
-      ${res.tip ? `<div class="tip">${esc(res.tip)}</div>` : ''}
-      ${canBook ? `<div class="suggest">
-        <span>Suggested: <strong>${esc(catLabel)}</strong>${urg ? `, <span class="urgency ${res.urgency}">${urg}</span>` : ''}</span>
-        <button class="btn small safety" type="button">Book ${esc(catLabel.toLowerCase())} service</button>
-      </div>` : ''}`, 'bot');
-    const btn = msg.querySelector('button');
-    if (btn) btn.addEventListener('click', () => {
-      $('category').value = res.category;
-      if (aiVehicle) $('vehicleId').value = aiVehicle;
-      $('description').value = q;
-      $('request-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      (state.vehicles.length ? $('description') : $('owner')).focus({ preventScroll: true });
-      if (!state.vehicles.length) $('request-error').textContent = 'Add a vehicle first, then book the service.';
+    const res = await fetch('/ai-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ messages: chatHistory, vehicleId: Number($('ai-vehicle').value) || undefined })
     });
-  } catch (err) { $('ai-error').textContent = err.message; }
+    if (res.status === 401) { leave(); return; }
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed (' + res.status + ').');
+
+    // Read the answer as it arrives: one JSON object per line
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '', failure = '';
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      let nl;
+      while ((nl = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line) continue;
+        const ev = JSON.parse(line);
+        if (ev.t === 'text') {
+          reply += ev.d;
+          bubble.innerHTML = formatReply(visibleText(reply));
+          $('chat').scrollTop = $('chat').scrollHeight;
+        } else if (ev.t === 'error') failure = ev.m;
+      }
+    }
+    bubble.classList.remove('typing');
+    if (failure) throw new Error(failure);
+    chatHistory.push({ role: 'assistant', content: visibleText(reply) });
+    bubble.innerHTML = formatReply(visibleText(reply));
+    const tag = reply.match(BOOK_TAG);
+    if (tag) addBookButton(bubble, tag, chatHistory.filter(m => m.role === 'user').map(m => m.content).join('. ').slice(0, 1000));
+  } catch (err) {
+    bubble.classList.remove('typing');
+    if (reply) {
+      chatHistory.push({ role: 'assistant', content: visibleText(reply) }); // keep the partial answer
+    } else {
+      bubble.remove();
+      chatHistory.pop();            // nothing came back: let them send the question again
+      $('question').value = q;
+      $('chat').lastElementChild.remove(); // their unanswered message bubble
+    }
+    $('ai-error').textContent = err.message;
+  } finally {
+    setBusy(false);
+    $('question').focus({ preventScroll: true });
+  }
+}
+
+$('ai-form').addEventListener('submit', (e) => { e.preventDefault(); sendChat(); });
+$('question').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendChat(); }
+});
+$('ai-new').addEventListener('click', () => {
+  if (chatBusy) return;
+  chatHistory = [];
+  $('chat').innerHTML = '<div class="msg bot">New chat started. What is going on with your vehicle?</div>';
+  $('ai-error').textContent = '';
 });
 
 load();
