@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Admin | Laidlaw Auto Services</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1D2731; --ink-soft: #4A5663; --surface: #E6E9EC; --card: #FBFBFA; --line: #C9CFD5;
+    --safety: #F2B705; --red: #B83A2B; --green: #2F7A4D; --blue: #2D5F8A;
+    --display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
+    --body: 'Barlow', 'Segoe UI', Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--surface); color: var(--ink); font: 16px/1.5 var(--body); }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--safety); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  header { background: var(--ink); color: #fff; display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 6px solid var(--safety); }
+  header h1 { font: 700 28px/1 var(--display); margin: 0; }
+  header .sp { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+  header a { color: #B9C3CC; font-size: 15px; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
+  h2 { font: 700 24px/1.1 var(--display); margin: 0 0 12px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 16px; margin-bottom: 20px; }
+
+  label { display: block; font-size: 14px; font-weight: 600; color: var(--ink-soft); margin: 10px 0 4px; }
+  input, select { width: 100%; padding: 9px 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
+  .btn { padding: 8px 14px; background: var(--ink); color: #fff; border: 0; border-radius: 4px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #2C3A47; }
+  .btn.safety { background: var(--safety); color: var(--ink); }
+  .btn.ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
+  .btn.ghost:hover { background: var(--surface); }
+  .btn.danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
+  .btn.danger:hover { background: var(--red); color: #fff; }
+  .btn.small { padding: 4px 10px; font-size: 14px; }
+  .error { color: var(--red); font-size: 14px; margin: 8px 0 0; min-height: 1.4em; }
+
+  #login { max-width: 360px; margin: 80px auto; }
+  #login .btn { margin-top: 14px; width: 100%; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-top: 5px solid var(--safety); border-radius: 6px; padding: 12px 16px; }
+  .stat[data-s="in-progress"] { border-top-color: var(--blue); }
+  .stat[data-s="completed"] { border-top-color: var(--green); }
+  .stat[data-s="cancelled"] { border-top-color: var(--ink-soft); }
+  .stat b { display: block; font: 700 36px/1 var(--display); }
+  .stat span { color: var(--ink-soft); font-size: 14px; }
+
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tabs button { background: transparent; border: 1px solid var(--line); border-radius: 20px; padding: 5px 16px; cursor: pointer; }
+  .tabs button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .toolbar { display: grid; grid-template-columns: 1fr 200px; gap: 10px; margin-bottom: 12px; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  th, td { text-align: left; padding: 10px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { font: 600 15px var(--display); color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; border-top: 0; }
+  td select { width: auto; padding: 4px 6px; }
+  td.desc { max-width: 340px; overflow-wrap: anywhere; }
+  td.act { white-space: nowrap; text-align: right; }
+  small { color: var(--ink-soft); }
+  .empty { color: var(--ink-soft); margin: 8px 0 0; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 13px; font-weight: 600; background: var(--safety); color: var(--ink); }
+  .badge[data-s="in-progress"] { background: var(--blue); color: #fff; }
+  .badge[data-s="completed"] { background: var(--green); color: #fff; }
+  .badge[data-s="cancelled"] { background: var(--ink-soft); color: #fff; }
+
+  @media (max-width: 640px) { main { padding: 14px; } .toolbar { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<section id="login" class="panel">
+  <h2>Admin sign in</h2>
+  <form id="loginForm">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" autocomplete="current-password" required>
+    <button class="btn safety" type="submit">Sign in</button>
+    <p class="error" id="loginError" role="alert"></p>
+  </form>
+</section>
+
+<div id="app" hidden>
+  <header>
+    <h1>Laidlaw Auto Services · Admin</h1>
+    <div class="sp">
+      <a href="/">View site</a>
+      <button class="btn ghost small" id="refresh" style="color:#fff;border-color:#4A5663">Refresh</button>
+      <button class="btn ghost small" id="logout" style="color:#fff;border-color:#4A5663">Sign out</button>
+    </div>
+  </header>
+  <main>
+    <p class="error" id="appError" role="alert"></p>
+    <div class="stats" id="stats"></div>
+
+    <div class="tabs" role="group" aria-label="Section">
+      <button data-tab="requests" aria-pressed="true">Service requests</button>
+      <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
+    </div>
+
+    <div class="panel" id="requestsPanel">
+      <div class="toolbar">
+        <input id="reqSearch" type="search" placeholder="Search owner, vehicle or description" aria-label="Search requests">
+        <select id="reqStatus" aria-label="Filter by status">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="in-progress">In progress</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Vehicle</th><th>Problem</th><th>Status</th><th>Opened</th><th></th></tr></thead>
+        <tbody id="reqBody"></tbody>
+      </table></div>
+      <p class="empty" id="reqEmpty" hidden>No matching requests.</p>
+    </div>
+
+    <div class="panel" id="vehiclesPanel" hidden>
+      <div class="toolbar">
+        <input id="vehSearch" type="search" placeholder="Search owner, vehicle or VIN" aria-label="Search vehicles">
+        <span></span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Owner</th><th>Vehicle</th><th>Year</th><th>VIN</th><th>Jobs</th><th></th></tr></thead>
+        <tbody id="vehBody"></tbody>
+      </table></div>
+      <p class="empty" id="vehEmpty" hidden>No matching vehicles.</p>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'completed': 'Completed', 'cancelled': 'Cancelled' };
+let token = sessionStorage.getItem('adminToken') || '';
+let data = null;
+
+// Builds an element; text is always set via textContent so user-entered data can't inject HTML
+function el(tag, props = {}, ...kids) {
+  const n = Object.assign(document.createElement(tag), props);
+  for (const k of kids) if (k != null) n.append(k);
+  return n;
+}
+const vehicleName = v => v ? `${v.year} ${v.type}` : 'Deleted vehicle';
+const fmtDate = s => new Date(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...options.headers }
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.status === 401 && path !== '/admin/login') { signOut(); throw new Error('Session expired. Sign in again.'); }
+  if (!res.ok) throw new Error(body.error || 'Request failed.');
+  return body;
+}
+
+function signOut() {
+  token = ''; sessionStorage.removeItem('adminToken');
+  $('app').hidden = true; $('login').hidden = false; $('pw').value = '';
+}
+
+$('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('loginError').textContent = '';
+  try {
+    const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ password: $('pw').value }) });
+    token = r.token; sessionStorage.setItem('adminToken', token);
+    await load();
+  } catch (err) { $('loginError').textContent = err.message; }
+});
+$('logout').addEventListener('click', signOut);
+$('refresh').addEventListener('click', () => load());
+
+async function load() {
+  $('appError').textContent = '';
+  try {
+    data = await api('/admin/overview');
+  } catch (err) {
+    if (token) $('appError').textContent = err.message; else $('loginError').textContent = err.message;
+    return;
+  }
+  $('login').hidden = true; $('app').hidden = false;
+  render();
+}
+
+function render() {
+  const { counts, totals } = data;
+  $('stats').replaceChildren(
+    ...Object.keys(STATUS_LABELS).map(s => el('div', { className: 'stat' }, el('b', { textContent: counts[s] }), el('span', { textContent: STATUS_LABELS[s] }))),
+    el('div', { className: 'stat' }, el('b', { textContent: totals.vehicles }), el('span', { textContent: 'Vehicles' })),
+    el('div', { className: 'stat' }, el('b', { textContent: totals.owners }), el('span', { textContent: 'Owners' }))
+  );
+  document.querySelectorAll('.stat').forEach((n, i) => { n.dataset.s = Object.keys(STATUS_LABELS)[i] || ''; });
+  renderRequests(); renderVehicles();
+}
+
+function renderRequests() {
+  const q = $('reqSearch').value.trim().toLowerCase(), st = $('reqStatus').value;
+  const rows = data.requests.filter(r =>
+    (!st || r.status === st) &&
+    (!q || [r.vehicle && r.vehicle.owner, vehicleName(r.vehicle), r.description, r.category].join(' ').toLowerCase().includes(q)));
+  $('reqEmpty').hidden = rows.length > 0;
+  $('reqBody').replaceChildren(...rows.map(r => {
+    const sel = el('select', { ariaLabel: 'Change status' },
+      ...Object.entries(STATUS_LABELS).map(([v, l]) => el('option', { value: v, textContent: l, selected: v === r.status })));
+    sel.addEventListener('change', async () => {
+      try {
+        await api('/admin/service-request/' + r.id, { method: 'PATCH', body: JSON.stringify({ status: sel.value }) });
+        await load();
+      } catch (err) { $('appError').textContent = err.message; sel.value = r.status; }
+    });
+    const del = el('button', { className: 'btn danger small', textContent: 'Delete' });
+    armDelete(del, async () => { await api('/admin/service-request/' + r.id, { method: 'DELETE' }); await load(); });
+    return el('tr', {},
+      el('td', { textContent: r.id }),
+      el('td', {}, el('strong', { textContent: vehicleName(r.vehicle) }), el('br'), el('small', { textContent: r.vehicle ? r.vehicle.owner : '' })),
+      el('td', { className: 'desc' }, el('span', { className: 'badge', textContent: r.category, style: 'margin-right:6px' }), r.description),
+      el('td', {}, sel),
+      el('td', { textContent: fmtDate(r.createdAt) }),
+      el('td', { className: 'act' }, del));
+  }));
+}
+
+function renderVehicles() {
+  const q = $('vehSearch').value.trim().toLowerCase();
+  const jobs = new Map();
+  data.requests.forEach(r => jobs.set(r.vehicleId, (jobs.get(r.vehicleId) || 0) + 1));
+  const rows = data.vehicles.filter(v => !q || [v.owner, v.type, v.year, v.vin].join(' ').toLowerCase().includes(q));
+  $('vehEmpty').hidden = rows.length > 0;
+  $('vehBody').replaceChildren(...rows.map(v => {
+    const n = jobs.get(v.id) || 0;
+    const del = el('button', { className: 'btn danger small', textContent: 'Delete' });
+    armDelete(del, async () => { await api('/admin/vehicle/' + v.id, { method: 'DELETE' }); await load(); },
+      n ? `Delete + ${n} job${n > 1 ? 's' : ''}?` : 'Confirm?');
+    return el('tr', {},
+      el('td', { textContent: v.id }), el('td', { textContent: v.owner }),
+      el('td', {}, v.type, el('br'), el('small', { textContent: v.category })),
+      el('td', { textContent: v.year }), el('td', { textContent: v.vin || '—' }),
+      el('td', { textContent: n }), el('td', { className: 'act' }, del));
+  }));
+}
+
+// Two-step delete (the viewer may block confirm() dialogs): first click arms, second click deletes
+function armDelete(btn, action, armedLabel = 'Confirm?') {
+  let timer;
+  btn.addEventListener('click', async () => {
+    if (!btn.dataset.armed) {
+      btn.dataset.armed = '1'; btn.textContent = armedLabel;
+      timer = setTimeout(() => { delete btn.dataset.armed; btn.textContent = 'Delete'; }, 4000);
+      return;
+    }
+    clearTimeout(timer);
+    try { await action(); } catch (err) { $('appError').textContent = err.message; delete btn.dataset.armed; btn.textContent = 'Delete'; }
+  });
+}
+
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  $('requestsPanel').hidden = b.dataset.tab !== 'requests';
+  $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';
+}));
+$('reqSearch').addEventListener('input', renderRequests);
+$('reqStatus').addEventListener('change', renderRequests);
+$('vehSearch').addEventListener('input', renderVehicles);
+
+if (token) load();
+</script>
+</body>
+</html>

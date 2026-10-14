@@ -300,6 +300,96 @@ app.post('/ai-assist', handle(async (req, res) => {
   res.json({ question, vehicleCategory: vehicleCategory || null, ...diagnose(question, vehicleCategory) });
 }));
 
+// --- Admin portal ---
+// Set ADMIN_PASSWORD in .env (and optionally ADMIN_SECRET to sign sessions). Without a password the portal is disabled.
+// Login returns a signed token that expires after 8 hours; send it as "Authorization: Bearer <token>".
+const crypto = require('crypto');
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex'); // random = sessions end on restart
+const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
+
+const sign = payload => crypto.createHmac('sha256', ADMIN_SECRET).update(payload).digest('base64url');
+const safeEqual = (a, b) => {
+  const ha = crypto.createHash('sha256').update(String(a)).digest();
+  const hb = crypto.createHash('sha256').update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+};
+function makeToken() {
+  const payload = String(Date.now() + TOKEN_TTL_MS);
+  return `${payload}.${sign(payload)}`;
+}
+function validToken(token) {
+  const [payload, sig] = String(token || '').split('.');
+  if (!payload || !sig || !safeEqual(sig, sign(payload))) return false;
+  return Number(payload) > Date.now();
+}
+function requireAdmin(req, res, next) {
+  if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'Admin portal is disabled. Set ADMIN_PASSWORD in .env.' });
+  const token = (req.get('authorization') || '').replace(/^Bearer /i, '');
+  if (!validToken(token)) return res.status(401).json({ error: 'Please sign in.' });
+  next();
+}
+
+// Slow down password guessing: 5 failed attempts per IP, then locked for 15 minutes
+const failedLogins = new Map();
+const MAX_FAILS = 5, LOCK_MS = 15 * 60 * 1000;
+
+app.post('/admin/login', (req, res) => {
+  if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'Admin portal is disabled. Set ADMIN_PASSWORD in .env.' });
+  const rec = failedLogins.get(req.ip);
+  if (rec && rec.count >= MAX_FAILS && Date.now() - rec.last < LOCK_MS) {
+    return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
+  }
+  if (!safeEqual(req.body.password || '', ADMIN_PASSWORD)) {
+    failedLogins.set(req.ip, { count: (rec && Date.now() - rec.last < LOCK_MS ? rec.count : 0) + 1, last: Date.now() });
+    return res.status(401).json({ error: 'Wrong password.' });
+  }
+  failedLogins.delete(req.ip);
+  res.json({ token: makeToken() });
+});
+
+// Everything the dashboard needs in one call: all requests joined with their vehicles, plus counts
+app.get('/admin/overview', requireAdmin, handle(async (req, res) => {
+  const [v, r] = await Promise.all([
+    supabase.from('vehicles').select('*').order('id'),
+    supabase.from('service_requests').select('*').order('id', { ascending: false })
+  ]);
+  if (v.error) throw v.error;
+  if (r.error) throw r.error;
+  const vehicles = v.data.map(toVehicle);
+  const byId = new Map(vehicles.map(x => [x.id, x]));
+  const requests = r.data.map(toRequest).map(x => ({ ...x, vehicle: byId.get(x.vehicleId) || null }));
+  const counts = Object.fromEntries(STATUSES.map(s => [s, requests.filter(x => x.status === s).length]));
+  const owners = new Set(vehicles.map(x => x.owner.trim().toLowerCase())).size;
+  res.json({ counts, totals: { vehicles: vehicles.length, requests: requests.length, owners }, vehicles, requests });
+}));
+
+app.patch('/admin/service-request/:id', requireAdmin, handle(async (req, res) => {
+  const { status } = req.body;
+  if (!STATUSES.includes(status)) return res.status(400).json({ error: `Status must be one of: ${STATUSES.join(', ')}.` });
+  const { data, error } = await supabase.from('service_requests')
+    .update({ status }).eq('id', Number(req.params.id)).select().maybeSingle();
+  if (error) throw error;
+  if (!data) return res.status(404).json({ error: 'Request not found.' });
+  res.json(toRequest(data));
+}));
+
+app.delete('/admin/service-request/:id', requireAdmin, handle(async (req, res) => {
+  const id = Number(req.params.id);
+  const { data, error } = await supabase.from('service_requests').delete().eq('id', id).select('id');
+  if (error) throw error;
+  if (!data.length) return res.status(404).json({ error: 'Request not found.' });
+  res.json({ deleted: id });
+}));
+
+app.delete('/admin/vehicle/:id', requireAdmin, handle(async (req, res) => {
+  const id = Number(req.params.id);
+  const { data, error } = await supabase.from('vehicles').delete().eq('id', id).select('id');
+  if (error) throw error;
+  if (!data.length) return res.status(404).json({ error: 'Vehicle not found.' });
+  res.json({ deleted: id });
+}));
+
 const PORT = process.env.PORT || 3000;
 const BUSINESS_NAME = process.env.BUSINESS_NAME || 'Laidlaw Auto Services';
 app.listen(PORT, () => {
