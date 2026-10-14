@@ -14,6 +14,11 @@ const client = API_KEY ? new Anthropic({ apiKey: API_KEY }) : null;
 console.log(client
   ? `AI assistant: Claude (${MODEL}, effort ${EFFORT})`
   : 'AI assistant: NO API KEY FOUND (set AI_API_KEY). Using the basic built-in answers.');
+if (!client) {
+  // Names only, never values: helps spot a misspelled variable name
+  const near = Object.keys(process.env).filter(k => /ai|anthropic|claude|key|api/i.test(k) && !/^(SUPABASE_SECRET_KEY)$/.test(k));
+  console.log('Environment variables that look related: ' + (near.length ? near.map(k => JSON.stringify(k) + (process.env[k] ? '' : ' (EMPTY)')).join(', ') : 'none'));
+}
 
 const MAX_MESSAGES = 20;          // conversation turns sent to the model
 const MAX_MESSAGE_CHARS = 4000;   // per message
