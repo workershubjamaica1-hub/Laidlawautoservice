@@ -41,9 +41,6 @@
   .btn.small { padding: 4px 10px; font-size: 14px; }
   .error { color: var(--red); font-size: 14px; margin: 8px 0 0; min-height: 1.4em; }
 
-  #login { max-width: 360px; margin: 80px auto; }
-  #login .btn { margin-top: 14px; width: 100%; }
-
   .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
   .stat { background: var(--card); border: 1px solid var(--line); border-top: 5px solid var(--safety); border-radius: 6px; padding: 12px 16px; }
   .stat[data-s="in-progress"] { border-top-color: var(--blue); }
@@ -75,16 +72,6 @@
 </style>
 </head>
 <body>
-
-<section id="login" class="panel">
-  <h2>Admin sign in</h2>
-  <form id="loginForm">
-    <label for="pw">Password</label>
-    <input id="pw" type="password" autocomplete="current-password" required>
-    <button class="btn safety" type="submit">Sign in</button>
-    <p class="error" id="loginError" role="alert"></p>
-  </form>
-</section>
 
 <div id="app" hidden>
   <header>
@@ -157,25 +144,16 @@ async function api(path, options = {}) {
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...options.headers }
   });
   const body = await res.json().catch(() => ({}));
-  if (res.status === 401 && path !== '/admin/login') { signOut(); throw new Error('Session expired. Sign in again.'); }
+  if (res.status === 401) { signOut(); throw new Error('Session expired. Sign in again.'); }
   if (!res.ok) throw new Error(body.error || 'Request failed.');
   return body;
 }
 
 function signOut() {
-  token = ''; sessionStorage.removeItem('adminToken');
-  $('app').hidden = true; $('login').hidden = false; $('pw').value = '';
+  sessionStorage.removeItem('adminToken');
+  location.replace('/login.html');
 }
 
-$('loginForm').addEventListener('submit', async e => {
-  e.preventDefault();
-  $('loginError').textContent = '';
-  try {
-    const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ password: $('pw').value }) });
-    token = r.token; sessionStorage.setItem('adminToken', token);
-    await load();
-  } catch (err) { $('loginError').textContent = err.message; }
-});
 $('logout').addEventListener('click', signOut);
 $('refresh').addEventListener('click', () => load());
 
@@ -184,10 +162,10 @@ async function load() {
   try {
     data = await api('/admin/overview');
   } catch (err) {
-    if (token) $('appError').textContent = err.message; else $('loginError').textContent = err.message;
+    $('appError').textContent = err.message;
     return;
   }
-  $('login').hidden = true; $('app').hidden = false;
+  $('app').hidden = false;
   render();
 }
 
@@ -271,7 +249,7 @@ $('reqSearch').addEventListener('input', renderRequests);
 $('reqStatus').addEventListener('change', renderRequests);
 $('vehSearch').addEventListener('input', renderVehicles);
 
-if (token) load();
+if (token) load(); else location.replace('/login.html');
 </script>
 </body>
 </html>
