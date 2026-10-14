@@ -13,7 +13,9 @@ const app = express();
 const corsOrigins = (process.env.CORS_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean);
 app.use(cors(corsOrigins.length ? { origin: corsOrigins } : undefined));
 
-app.use(express.json());
+// The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
+const smallJson = express.json();
+app.use((req, res, next) => (req.path === '/auth/chassis-photo' ? next() : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Supabase ---
@@ -340,6 +342,15 @@ app.post('/ai-chat', requireAuth, handle(require('./ai')({ supabase, diagnose, i
 
 const PORT = process.env.PORT || 3000;
 const BUSINESS_NAME = process.env.BUSINESS_NAME || 'Laidlaw Auto Services';
+// Last resort for errors that happen before a route runs (oversized or malformed request bodies)
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'That is too large to upload. Try a smaller photo.' });
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Bad request.' });
+  console.error(err);
+  res.status(500).json({ error: 'Something went wrong on the server. Try again.' });
+});
+
 auth.seed()
   .catch(err => console.error('Could not set up accounts. Have you run schema-users.sql in Supabase?', err.message || err))
   .finally(() => app.listen(PORT, () => {

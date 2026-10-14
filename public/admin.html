@@ -68,8 +68,12 @@
   .badge[data-s="completed"] { background: var(--green); color: #fff; }
   .badge[data-s="cancelled"] { background: var(--ink-soft); color: #fff; }
 
-  .userform { display: grid; grid-template-columns: 1fr 1fr 1.3fr 120px auto; gap: 10px; margin-bottom: 14px; }
+  .userform { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
   .badge.off { background: var(--red); color: #fff; }
+  .parishbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .parishbar label { margin: 0; }
+  .parishbar select { width: auto; min-width: 180px; }
+  .who { display: block; line-height: 1.35; }
   @media (max-width: 900px) { .userform { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 640px) { main { padding: 14px; } .toolbar { grid-template-columns: 1fr; } }
 </style>
@@ -88,6 +92,11 @@
   <main>
     <p class="error" id="appError" role="alert"></p>
     <div class="stats" id="stats"></div>
+
+    <div class="parishbar">
+      <label for="parishFilter">Parish</label>
+      <select id="parishFilter"><option value="">All parishes</option></select>
+    </div>
 
     <div class="tabs" role="group" aria-label="Section">
       <button data-tab="requests" aria-pressed="true">Service requests</button>
@@ -119,10 +128,12 @@
         <input id="uEmail" type="email" placeholder="Email" aria-label="Email" required>
         <input id="uPass" type="text" placeholder="Temporary password (8+ characters)" aria-label="Temporary password" required minlength="8" autocomplete="off">
         <select id="uRole" aria-label="Role"><option value="staff">Staff</option><option value="admin">Admin</option><option value="customer">Customer</option></select>
+        <input id="uPhone" type="tel" placeholder="Phone (optional)" aria-label="Phone" autocomplete="off">
+        <select id="uParish" aria-label="Parish"><option value="">Parish (technicians: set this)</option></select>
         <button class="btn safety" type="submit">Add user</button>
       </form>
       <div class="table-wrap"><table>
-        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Joined</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Parish</th><th>Status</th><th></th></tr></thead>
         <tbody id="userBody"></tbody>
       </table></div>
     </div>
@@ -148,6 +159,7 @@ let token = '';
 try { token = localStorage.getItem('authToken') || ''; } catch (e) {}
 let data = null;
 let users = [];
+let parishes = [];
 let me = null; // the signed-in user; admins see the Users tab and delete buttons, staff do not
 
 // Builds an element; text is always set via textContent so user-entered data can't inject HTML
@@ -191,6 +203,10 @@ async function load() {
       if (me.role === 'customer') return location.replace('/app.html');
       $('who').textContent = me.name + ' (' + me.role + ')';
       $('usersTab').hidden = me.role !== 'admin';
+      parishes = await api('/auth/parishes');
+      for (const p of parishes) { $('parishFilter').append(new Option(p, p)); $('uParish').append(new Option(p, p)); }
+      // A technician starts on their own parish; they can switch to All parishes
+      if (me.role === 'staff' && me.parish) $('parishFilter').value = me.parish;
     }
     data = await api('/admin/overview');
     if (me.role === 'admin') users = await api('/admin/users');
@@ -213,10 +229,32 @@ function render() {
   renderRequests(); renderVehicles();
 }
 
+// Who the customer is and how to reach them: name, phone, address, parish and their chassis photo
+function customerCell(account, fallbackOwner) {
+  if (!account) return [el('small', { textContent: fallbackOwner || '' })];
+  const out = [el('strong', { className: 'who', textContent: account.name })];
+  if (account.phone) out.push(el('a', { className: 'who', href: 'tel:' + account.phone.replace(/[^\d+]/g, ''), textContent: account.phone }));
+  if (account.address) out.push(el('small', { className: 'who', textContent: account.address }));
+  if (account.parish) out.push(el('span', { className: 'badge', textContent: account.parish }));
+  const photo = el('button', { className: 'btn ghost small', textContent: 'Chassis photo', style: 'margin-top:4px' });
+  photo.addEventListener('click', () => openPhoto(account.id));
+  out.push(el('br'), photo);
+  return out;
+}
+async function openPhoto(userId) {
+  const w = window.open('', '_blank'); // opened first so the browser doesn't block it
+  try {
+    const r = await api('/admin/users/' + userId + '/chassis-photo');
+    if (w) w.location = r.url; else $('appError').textContent = 'Allow pop-ups to view the photo.';
+  } catch (err) { if (w) w.close(); $('appError').textContent = err.message; }
+}
+const parishOf = account => (account && account.parish) || '';
+const matchesParish = account => !$('parishFilter').value || parishOf(account) === $('parishFilter').value;
+
 function renderRequests() {
   const q = $('reqSearch').value.trim().toLowerCase(), st = $('reqStatus').value;
   const rows = data.requests.filter(r =>
-    (!st || r.status === st) &&
+    (!st || r.status === st) && matchesParish(r.vehicle && r.vehicle.account) &&
     (!q || [r.vehicle && r.vehicle.owner, vehicleName(r.vehicle), r.description, r.category].join(' ').toLowerCase().includes(q)));
   $('reqEmpty').hidden = rows.length > 0;
   $('reqBody').replaceChildren(...rows.map(r => {
@@ -232,7 +270,7 @@ function renderRequests() {
     armDelete(del, async () => { await api('/admin/service-request/' + r.id, { method: 'DELETE' }); await load(); });
     return el('tr', {},
       el('td', { textContent: r.id }),
-      el('td', {}, el('strong', { textContent: vehicleName(r.vehicle) }), el('br'), el('small', { textContent: r.vehicle ? r.vehicle.owner : '' })),
+      el('td', {}, el('strong', { textContent: vehicleName(r.vehicle) }), el('br'), ...customerCell(r.vehicle && r.vehicle.account, r.vehicle && r.vehicle.owner)),
       el('td', { className: 'desc' }, el('span', { className: 'badge', textContent: r.category, style: 'margin-right:6px' }), r.description),
       el('td', {}, sel),
       el('td', { textContent: fmtDate(r.createdAt) }),
@@ -244,7 +282,7 @@ function renderVehicles() {
   const q = $('vehSearch').value.trim().toLowerCase();
   const jobs = new Map();
   data.requests.forEach(r => jobs.set(r.vehicleId, (jobs.get(r.vehicleId) || 0) + 1));
-  const rows = data.vehicles.filter(v => !q || [v.owner, v.type, v.year, v.vin].join(' ').toLowerCase().includes(q));
+  const rows = data.vehicles.filter(v => matchesParish(v.account) && (!q || [v.owner, v.type, v.year, v.vin, v.account && v.account.name, v.account && v.account.phone].join(' ').toLowerCase().includes(q)));
   $('vehEmpty').hidden = rows.length > 0;
   $('vehBody').replaceChildren(...rows.map(v => {
     const n = jobs.get(v.id) || 0;
@@ -252,7 +290,7 @@ function renderVehicles() {
     armDelete(del, async () => { await api('/admin/vehicle/' + v.id, { method: 'DELETE' }); await load(); },
       n ? `Delete + ${n} job${n > 1 ? 's' : ''}?` : 'Confirm?');
     return el('tr', {},
-      el('td', { textContent: v.id }), el('td', {}, v.owner, v.account ? el('br') : null, v.account ? el('small', { textContent: v.account.email }) : null),
+      el('td', { textContent: v.id }), el('td', {}, ...(v.account ? customerCell(v.account) : [v.owner])),
       el('td', {}, v.type, el('br'), el('small', { textContent: v.category })),
       el('td', { textContent: v.year }), el('td', { textContent: v.vin || '—' }),
       el('td', { textContent: n }), el('td', { className: 'act' }, del));
@@ -277,12 +315,18 @@ function renderUsers() {
     });
     const del = el('button', { className: 'btn danger small', textContent: 'Delete', hidden: isMe });
     armDelete(del, async () => { await api('/admin/users/' + u.id, { method: 'DELETE' }); await load(); });
+    const parish = el('select', { ariaLabel: 'Parish' }, el('option', { value: '', textContent: u.role === 'staff' ? 'Not assigned' : '-' }),
+      ...parishes.map(p => el('option', { value: p, textContent: p, selected: p === u.parish })));
+    parish.addEventListener('change', () => patchUser(u.id, { parish: parish.value }));
+    const photo = el('button', { className: 'btn ghost small', textContent: 'Chassis photo', hidden: !u.hasChassisPhoto });
+    photo.addEventListener('click', () => openPhoto(u.id));
     return el('tr', {},
-      el('td', { textContent: u.name + (isMe ? ' (you)' : '') }), el('td', { textContent: u.email }),
+      el('td', {}, el('strong', { textContent: u.name + (isMe ? ' (you)' : '') }), el('br'), el('small', { textContent: 'Joined ' + fmtDate(u.createdAt) })),
+      el('td', {}, el('span', { className: 'who', textContent: u.email }), u.phone ? el('span', { className: 'who', textContent: u.phone }) : null, u.address ? el('small', { className: 'who', textContent: u.address }) : null),
       el('td', {}, role),
+      el('td', {}, parish),
       el('td', {}, el('span', { className: u.active ? 'badge' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' })),
-      el('td', { textContent: fmtDate(u.createdAt) }),
-      el('td', { className: 'act' }, toggle, ' ', reset, ' ', del));
+      el('td', { className: 'act' }, photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }
 async function patchUser(id, body) {
@@ -293,7 +337,7 @@ $('userForm').addEventListener('submit', async e => {
   e.preventDefault();
   try {
     await api('/admin/users', { method: 'POST', body: JSON.stringify({
-      name: $('uName').value, email: $('uEmail').value, password: $('uPass').value, role: $('uRole').value }) });
+      name: $('uName').value, email: $('uEmail').value, password: $('uPass').value, role: $('uRole').value, phone: $('uPhone').value, parish: $('uParish').value }) });
     e.target.reset(); await load();
   } catch (err) { $('appError').textContent = err.message; }
 });
@@ -318,6 +362,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';
   $('usersPanel').hidden = b.dataset.tab !== 'users';
 }));
+$('parishFilter').addEventListener('change', () => { renderRequests(); renderVehicles(); });
 $('reqSearch').addEventListener('input', renderRequests);
 $('reqStatus').addEventListener('change', renderRequests);
 $('vehSearch').addEventListener('input', renderVehicles);

@@ -175,6 +175,26 @@
 </header>
 
 <main>
+  <!-- Profile: shown until phone, address, parish and chassis photo are all on file -->
+  <form class="panel" id="profile-box" style="grid-column: 1 / -1" hidden novalidate>
+    <h2>Finish your profile</h2>
+    <p class="empty">We need these so the nearest technician can reach you and get the right parts for your vehicle.</p>
+    <div class="row">
+      <div><label for="p-phone">Phone number</label><input id="p-phone" type="tel" autocomplete="tel" placeholder="876-555-0123"></div>
+      <div><label for="p-parish">Parish</label><select id="p-parish"><option value="">Choose your parish</option></select></div>
+    </div>
+    <label for="p-address">Address</label>
+    <input id="p-address" autocomplete="street-address" placeholder="Street, community or town">
+    <label for="p-photo">Photo of your vehicle's chassis (VIN) number</label>
+    <input id="p-photo" type="file" accept="image/*">
+    <p class="empty" id="p-photo-note" style="font-size:14px"></p>
+    <button class="btn safety" id="p-save" type="submit">Save profile</button>
+    <p class="error" id="p-error" role="alert"></p>
+  </form>
+
+  <!-- Technicians in the customer's parish -->
+  <div class="panel" id="area-box" style="grid-column: 1 / -1" hidden></div>
+
   <!-- Garage -->
   <section aria-labelledby="garage-h">
     <h2 id="garage-h">Your garage</h2>
@@ -300,6 +320,7 @@ async function load() {
     if (user.role !== 'customer') return location.replace('/admin.html'); // staff and admins use the portal
     $('who').textContent = user.name;
     $('owner').value = user.name;
+    setupProfile(user);
     const [vehicles, requests, categories, catalog] = await Promise.all([
       api('/vehicles'), api('/service-requests'), api('/categories'), api('/vehicle-catalog')
     ]);
@@ -588,6 +609,72 @@ function addMsg(html, who) {
   $('chat').scrollTop = $('chat').scrollHeight;
   return div;
 }
+
+// --- Profile and area ---
+function prepareImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(blob => {
+        if (!blob) return reject(new Error('Could not read that photo. Try another one.'));
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1]);
+        r.onerror = () => reject(new Error('Could not read that photo. Try another one.'));
+        r.readAsDataURL(blob);
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a photo we can read. Use a JPEG or PNG picture.')); };
+    img.src = url;
+  });
+}
+
+let profileUser = null;
+async function setupProfile(user) {
+  profileUser = user;
+  const box = $('profile-box');
+  box.hidden = user.profileComplete;
+  if (!user.profileComplete) {
+    if ($('p-parish').options.length < 2) {
+      (await api('/auth/parishes')).forEach(p => $('p-parish').append(new Option(p, p)));
+    }
+    $('p-phone').value = user.phone; $('p-address').value = user.address; $('p-parish').value = user.parish;
+    $('p-photo-note').textContent = user.hasChassisPhoto ? 'A photo is already on file. Choose another only to replace it.' : 'Required.';
+  }
+  renderArea(user);
+}
+
+async function renderArea(user) {
+  const box = $('area-box');
+  if (!user.parish) { box.hidden = true; return; }
+  let techs = [];
+  try { techs = await api('/auth/technicians'); } catch (_) {}
+  box.hidden = false;
+  box.innerHTML = '<h3>Your area: ' + esc(user.parish) + '</h3>' + (techs.length
+    ? '<p class="empty">Technicians near you: ' + techs.map(t => '<strong>' + esc(t.name) + '</strong>' + (t.phone ? ' (' + esc(t.phone) + ')' : '')).join(', ') + '.</p>'
+    : '<p class="empty">The shop will assign a technician in your parish when you book a service.</p>');
+}
+
+$('profile-box').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('p-error').textContent = '';
+  $('p-save').disabled = true;
+  try {
+    const file = $('p-photo').files[0];
+    if (!file && !profileUser.hasChassisPhoto) throw new Error("Add a photo of your vehicle's chassis number.");
+    const image = file ? await prepareImage(file) : null;
+    let r = await api('/auth/profile', { method: 'PATCH', body: { phone: $('p-phone').value, address: $('p-address').value, parish: $('p-parish').value } });
+    if (image) r = await api('/auth/chassis-photo', { method: 'POST', body: { image } });
+    $('p-photo').value = '';
+    await setupProfile(r.user);
+  } catch (err) { $('p-error').textContent = err.message; }
+  finally { $('p-save').disabled = false; }
+});
 
 // Chat history sent with every message so the mechanic remembers the conversation
 let chatHistory = [];

@@ -51,8 +51,50 @@ function readToken(token) {
 }
 const tokenFrom = req => (req.get('authorization') || '').replace(/^Bearer /i, '');
 
-const publicUser = u => ({ id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, createdAt: u.created_at });
+const PARISHES = ['Kingston', 'St. Andrew', 'St. Thomas', 'Portland', 'St. Mary', 'St. Ann', 'Trelawny',
+  'St. James', 'Hanover', 'Westmoreland', 'St. Elizabeth', 'Manchester', 'Clarendon', 'St. Catherine'];
+const PHOTO_BUCKET = 'chassis-photos';
+const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+
+const profileComplete = u => !!(u.phone && u.address && u.parish && u.chassis_photo_path);
+const publicUser = u => ({
+  id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, createdAt: u.created_at,
+  phone: u.phone || '', address: u.address || '', parish: u.parish || '',
+  hasChassisPhoto: !!u.chassis_photo_path,
+  // Customers must have all four before the shop can send someone out
+  profileComplete: u.role !== 'customer' || profileComplete(u)
+});
 const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 254;
+
+// Checks phone, address and parish. With required:true all three must be given.
+// Returns { error } or { value } holding only the fields that were provided.
+function checkContact(body, required) {
+  const value = {};
+  if (required || body.phone !== undefined) {
+    const phone = String(body.phone || '').trim();
+    const digits = phone.replace(/\D/g, '').length;
+    if (!/^\+?[\d\s\-().]{7,25}$/.test(phone) || digits < 7 || digits > 15) return { error: 'Enter a valid phone number, e.g. 876-555-0123.' };
+    value.phone = phone;
+  }
+  if (required || body.address !== undefined) {
+    const address = String(body.address || '').trim();
+    if (address.length < 5 || address.length > 200) return { error: 'Enter your address (street, community or town).' };
+    value.address = address;
+  }
+  if (required || body.parish !== undefined) {
+    if (!PARISHES.includes(body.parish)) return { error: 'Choose your parish.' };
+    value.parish = body.parish;
+  }
+  return { value };
+}
+
+// Reads the first bytes so only real JPEG, PNG or WebP images are accepted (not just a file name)
+function sniffImage(buf) {
+  if (buf.length > 12 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf.length > 12 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buf.length > 12 && buf.subarray(0, 4).toString() === 'RIFF' && buf.subarray(8, 12).toString() === 'WEBP') return 'image/webp';
+  return null;
+}
 
 // Limits repeated attempts per IP (and kind): `max` failures, then locked for `lockMs`
 function makeLimiter(max, lockMs) {
@@ -82,9 +124,10 @@ module.exports = function createAuth({ supabase, handle }) {
     if (error) throw error;
     return data;
   };
-  async function createUser({ name, email, password, role }) {
+  async function createUser({ name, email, password, role, phone, address, parish }) {
     const { data, error } = await supabase.from('users')
-      .insert({ name, email, password_hash: hashPassword(password), role }).select().single();
+      .insert({ name, email, password_hash: hashPassword(password), role, phone: phone || null, address: address || null, parish: parish || null })
+      .select().single();
     if (error) throw error;
     return data;
   }
@@ -118,15 +161,30 @@ module.exports = function createAuth({ supabase, handle }) {
     if (adminPassword) accounts.push({ name: 'Administrator', email: adminEmail, password: adminPassword, role: 'admin' });
     else console.warn('ADMIN_PASSWORD is not set: no admin account will be created.');
     if (!IS_PRODUCTION) {
-      accounts.push({ name: 'Demo Staff', email: 'staff@laidlaw.local', password: 'staff123', role: 'staff' });
-      accounts.push({ name: 'Demo Customer', email: 'customer@laidlaw.local', password: 'customer123', role: 'customer' });
+      accounts.push({ name: 'Demo Staff', email: 'staff@laidlaw.local', password: 'staff123', role: 'staff', parish: 'Kingston', phone: '876-555-0100' });
+      accounts.push({ name: 'Demo Customer', email: 'customer@laidlaw.local', password: 'customer123', role: 'customer',
+        phone: '876-555-0123', address: '1 Hope Road, Kingston', parish: 'Kingston' });
     }
+    // Private storage for chassis photos (nobody can open it without a signed link)
+    const { error: bucketError } = await supabase.storage.createBucket(PHOTO_BUCKET, { public: false });
+    if (bucketError && !/already exists|duplicate/i.test(bucketError.message || '')) console.error('Could not create the chassis-photos bucket:', bucketError.message);
     for (const a of accounts) {
       if (!(await findByEmail(a.email))) {
         await createUser(a);
         console.log(`Created ${a.role} account ${a.email}${IS_PRODUCTION ? '' : ` (dummy password "${a.password}")`}`);
       }
     }
+  }
+
+  // Signed links expire after 5 minutes; the bucket itself stays private
+  async function signedPhotoUrl(path) {
+    if (!path) return null;
+    const { data, error } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(path, 300);
+    if (error) throw error;
+    return data.signedUrl;
+  }
+  async function removePhoto(path) {
+    if (path) await supabase.storage.from(PHOTO_BUCKET).remove([path]);
   }
 
   // --- /auth routes ---
@@ -140,11 +198,13 @@ module.exports = function createAuth({ supabase, handle }) {
     if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Enter your name.' });
     if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
     if (password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    const contact = checkContact(req.body, true);
+    if (contact.error) return res.status(400).json({ error: contact.error });
     if (await findByEmail(email)) {
       signupLimit.fail(req.ip);
       return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
     }
-    const user = await createUser({ name, email, password, role: 'customer' }); // sign-up is always a customer
+    const user = await createUser({ name, email, password, role: 'customer', ...contact.value }); // sign-up is always a customer
     signupLimit.fail(req.ip); // counts every sign-up toward the hourly limit
     res.status(201).json({ token: makeToken(user.id), user: publicUser(user) });
   }));
@@ -175,6 +235,56 @@ module.exports = function createAuth({ supabase, handle }) {
   });
 
   router.get('/me', requireAuth, (req, res) => res.json({ user: publicUser(req.user) }));
+  router.get('/parishes', (req, res) => res.json(PARISHES));
 
-  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, ROLES };
+  // The technicians (staff) working in the signed-in customer's parish
+  router.get('/technicians', requireAuth, handle(async (req, res) => {
+    if (!req.user.parish) return res.json([]);
+    const { data, error } = await supabase.from('users').select('name, phone')
+      .eq('role', 'staff').eq('active', true).eq('parish', req.user.parish).order('name');
+    if (error) throw error;
+    res.json(data.map(t => ({ name: t.name, phone: t.phone || '' })));
+  }));
+
+  // Customers (and staff) update their own contact details
+  router.patch('/profile', requireAuth, handle(async (req, res) => {
+    const update = {};
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name).trim();
+      if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Enter your name.' });
+      update.name = name;
+    }
+    const contact = checkContact(req.body, false);
+    if (contact.error) return res.status(400).json({ error: contact.error });
+    Object.assign(update, contact.value);
+    if (!Object.keys(update).length) return res.status(400).json({ error: 'Nothing to change.' });
+    const { data, error } = await supabase.from('users').update(update).eq('id', req.user.id).select().single();
+    if (error) throw error;
+    res.json({ user: publicUser(data) });
+  }));
+
+  // Photo of the chassis (VIN) number. The browser shrinks it first; sent as base64 JSON.
+  router.post('/chassis-photo', requireAuth, express.json({ limit: '6mb' }), handle(async (req, res) => {
+    const b64 = String((req.body && req.body.image) || '').replace(/^data:[^,]*,/, '');
+    const buf = Buffer.from(b64, 'base64');
+    if (!buf.length) return res.status(400).json({ error: 'Choose a photo first.' });
+    if (buf.length > MAX_PHOTO_BYTES) return res.status(413).json({ error: 'That photo is too large. Try a smaller one (under 4 MB).' });
+    const type = sniffImage(buf);
+    if (!type) return res.status(400).json({ error: 'The file must be a JPEG, PNG or WebP photo.' });
+    const path = `user-${req.user.id}/chassis`;
+    const up = await supabase.storage.from(PHOTO_BUCKET).upload(path, buf, { contentType: type, upsert: true });
+    if (up.error) throw up.error;
+    const { data, error } = await supabase.from('users').update({ chassis_photo_path: path }).eq('id', req.user.id).select().single();
+    if (error) throw error;
+    res.json({ user: publicUser(data) });
+  }));
+
+  // A short-lived link to view your own chassis photo
+  router.get('/chassis-photo', requireAuth, handle(async (req, res) => {
+    const url = await signedPhotoUrl(req.user.chassis_photo_path);
+    if (!url) return res.status(404).json({ error: 'No photo uploaded yet.' });
+    res.json({ url });
+  }));
+
+  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, signedPhotoUrl, removePhoto, ROLES, PARISHES };
 };

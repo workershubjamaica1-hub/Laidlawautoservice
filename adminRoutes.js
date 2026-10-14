@@ -13,13 +13,13 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     const [v, r, u] = await Promise.all([
       supabase.from('vehicles').select('*').order('id'),
       supabase.from('service_requests').select('*').order('id', { ascending: false }),
-      supabase.from('users').select('id, name, email')
+      supabase.from('users').select('id, name, email, phone, address, parish')
     ]);
     for (const x of [v, r, u]) if (x.error) throw x.error;
     const accounts = new Map(u.data.map(x => [x.id, x]));
     const vehicles = v.data.map(row => {
       const acct = accounts.get(row.user_id);
-      return { ...toVehicle(row), account: acct ? { name: acct.name, email: acct.email } : null };
+      return { ...toVehicle(row), account: acct ? { id: acct.id, name: acct.name, email: acct.email, phone: acct.phone || '', address: acct.address || '', parish: acct.parish || '' } : null };
     });
     const byId = new Map(vehicles.map(x => [x.id, x]));
     const requests = r.data.map(toRequest).map(x => ({ ...x, vehicle: byId.get(x.vehicleId) || null }));
@@ -57,6 +57,14 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     res.json({ deleted: id });
   }));
 
+  router.get('/users/:id/chassis-photo', staffUp, handle(async (req, res) => {
+    const { data, error } = await supabase.from('users').select('chassis_photo_path').eq('id', Number(req.params.id)).maybeSingle();
+    if (error) throw error;
+    const url = data && await auth.signedPhotoUrl(data.chassis_photo_path);
+    if (!url) return res.status(404).json({ error: 'This customer has not uploaded a chassis photo.' });
+    res.json({ url });
+  }));
+
   // --- Users (admin only) ---
   router.get('/users', adminOnly, handle(async (req, res) => {
     const { data, error } = await supabase.from('users').select('*').order('id');
@@ -73,8 +81,10 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     if (!auth.validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
     if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
     if (!auth.ROLES.includes(role)) return res.status(400).json({ error: `Role must be one of: ${auth.ROLES.join(', ')}.` });
+    const contact = auth.checkContact({ phone: req.body.phone || undefined, address: req.body.address || undefined, parish: req.body.parish || undefined }, false);
+    if (contact.error) return res.status(400).json({ error: contact.error });
     if (await auth.findByEmail(email)) return res.status(409).json({ error: 'An account with this email already exists.' });
-    res.status(201).json(auth.publicUser(await auth.createUser({ name, email, password, role })));
+    res.status(201).json(auth.publicUser(await auth.createUser({ name, email, password, role, ...contact.value })));
   }));
 
   // Change role, active (disable/enable) or reset the password. Admins cannot demote or disable themselves.
@@ -90,6 +100,9 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
       if (String(req.body.password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
       update.password_hash = auth.hashPassword(String(req.body.password));
     }
+    const contact = auth.checkContact(req.body, false);
+    if (contact.error) return res.status(400).json({ error: contact.error });
+    Object.assign(update, contact.value);
     if (!Object.keys(update).length) return res.status(400).json({ error: 'Nothing to change.' });
     if (id === req.user.id && ((update.role && update.role !== 'admin') || update.active === false)) {
       return res.status(400).json({ error: 'You cannot demote or disable your own account.' });
@@ -104,9 +117,10 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     const id = Number(req.params.id);
     if (id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account.' });
     // Their vehicles stay (user_id becomes null) so no service history is lost
-    const { data, error } = await supabase.from('users').delete().eq('id', id).select('id');
+    const { data, error } = await supabase.from('users').delete().eq('id', id).select('id, chassis_photo_path');
     if (error) throw error;
     if (!data.length) return res.status(404).json({ error: 'User not found.' });
+    await auth.removePhoto(data[0].chassis_photo_path).catch(err => console.error('Could not remove photo:', err.message));
     res.json({ deleted: id });
   }));
 

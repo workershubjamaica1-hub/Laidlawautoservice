@@ -23,7 +23,7 @@
   header h1 { font: 700 28px/1 var(--display); margin: 0; }
 
   main { flex: 1; display: grid; place-items: center; padding: 24px 16px; }
-  .card { width: 100%; max-width: 400px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 24px; }
+  .card { width: 100%; max-width: 440px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 24px; }
   h2 { font: 700 28px/1.1 var(--display); margin: 0 0 4px; }
   .sub { color: var(--ink-soft); margin: 0 0 8px; font-size: 15px; }
 
@@ -36,6 +36,11 @@
   .pw { position: relative; }
   .pw input { padding-right: 64px; }
   .show { position: absolute; right: 4px; top: 4px; bottom: 4px; padding: 0 10px; background: none; border: 0; color: var(--ink-soft); font-size: 14px; font-weight: 600; cursor: pointer; }
+  select, textarea { width: 100%; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; font: inherit; color: inherit; }
+  textarea { resize: vertical; min-height: 64px; }
+  .photo { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .photo input[type=file] { flex: 1; min-width: 180px; padding: 8px; }
+  .photo img { width: 72px; height: 72px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
   .hint { font-size: 13px; color: var(--ink-soft); margin: 4px 0 0; }
   .btn { width: 100%; margin-top: 18px; padding: 11px 16px; background: var(--safety); color: var(--ink); border: 0; border-radius: 4px; font-weight: 600; cursor: pointer; }
   .btn:hover { background: #FFC81F; }
@@ -62,6 +67,21 @@
       </div>
       <label for="email">Email</label>
       <input id="email" type="email" autocomplete="email" inputmode="email" required autofocus>
+      <div id="regFields" hidden>
+        <label for="phone">Phone number</label>
+        <input id="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="876-555-0123">
+        <label for="address">Address</label>
+        <textarea id="address" autocomplete="street-address" placeholder="Street, community or town"></textarea>
+        <label for="parish">Parish</label>
+        <select id="parish"><option value="">Choose your parish</option></select>
+        <p class="hint">We use your parish to send the technician closest to you.</p>
+        <label for="photo">Photo of your vehicle's chassis (VIN) number</label>
+        <div class="photo">
+          <input id="photo" type="file" accept="image/*">
+          <img id="preview" alt="" hidden>
+        </div>
+        <p class="hint">Usually on a plate at the base of the windscreen or inside the driver's door. It helps us get the right parts first time.</p>
+      </div>
       <label for="pw">Password</label>
       <div class="pw">
         <input id="pw" type="password" autocomplete="current-password" required>
@@ -92,16 +112,51 @@ const home = role => role === 'customer' ? '/app.html' : '/admin.html';
   try { localStorage.removeItem('authToken'); } catch (e) {}
 })();
 
+// Parishes for the dropdown
+fetch('/auth/parishes').then(r => r.json()).then(list => {
+  for (const p of list) $('parish').append(new Option(p, p));
+}).catch(() => {});
+
+// Shrinks a phone photo (often 5 MB+) to a ~1600px JPEG and returns it as base64 text
+function prepareImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(blob => {
+        if (!blob) return reject(new Error('Could not read that photo. Try another one.'));
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1]);
+        r.onerror = () => reject(new Error('Could not read that photo. Try another one.'));
+        r.readAsDataURL(blob);
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a photo we can read. Use a JPEG or PNG picture.')); };
+    img.src = url;
+  });
+}
+$('photo').addEventListener('change', () => {
+  const f = $('photo').files[0];
+  $('preview').hidden = !f;
+  if (f) $('preview').src = URL.createObjectURL(f);
+});
+
 function setMode(m) {
   mode = m;
   const reg = m === 'register';
+  $('regFields').hidden = !reg;
   $('tab-login').setAttribute('aria-selected', !reg);
   $('tab-register').setAttribute('aria-selected', reg);
   $('nameRow').hidden = !reg;
   $('pwHint').hidden = !reg;
   $('pw').autocomplete = reg ? 'new-password' : 'current-password';
   $('title').textContent = reg ? 'Create your account' : 'Welcome back';
-  $('sub').textContent = reg ? 'Customers: sign up to add your vehicles and book services.' : 'Sign in to manage your vehicles and service requests.';
+  $('sub').textContent = reg ? 'Customers: sign up so the nearest technician can reach you.' : 'Sign in to manage your vehicles and service requests.';
   $('submit').textContent = reg ? 'Create account' : 'Sign in';
   $('error').textContent = '';
 }
@@ -118,9 +173,14 @@ $('form').addEventListener('submit', async e => {
   e.preventDefault();
   $('error').textContent = '';
   const body = { email: $('email').value, password: $('pw').value };
-  if (mode === 'register') body.name = $('name').value;
+  let image = null;
   $('submit').disabled = true;
   try {
+    if (mode === 'register') {
+      Object.assign(body, { name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value });
+      if (!$('photo').files[0]) throw new Error("Add a photo of your vehicle's chassis number.");
+      image = await prepareImage($('photo').files[0]); // check the photo first so we don't create an account that can't finish
+    }
     const res = await fetch(mode === 'register' ? '/auth/register' : '/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -129,6 +189,16 @@ $('form').addEventListener('submit', async e => {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Could not sign in.');
     localStorage.setItem('authToken', data.token);
+    if (image) {
+      // Account is made: now send the photo. If it fails the app asks for it again, so carry on.
+      try {
+        await fetch('/auth/chassis-photo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.token },
+          body: JSON.stringify({ image })
+        });
+      } catch (e) {}
+    }
     location.replace(home(data.user.role));
   } catch (err) {
     $('error').textContent = err.message;

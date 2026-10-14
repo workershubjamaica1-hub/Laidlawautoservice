@@ -9,10 +9,11 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const MODEL = process.env.AI_MODEL || 'claude-opus-5-5';
 const EFFORT = process.env.AI_EFFORT || 'medium'; // low | medium | high | xhigh | max
-const API_KEY = process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
+// Copy-paste into a dashboard often adds spaces, line breaks or quotes: strip them
+const API_KEY = (process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY || '').replace(/\s+/g, '').replace(/^["']+|["']+$/g, '');
 const client = API_KEY ? new Anthropic({ apiKey: API_KEY }) : null;
 console.log(client
-  ? `AI assistant: Claude (${MODEL}, effort ${EFFORT})`
+  ? `AI assistant: Claude (${MODEL}, effort ${EFFORT}). Key starts "${API_KEY.slice(0, 10)}...", ${API_KEY.length} characters.`
   : 'AI assistant: NO API KEY FOUND (set AI_API_KEY). Using the basic built-in answers.');
 if (!client) {
   // Names only, never values: helps spot a misspelled variable name
