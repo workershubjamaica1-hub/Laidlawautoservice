@@ -11,6 +11,9 @@ const MODEL = process.env.AI_MODEL || 'claude-opus-5-5';
 const EFFORT = process.env.AI_EFFORT || 'medium'; // low | medium | high | xhigh | max
 const API_KEY = process.env.AI_API_KEY || process.env.ANTHROPIC_API_KEY || '';
 const client = API_KEY ? new Anthropic({ apiKey: API_KEY }) : null;
+console.log(client
+  ? `AI assistant: Claude (${MODEL}, effort ${EFFORT})`
+  : 'AI assistant: NO API KEY FOUND (set AI_API_KEY). Using the basic built-in answers.');
 
 const MAX_MESSAGES = 20;          // conversation turns sent to the model
 const MAX_MESSAGE_CHARS = 4000;   // per message
