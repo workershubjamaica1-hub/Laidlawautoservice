@@ -4,9 +4,13 @@ const crypto = require('crypto');
 // Dummy password for local development. Set ADMIN_PASSWORD in .env to change it,
 // and ALWAYS change it before putting the site online.
 const DEV_PASSWORD = 'admin123';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || DEV_PASSWORD;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+// In production there is no fallback: with no ADMIN_PASSWORD, login is disabled.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (IS_PRODUCTION ? '' : DEV_PASSWORD);
 if (!process.env.ADMIN_PASSWORD) {
-  console.warn(`ADMIN_PASSWORD not set in .env: using the dummy password "${DEV_PASSWORD}". Change it before going live.`);
+  console.warn(IS_PRODUCTION
+    ? 'ADMIN_PASSWORD is not set: admin login is disabled.'
+    : `ADMIN_PASSWORD not set in .env: using the dummy password "${DEV_PASSWORD}". Change it before going live.`);
 }
 
 // Random secret = everyone is signed out when the server restarts. Set ADMIN_SECRET to keep sessions.
@@ -48,6 +52,7 @@ const failedLogins = new Map();
 const MAX_FAILS = 5, LOCK_MS = 15 * 60 * 1000;
 
 function login(req, res) {
+  if (!ADMIN_PASSWORD) return res.status(503).json({ error: 'Admin login is disabled. Set ADMIN_PASSWORD on the server.' });
   const rec = failedLogins.get(req.ip);
   const locked = rec && Date.now() - rec.last < LOCK_MS;
   if (locked && rec.count >= MAX_FAILS) {
