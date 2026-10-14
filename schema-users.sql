@@ -55,3 +55,6 @@ create table if not exists emergency_requests (
 create index if not exists emergency_status_idx on emergency_requests(status, parish);
 create index if not exists emergency_user_idx on emergency_requests(user_id);
 alter table emergency_requests enable row level security;
+
+-- Make Supabase's API notice the new columns and table straight away
+notify pgrst, 'reload schema';
