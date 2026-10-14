@@ -21,6 +21,7 @@
     --body: 'Barlow', 'Segoe UI', Arial, sans-serif;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--surface); color: var(--ink); font: 16px/1.5 var(--body); }
   button, input, select, textarea { font: inherit; color: inherit; }
   :focus-visible { outline: 3px solid var(--safety); outline-offset: 2px; }
@@ -267,10 +268,11 @@
   <section aria-labelledby="garage-h">
     <h2 id="garage-h">Your garage</h2>
     <div class="panel">
-      <div id="vehicle-list"><p class="empty">No vehicles yet. Add one below to start booking services.</p></div>
+      <div id="vehicle-list"><p class="empty">No vehicles yet. Add yours below to start booking services.</p></div>
     </div>
+    <button class="btn ghost" id="add-vehicle-toggle" type="button" hidden style="width:100%;margin-top:12px">+ Add an additional vehicle</button>
     <form class="panel" id="vehicle-form" novalidate>
-      <h3>Add a vehicle</h3>
+      <h3 id="vehicle-form-title">Add your vehicle</h3>
       <label for="owner">Owner name</label>
       <input id="owner" name="owner" autocomplete="name" required>
       <label for="type">Vehicle</label>
@@ -285,6 +287,7 @@
       <label for="vin">VIN (optional)</label>
       <input id="vin" name="vin" maxlength="17" placeholder="17 characters" style="text-transform:uppercase">
       <button class="btn" type="submit">Add vehicle</button>
+      <button class="btn ghost" id="add-vehicle-cancel" type="button" hidden>Cancel</button>
       <p class="error" id="vehicle-error" role="alert"></p>
     </form>
   </section>
@@ -402,18 +405,40 @@ async function load() {
 
 function render() { renderVehicles(); renderSelects(); renderRequests(); }
 
+// The add-vehicle form is only open when the customer has no vehicle yet, or asked to add another
+let addVehicleOpen = false;
+function syncGarageForm() {
+  const hasVehicles = state.vehicles.length > 0;
+  const showForm = !hasVehicles || addVehicleOpen;
+  $('vehicle-form').hidden = !showForm;
+  $('add-vehicle-toggle').hidden = !hasVehicles || showForm;
+  $('add-vehicle-cancel').hidden = !hasVehicles;
+  $('vehicle-form-title').textContent = hasVehicles ? 'Add an additional vehicle' : 'Add your vehicle';
+}
+$('add-vehicle-toggle').addEventListener('click', () => {
+  addVehicleOpen = true; syncGarageForm();
+  $('vehicle-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  $('type').focus({ preventScroll: true });
+});
+$('add-vehicle-cancel').addEventListener('click', () => {
+  addVehicleOpen = false; $('vehicle-form').reset(); $('owner').value = $('who').textContent; clearPick(); $('vehicle-error').textContent = ''; syncGarageForm();
+});
+
 function renderVehicles() {
   const list = $('vehicle-list');
+  syncGarageForm();
   if (!state.vehicles.length) {
-    list.innerHTML = '<p class="empty">No vehicles yet. Add one below to start booking services.</p>';
+    list.innerHTML = '<p class="empty">No vehicles yet. Add yours below to start booking services.</p>';
     return;
   }
   list.innerHTML = state.vehicles.map(v => `
     <div class="vehicle">
       <span class="plate" aria-hidden="true">'${String(v.year).slice(-2)}</span>
       <div class="info">
-        <strong>${esc(v.type)}</strong>
-        <small>${esc(labelOf(state.categories.vehicle, v.category))}, ${esc(v.owner)}${v.vin ? ', VIN ' + esc(v.vin) : ''}</small>
+        <strong>${esc(v.year)} ${esc(v.type)}</strong>
+        <small>${esc(labelOf(state.categories.vehicle, v.category))}</small>
+        <small>${v.vin ? 'VIN ' + esc(v.vin) : 'VIN not added'}</small>
+        <small>Owner: ${esc(v.owner)}</small>
       </div>
       <button class="remove" data-remove="${v.id}" aria-label="Remove ${esc(v.type)}" title="Remove vehicle">×</button>
     </div>`).join('');
@@ -495,6 +520,7 @@ $('vehicle-form').addEventListener('submit', async (e) => {
       owner: f.owner.value, type: picked ? picked.name : f.type.value, year: f.year.value, vin: f.vin.value.trim()
     }});
     state.vehicles.push(v);
+    addVehicleOpen = false;
     f.reset();
     f.owner.value = $('who').textContent;
     clearPick();
