@@ -27,3 +27,31 @@ alter table users add column if not exists address text;
 alter table users add column if not exists parish text;
 alter table users add column if not exists chassis_photo_path text;
 create index if not exists users_parish_idx on users(parish);
+
+-- Service members (technicians) apply on their own and must be approved by an admin before they can sign in.
+-- Existing accounts stay approved.
+alter table users add column if not exists approved boolean not null default true;
+alter table users add column if not exists specialties text;      -- comma-separated, e.g. "mechanical,towing"
+alter table users add column if not exists business_name text;
+alter table users add column if not exists experience text;
+
+-- Emergency requests: roadside assistance and wrecker (towing)
+create table if not exists emergency_requests (
+  id            bigint generated always as identity primary key,
+  user_id       bigint references users(id) on delete set null,
+  kind          text not null check (kind in ('roadside', 'towing')),
+  vehicle_id    bigint references vehicles(id) on delete set null,
+  note          text,
+  latitude      double precision,
+  longitude     double precision,
+  location_text text,
+  parish        text not null,
+  phone         text not null,
+  status        text not null default 'open' check (status in ('open', 'dispatched', 'resolved', 'cancelled')),
+  technician_id bigint references users(id) on delete set null,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+create index if not exists emergency_status_idx on emergency_requests(status, parish);
+create index if not exists emergency_user_idx on emergency_requests(user_id);
+alter table emergency_requests enable row level security;

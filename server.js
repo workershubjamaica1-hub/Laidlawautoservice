@@ -334,6 +334,12 @@ app.post('/ai-assist', requireAuth, handle(async (req, res) => {
   res.json({ question, vehicleCategory: vehicleCategory || null, ...diagnose(question, vehicleCategory) });
 }));
 
+// --- Emergency requests: roadside assistance and wrecker (emergencyRoutes.js) ---
+app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
+
+// Public settings the pages need (the shop's phone number for the call buttons)
+app.get('/config', (req, res) => res.json({ businessName: process.env.BUSINESS_NAME || 'Laidlaw Auto Services', shopPhone: process.env.SHOP_PHONE || '' }));
+
 // --- Staff/admin portal API (adminRoutes.js) ---
 app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, toVehicle, toRequest, STATUSES }));
 

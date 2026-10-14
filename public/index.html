@@ -27,7 +27,7 @@
   h2 { font: 700 28px/1.1 var(--display); margin: 0 0 4px; }
   .sub { color: var(--ink-soft); margin: 0 0 8px; font-size: 15px; }
 
-  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
   .tabs button { padding: 9px; background: #fff; border: 0; font-weight: 600; cursor: pointer; color: var(--ink-soft); }
   .tabs button[aria-selected="true"] { background: var(--ink); color: #fff; }
 
@@ -41,6 +41,12 @@
   .photo { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .photo input[type=file] { flex: 1; min-width: 180px; padding: 8px; }
   .photo img { width: 72px; height: 72px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+  .checks label { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; color: var(--ink); }
+  .checks input { width: auto; }
+  .done { background: #EAF4EE; border: 1px solid #2F7A4D; border-radius: 6px; padding: 14px 16px; }
+  .done h3 { font: 700 22px/1.1 var(--display); margin: 0 0 6px; }
+  @media (max-width: 420px) { .checks { grid-template-columns: 1fr; } }
   .hint { font-size: 13px; color: var(--ink-soft); margin: 4px 0 0; }
   .btn { width: 100%; margin-top: 18px; padding: 11px 16px; background: var(--safety); color: var(--ink); border: 0; border-radius: 4px; font-weight: 600; cursor: pointer; }
   .btn:hover { background: #FFC81F; }
@@ -57,7 +63,8 @@
 
     <div class="tabs" role="tablist">
       <button role="tab" id="tab-login" aria-selected="true" aria-controls="form">Sign in</button>
-      <button role="tab" id="tab-register" aria-selected="false" aria-controls="form">Create account</button>
+      <button role="tab" id="tab-register" aria-selected="false" aria-controls="form">Customer</button>
+      <button role="tab" id="tab-tech" aria-selected="false" aria-controls="form">Service member</button>
     </div>
 
     <form id="form" novalidate>
@@ -75,12 +82,23 @@
         <label for="parish">Parish</label>
         <select id="parish"><option value="">Choose your parish</option></select>
         <p class="hint">We use your parish to send the technician closest to you.</p>
-        <label for="photo">Photo of your vehicle's chassis (VIN) number</label>
-        <div class="photo">
-          <input id="photo" type="file" accept="image/*">
-          <img id="preview" alt="" hidden>
+        <div id="photoRow">
+          <label for="photo">Photo of your vehicle's chassis (VIN) number</label>
+          <div class="photo">
+            <input id="photo" type="file" accept="image/*">
+            <img id="preview" alt="" hidden>
+          </div>
+          <p class="hint">Usually on a plate at the base of the windscreen or inside the driver's door. It helps us get the right parts first time.</p>
         </div>
-        <p class="hint">Usually on a plate at the base of the windscreen or inside the driver's door. It helps us get the right parts first time.</p>
+      </div>
+      <div id="techFields" hidden>
+        <label>The work you do</label>
+        <div class="checks" id="specialties"></div>
+        <label for="business">Business name (optional)</label>
+        <input id="business" autocomplete="organization">
+        <label for="experience">Your experience and qualifications</label>
+        <textarea id="experience" placeholder="Years of experience, certifications, the kinds of vehicles you work on"></textarea>
+        <p class="hint">An admin reviews every application. You can sign in once you are approved.</p>
       </div>
       <label for="pw">Password</label>
       <div class="pw">
@@ -91,6 +109,10 @@
       <button class="btn" id="submit" type="submit">Sign in</button>
       <p class="error" id="error" role="alert"></p>
     </form>
+    <div class="done" id="applied" hidden>
+      <h3>Application received</h3>
+      <p style="margin:0">Thank you. An admin will review your details and approve your account. Once approved, come back here and sign in with the email and password you just chose.</p>
+    </div>
   </div>
 </main>
 <script>
@@ -111,6 +133,11 @@ const home = role => role === 'customer' ? '/app.html' : '/admin.html';
   } catch (e) {}
   try { localStorage.removeItem('authToken'); } catch (e) {}
 })();
+
+// Kinds of work a service member can offer
+fetch('/auth/specialties').then(r => r.json()).then(list => {
+  $('specialties').innerHTML = list.map(x => '<label><input type="checkbox" value="' + x.value + '"> ' + x.label + '</label>').join('');
+}).catch(() => {});
 
 // Parishes for the dropdown
 fetch('/auth/parishes').then(r => r.json()).then(list => {
@@ -146,22 +173,30 @@ $('photo').addEventListener('change', () => {
   if (f) $('preview').src = URL.createObjectURL(f);
 });
 
+const COPY = {
+  login:    { title: 'Welcome back', sub: 'Customers and service members sign in here.', button: 'Sign in' },
+  register: { title: 'Create your account', sub: 'Customers: sign up so the nearest technician can reach you.', button: 'Create account' },
+  tech:     { title: 'Join as a service member', sub: 'Mechanics, tire, electrical, roadside and towing professionals: apply to take jobs in your parish.', button: 'Submit application' }
+};
 function setMode(m) {
   mode = m;
-  const reg = m === 'register';
-  $('regFields').hidden = !reg;
-  $('tab-login').setAttribute('aria-selected', !reg);
-  $('tab-register').setAttribute('aria-selected', reg);
-  $('nameRow').hidden = !reg;
-  $('pwHint').hidden = !reg;
-  $('pw').autocomplete = reg ? 'new-password' : 'current-password';
-  $('title').textContent = reg ? 'Create your account' : 'Welcome back';
-  $('sub').textContent = reg ? 'Customers: sign up so the nearest technician can reach you.' : 'Sign in to manage your vehicles and service requests.';
-  $('submit').textContent = reg ? 'Create account' : 'Sign in';
+  const creating = m !== 'login';
+  $('regFields').hidden = !creating;
+  $('photoRow').hidden = m === 'tech';
+  $('techFields').hidden = m !== 'tech';
+  $('nameRow').hidden = !creating;
+  $('pwHint').hidden = !creating;
+  $('pw').autocomplete = creating ? 'new-password' : 'current-password';
+  ['login', 'register', 'tech'].forEach(k => $('tab-' + k).setAttribute('aria-selected', k === m));
+  $('title').textContent = COPY[m].title;
+  $('sub').textContent = COPY[m].sub;
+  $('submit').textContent = COPY[m].button;
   $('error').textContent = '';
+  $('form').hidden = false; $('applied').hidden = true;
 }
 $('tab-login').addEventListener('click', () => setMode('login'));
 $('tab-register').addEventListener('click', () => setMode('register'));
+$('tab-tech').addEventListener('click', () => setMode('tech'));
 
 $('show').addEventListener('click', () => {
   const hidden = $('pw').type === 'password';
@@ -176,6 +211,21 @@ $('form').addEventListener('submit', async e => {
   let image = null;
   $('submit').disabled = true;
   try {
+    if (mode === 'tech') {
+      Object.assign(body, {
+        name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value,
+        specialties: [...document.querySelectorAll('#specialties input:checked')].map(c => c.value),
+        businessName: $('business').value, experience: $('experience').value
+      });
+      const res = await fetch('/auth/register-technician', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || 'Could not submit your application.');
+      $('form').hidden = true; $('applied').hidden = false;
+      $('title').textContent = 'Thank you'; $('sub').textContent = '';
+      return;
+    }
     if (mode === 'register') {
       Object.assign(body, { name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value });
       if (!$('photo').files[0]) throw new Error("Add a photo of your vehicle's chassis number.");

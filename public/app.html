@@ -146,6 +146,29 @@
   .chat-actions { display: flex; gap: 8px; }
   .chat-actions .btn { margin-top: 10px; }
   .urgency { font-weight: 600; }
+
+  /* Emergency help */
+  .sos { background: #FFF4F2; border: 2px solid var(--red); border-radius: 6px; padding: 16px; }
+  .sos h2 { margin-bottom: 4px; color: var(--red); }
+  .sos .safety-note { margin: 0 0 12px; font-size: 15px; }
+  .sos .safety-note a { color: var(--red); font-weight: 700; }
+  .sos-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
+  .sos-btn { flex: 1 1 240px; padding: 14px 16px; border: 0; border-radius: 6px; color: #fff; text-align: left; cursor: pointer; font: 700 24px/1.1 var(--display); letter-spacing: .01em; }
+  .sos-btn small { display: block; margin-top: 4px; font: 400 14px/1.3 var(--body); opacity: .95; }
+  .sos-btn.road { background: var(--red); }
+  .sos-btn.tow { background: #A34A0A; }
+  .sos-btn:hover { filter: brightness(1.08); }
+  .sos-form { margin-top: 14px; padding-top: 12px; border-top: 1px solid #E8B9B2; }
+  .sos-form h3 { color: var(--red); }
+  .sos-loc { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .sos-loc .btn { margin-top: 0; }
+  .sos-status { font-size: 14px; color: var(--ink-soft); }
+  .sos-status.ok { color: var(--green); font-weight: 600; }
+  .sos-item { background: #fff; border: 1px solid var(--line); border-left: 6px solid var(--red); border-radius: 6px; padding: 10px 12px; margin-top: 10px; }
+  .sos-item.dispatched { border-left-color: var(--blue); }
+  .sos-item.resolved, .sos-item.cancelled { border-left-color: var(--line); opacity: .8; }
+  .sos-item strong { font: 600 18px/1.2 var(--display); }
+  .sos-item .btn { margin-top: 8px; }
   .urgency.high { color: var(--red); }
   .urgency.medium { color: #8A6400; }
   .urgency.low { color: var(--green); }
@@ -175,6 +198,39 @@
 </header>
 
 <main>
+  <!-- Emergency help -->
+  <section class="sos" id="sos" style="grid-column: 1 / -1" aria-labelledby="sos-h">
+    <h2 id="sos-h">Need help right now?</h2>
+    <p class="safety-note">If anyone is hurt or in danger, call <a href="tel:119">119</a> (police) or <a href="tel:110">110</a> (fire and ambulance) first.
+      <a id="sos-call" href="#" hidden></a></p>
+    <div class="sos-buttons">
+      <button class="sos-btn road" type="button" data-kind="roadside">Roadside assistance<small>Flat tire, dead battery, out of fuel, locked out</small></button>
+      <button class="sos-btn tow" type="button" data-kind="towing">Wrecker / towing<small>Accident or breakdown, the vehicle can't be driven</small></button>
+    </div>
+
+    <form class="sos-form" id="sos-form" hidden novalidate>
+      <h3 id="sos-title"></h3>
+      <div class="sos-loc">
+        <button class="btn ghost" id="sos-locate" type="button">Share my current location</button>
+        <span class="sos-status" id="sos-loc-status" aria-live="polite"></span>
+      </div>
+      <label for="sos-where">Where are you? (road, landmark, community)</label>
+      <input id="sos-where" maxlength="200" placeholder="e.g. Hope Road near the roundabout">
+      <div class="row">
+        <div><label for="sos-phone">Phone we can reach you on</label><input id="sos-phone" type="tel" autocomplete="tel"></div>
+        <div><label for="sos-parish">Parish you are in</label><select id="sos-parish"></select></div>
+      </div>
+      <label for="sos-vehicle">Which vehicle?</label>
+      <select id="sos-vehicle"></select>
+      <label for="sos-note">What happened? (optional)</label>
+      <textarea id="sos-note" maxlength="500" rows="2" placeholder="e.g. flat front tire, no spare"></textarea>
+      <button class="btn safety" id="sos-send" type="submit">Send request</button>
+      <button class="btn ghost" id="sos-cancel-form" type="button">Cancel</button>
+      <p class="error" id="sos-error" role="alert"></p>
+    </form>
+    <div id="sos-list" aria-live="polite"></div>
+  </section>
+
   <!-- Profile: shown until phone, address, parish and chassis photo are all on file -->
   <form class="panel" id="profile-box" style="grid-column: 1 / -1" hidden novalidate>
     <h2>Finish your profile</h2>
@@ -321,6 +377,7 @@ async function load() {
     $('who').textContent = user.name;
     $('owner').value = user.name;
     setupProfile(user);
+    loadSos();
     const [vehicles, requests, categories, catalog] = await Promise.all([
       api('/vehicles'), api('/service-requests'), api('/categories'), api('/vehicle-catalog')
     ]);
@@ -609,6 +666,90 @@ function addMsg(html, who) {
   $('chat').scrollTop = $('chat').scrollHeight;
   return div;
 }
+
+// --- Emergency help: roadside assistance and wrecker ---
+let sosKind = null, sosCoords = null, shopPhone = '';
+const SOS_LABEL = { roadside: 'Roadside assistance', towing: 'Wrecker / towing' };
+
+async function openSos(kind) {
+  sosKind = kind; sosCoords = null;
+  $('sos-title').textContent = SOS_LABEL[kind];
+  $('sos-loc-status').textContent = ''; $('sos-loc-status').className = 'sos-status';
+  $('sos-error').textContent = '';
+  if ($('sos-parish').options.length < 2) {
+    $('sos-parish').innerHTML = '<option value="">Choose your parish</option>';
+    (await api('/auth/parishes')).forEach(p => $('sos-parish').append(new Option(p, p)));
+  }
+  $('sos-parish').value = (profileUser && profileUser.parish) || '';
+  $('sos-phone').value = (profileUser && profileUser.phone) || '';
+  $('sos-vehicle').innerHTML = '<option value="">Not sure / not listed</option>' +
+    state.vehicles.map(v => '<option value="' + v.id + '">' + esc(v.year) + ' ' + esc(v.type) + '</option>').join('');
+  $('sos-form').hidden = false;
+  $('sos-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  $('sos-where').focus({ preventScroll: true });
+}
+document.querySelectorAll('.sos-btn').forEach(b => b.addEventListener('click', () => openSos(b.dataset.kind)));
+$('sos-cancel-form').addEventListener('click', () => { $('sos-form').hidden = true; });
+
+$('sos-locate').addEventListener('click', () => {
+  const out = $('sos-loc-status');
+  if (!navigator.geolocation) { out.textContent = 'This phone or browser cannot share location. Describe where you are below.'; return; }
+  out.className = 'sos-status'; out.textContent = 'Finding you...';
+  navigator.geolocation.getCurrentPosition(pos => {
+    sosCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    out.className = 'sos-status ok';
+    out.textContent = 'Location shared (accurate to about ' + Math.round(pos.coords.accuracy) + ' m).';
+  }, err => {
+    out.className = 'sos-status';
+    out.textContent = err.code === 1 ? 'Location is blocked. Allow it in your browser settings, or describe where you are below.' : 'Could not get your location. Describe where you are below.';
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+});
+
+$('sos-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('sos-error').textContent = '';
+  $('sos-send').disabled = true;
+  try {
+    await api('/emergency', { method: 'POST', body: {
+      kind: sosKind,
+      latitude: sosCoords ? sosCoords.lat : undefined, longitude: sosCoords ? sosCoords.lng : undefined,
+      locationText: $('sos-where').value, phone: $('sos-phone').value, parish: $('sos-parish').value,
+      vehicleId: Number($('sos-vehicle').value) || undefined, note: $('sos-note').value
+    }});
+    $('sos-form').hidden = true; $('sos-where').value = ''; $('sos-note').value = ''; sosCoords = null;
+    await loadSos();
+  } catch (err) { $('sos-error').textContent = err.message; }
+  finally { $('sos-send').disabled = false; }
+});
+
+async function loadSos() {
+  let list = [];
+  try { list = await api('/emergency/mine'); } catch (_) { return; }
+  const shown = list.filter(r => r.status === 'open' || r.status === 'dispatched' || Date.now() - new Date(r.updatedAt || r.createdAt) < 6 * 3600 * 1000);
+  $('sos-list').innerHTML = shown.map(r => {
+    const when = new Date(r.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    let body = '';
+    if (r.status === 'open') body = '<p style="margin:4px 0 0">Looking for a technician near you. Stay with your vehicle in a safe place.' + (shopPhone ? ' You can also call the shop.' : '') + '</p>';
+    else if (r.status === 'dispatched') body = '<p style="margin:4px 0 0"><strong>' + esc(r.technician ? r.technician.name : 'A technician') + '</strong> is on the way.' +
+      (r.technician && r.technician.phone ? ' Call <a href="tel:' + esc(r.technician.phone.replace(/[^\d+]/g, '')) + '">' + esc(r.technician.phone) + '</a>.' : '') + '</p>';
+    else if (r.status === 'resolved') body = '<p style="margin:4px 0 0">Completed. We hope you are back on the road.</p>';
+    else body = '<p style="margin:4px 0 0">Cancelled.</p>';
+    const cancel = (r.status === 'open' || r.status === 'dispatched') ? '<button class="btn ghost small" type="button" data-sos-cancel="' + r.id + '">Cancel request</button>' : '';
+    return '<div class="sos-item ' + r.status + '"><strong>' + esc(SOS_LABEL[r.kind] || r.kind) + '</strong> <span class="sos-status">requested ' + when + ' &middot; ' + esc(r.status === 'dispatched' ? 'on the way' : r.status) + '</span>' + body + cancel + '</div>';
+  }).join('');
+}
+$('sos-list').addEventListener('click', async (e) => {
+  const id = e.target.dataset.sosCancel;
+  if (!id) return;
+  e.target.disabled = true;
+  try { await api('/emergency/' + id + '/cancel', { method: 'POST' }); } catch (err) { alert(err.message); }
+  loadSos();
+});
+setInterval(() => { if (!document.hidden) loadSos(); }, 20000);
+api('/config').then(c => {
+  shopPhone = c.shopPhone || '';
+  if (shopPhone) { const a = $('sos-call'); a.href = 'tel:' + shopPhone.replace(/[^\d+]/g, ''); a.textContent = 'Or call the shop: ' + shopPhone; a.hidden = false; }
+}).catch(() => {});
 
 // --- Profile and area ---
 function prepareImage(file) {

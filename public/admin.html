@@ -70,6 +70,17 @@
 
   .userform { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
   .badge.off { background: var(--red); color: #fff; }
+  .emerg { background: #fff; border: 1px solid var(--line); border-left: 8px solid var(--red); border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; }
+  .emerg.dispatched { border-left-color: var(--blue); }
+  .emerg.resolved, .emerg.cancelled { border-left-color: var(--line); opacity: .75; }
+  .emerg.towing .kind { background: #A34A0A; }
+  .emerg .kind { display: inline-block; background: var(--red); color: #fff; font: 700 15px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; padding: 4px 8px; border-radius: 3px; }
+  .emerg .acts { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 130px; }
+  .emerg .acts .btn { margin: 0; }
+  .emerg p { margin: 4px 0 0; }
+  .pending { border: 2px dashed var(--safety); background: #FFFBEA; border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; }
+  .pending .app { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; }
+  @media (max-width: 640px) { .emerg, .pending .app { grid-template-columns: 1fr; } .emerg .acts { flex-direction: row; } }
   .parishbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
   .parishbar label { margin: 0; }
   .parishbar select { width: auto; min-width: 180px; }
@@ -82,7 +93,7 @@
 
 <div id="app">
   <header>
-    <h1>Laidlaw Auto Services · Admin</h1>
+    <h1 id="portalTitle">Laidlaw Auto Services</h1>
     <div class="sp">
       <span id="who" style="color:#fff;font-weight:600"></span>
       <button class="btn ghost small" id="refresh" style="color:#fff;border-color:#4A5663">Refresh</button>
@@ -99,12 +110,22 @@
     </div>
 
     <div class="tabs" role="group" aria-label="Section">
-      <button data-tab="requests" aria-pressed="true">Service requests</button>
+      <button data-tab="emergencies" id="emergTab" aria-pressed="true">Emergencies</button>
+      <button data-tab="requests" aria-pressed="false">Service requests</button>
       <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
       <button data-tab="users" id="usersTab" aria-pressed="false" hidden>Users</button>
     </div>
 
-    <div class="panel" id="requestsPanel">
+    <div class="panel" id="emergPanel">
+      <div class="toolbar" style="grid-template-columns: 1fr auto; align-items: center">
+        <span class="empty" id="emergNote" style="margin:0"></span>
+        <label style="margin:0; display:flex; gap:6px; align-items:center"><input type="checkbox" id="emergSound" checked style="width:auto"> Sound alert for new emergencies</label>
+      </div>
+      <div id="emergList"></div>
+      <p class="empty" id="emergEmpty" hidden>No emergency requests right now.</p>
+    </div>
+
+    <div class="panel" id="requestsPanel" hidden>
       <div class="toolbar">
         <input id="reqSearch" type="search" placeholder="Search owner, vehicle or description" aria-label="Search requests">
         <select id="reqStatus" aria-label="Filter by status">
@@ -123,6 +144,7 @@
     </div>
 
     <div class="panel" id="usersPanel" hidden>
+      <div id="pendingBox" class="pending" hidden></div>
       <form id="userForm" class="userform">
         <input id="uName" placeholder="Full name" aria-label="Full name" required>
         <input id="uEmail" type="email" placeholder="Email" aria-label="Email" required>
@@ -203,12 +225,14 @@ async function load() {
       if (me.role === 'customer') return location.replace('/app.html');
       $('who').textContent = me.name + ' (' + me.role + ')';
       $('usersTab').hidden = me.role !== 'admin';
+      $('portalTitle').textContent = 'Laidlaw Auto Services \u00b7 ' + (me.role === 'admin' ? 'Admin' : 'Technician portal');
       parishes = await api('/auth/parishes');
       for (const p of parishes) { $('parishFilter').append(new Option(p, p)); $('uParish').append(new Option(p, p)); }
       // A technician starts on their own parish; they can switch to All parishes
       if (me.role === 'staff' && me.parish) $('parishFilter').value = me.parish;
     }
     data = await api('/admin/overview');
+    await refreshEmergencies();
     if (me.role === 'admin') users = await api('/admin/users');
   } catch (err) {
     $('appError').textContent = err.message;
@@ -228,6 +252,88 @@ function render() {
   document.querySelectorAll('.stat').forEach((n, i) => { n.dataset.s = Object.keys(STATUS_LABELS)[i] || ''; });
   renderRequests(); renderVehicles();
 }
+
+// --- Emergencies: roadside assistance and wrecker requests ---
+let emergencies = [];
+let knownOpen = null; // ids of open requests seen so far (null until the first load, so we don't beep for old ones)
+const KIND_LABEL = { roadside: 'Roadside', towing: 'Towing' };
+const ago = t => {
+  const m = Math.max(0, Math.round((Date.now() - new Date(t).getTime()) / 60000));
+  return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago';
+};
+
+function beep() {
+  if (!$('emergSound').checked) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, 0.35, 0.7].forEach(t => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.25, ctx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.3);
+      o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.3);
+    });
+  } catch (e) {}
+}
+
+async function refreshEmergencies() {
+  try { emergencies = await api('/admin/emergencies'); } catch (err) { $('appError').textContent = err.message; return; }
+  const open = emergencies.filter(e => e.status === 'open');
+  if (knownOpen && open.some(e => !knownOpen.has(e.id) && (!$('parishFilter').value || e.parish === $('parishFilter').value))) beep();
+  knownOpen = new Set(open.map(e => e.id));
+  renderEmergencies();
+}
+
+async function emergencyAction(id, action) {
+  try { await api('/admin/emergencies/' + id, { method: 'PATCH', body: JSON.stringify({ action }) }); }
+  catch (err) { $('appError').textContent = err.message; }
+  await refreshEmergencies();
+}
+
+function renderEmergencies() {
+  const pf = $('parishFilter').value;
+  const inView = emergencies.filter(e => !pf || e.parish === pf);
+  const openAll = emergencies.filter(e => e.status === 'open' || e.status === 'dispatched').length;
+  const openHere = inView.filter(e => e.status === 'open').length;
+  $('emergTab').textContent = 'Emergencies' + (emergencies.some(e => e.status === 'open') ? ' (' + emergencies.filter(e => e.status === 'open').length + ' open)' : '');
+  const elsewhere = emergencies.filter(e => e.status === 'open').length - openHere;
+  $('emergNote').textContent = pf && elsewhere > 0 ? elsewhere + ' open in other parishes. Choose "All parishes" to see them.' : '';
+  $('emergEmpty').hidden = inView.length > 0;
+  const order = { open: 0, dispatched: 1, resolved: 2, cancelled: 3 };
+  inView.sort((a, b) => order[a.status] - order[b.status] || b.id - a.id);
+  $('emergList').replaceChildren(...inView.map(e => {
+    const mine = e.technician && me && e.technician.id === me.id;
+    const c = e.customer;
+    const acts = el('div', { className: 'acts' });
+    const btn = (label, cls, action, armed) => {
+      const b = el('button', { className: 'btn ' + cls + ' small', textContent: label });
+      if (armed) armDelete(b, () => emergencyAction(e.id, action), 'Confirm?'); else b.addEventListener('click', () => emergencyAction(e.id, action));
+      return b;
+    };
+    if (e.status === 'open') acts.append(btn("I'll take this", 'safety', 'accept'));
+    if (e.status === 'dispatched' && (mine || me.role === 'admin')) { acts.append(btn('Mark done', 'safety', 'resolve')); acts.append(btn('Hand back', 'ghost', 'release')); }
+    if (me.role === 'admin' && (e.status === 'open' || e.status === 'dispatched')) { const x = btn('Cancel', 'danger', 'cancel', true); x.textContent = 'Cancel'; acts.append(x); }
+    const where = [];
+    if (e.locationText) where.push(el('span', { textContent: e.locationText }));
+    if (e.latitude !== null && e.longitude !== null) {
+      const q = e.latitude + ',' + e.longitude;
+      where.push(el('a', { href: 'https://www.google.com/maps?q=' + q, target: '_blank', rel: 'noopener', textContent: 'Open exact location in Maps', style: 'margin-left:8px' }));
+    }
+    return el('div', { className: 'emerg ' + e.kind + ' ' + e.status },
+      el('div', {},
+        el('span', { className: 'kind', textContent: KIND_LABEL[e.kind] || e.kind }), ' ',
+        el('span', { className: 'badge', textContent: e.status === 'dispatched' ? 'On the way' : e.status }), ' ',
+        el('small', { textContent: ago(e.createdAt) + ' \u00b7 ' + e.parish }),
+        el('p', {}, el('strong', { textContent: c ? c.name : 'Customer' }), ' ',
+          el('a', { href: 'tel:' + e.phone.replace(/[^\d+]/g, ''), textContent: e.phone, style: 'font-weight:600' })),
+        c && c.address ? el('p', {}, el('small', { textContent: 'Home address: ' + c.address })) : null,
+        el('p', {}, el('strong', { textContent: 'Location: ' }), ...(where.length ? where : ['not given'])),
+        e.vehicle ? el('p', { textContent: 'Vehicle: ' + e.vehicle }) : null,
+        e.note ? el('p', { textContent: '"' + e.note + '"' }) : null,
+        e.technician ? el('p', {}, el('small', { textContent: 'Accepted by ' + e.technician.name + (e.technician.phone ? ' (' + e.technician.phone + ')' : '') })) : null),
+      acts);
+  }));
+}
+setInterval(() => { if (!document.hidden && me) refreshEmergencies(); }, 20000);
 
 // Who the customer is and how to reach them: name, phone, address, parish and their chassis photo
 function customerCell(account, fallbackOwner) {
@@ -297,9 +403,34 @@ function renderVehicles() {
   }));
 }
 
+function renderPending() {
+  const pending = users.filter(u => u.approved === false);
+  $('usersTab').textContent = 'Users' + (pending.length ? ' (' + pending.length + ' to approve)' : '');
+  $('pendingBox').hidden = !pending.length;
+  if (!pending.length) return;
+  $('pendingBox').replaceChildren(
+    el('strong', { textContent: pending.length + ' service member application' + (pending.length > 1 ? 's' : '') + ' waiting for approval' }),
+    el('p', { className: 'empty', textContent: 'Approved members can see customer phone numbers, addresses and chassis photos. Check their details first.' }),
+    ...pending.map(u => {
+      const ok = el('button', { className: 'btn safety small', textContent: 'Approve' });
+      ok.addEventListener('click', () => patchUser(u.id, { approved: true }));
+      const no = el('button', { className: 'btn danger small', textContent: 'Reject' });
+      armDelete(no, async () => { await api('/admin/users/' + u.id, { method: 'DELETE' }); await load(); }, 'Confirm reject?');
+      return el('div', { className: 'app' },
+        el('div', {},
+          el('strong', { textContent: u.name }), u.businessName ? ' \u00b7 ' + u.businessName : '', el('br'),
+          el('span', { className: 'who', textContent: u.email + ' \u00b7 ' + u.phone }),
+          el('span', { className: 'who', textContent: u.address + (u.parish ? ', ' + u.parish : '') }),
+          el('span', { className: 'who' }, 'Does: ' + u.specialties.join(', ')),
+          el('small', { className: 'who', textContent: u.experience })),
+        el('div', { className: 'acts', style: 'display:flex;flex-direction:column;gap:6px' }, ok, no));
+    }));
+}
+
 function renderUsers() {
   if (me.role !== 'admin') return;
-  $('userBody').replaceChildren(...users.map(u => {
+  renderPending();
+  $('userBody').replaceChildren(...users.filter(u => u.approved !== false).map(u => {
     const isMe = u.id === me.id;
     const role = el('select', { ariaLabel: 'Role', disabled: isMe },
       ...['customer', 'staff', 'admin'].map(r => el('option', { value: r, textContent: r, selected: r === u.role })));
@@ -345,24 +476,26 @@ $('userForm').addEventListener('submit', async e => {
 // Two-step delete (the viewer may block confirm() dialogs): first click arms, second click deletes
 function armDelete(btn, action, armedLabel = 'Confirm?') {
   let timer;
+  const label = btn.textContent; // put the original wording back if they don't confirm
   btn.addEventListener('click', async () => {
     if (!btn.dataset.armed) {
       btn.dataset.armed = '1'; btn.textContent = armedLabel;
-      timer = setTimeout(() => { delete btn.dataset.armed; btn.textContent = 'Delete'; }, 4000);
+      timer = setTimeout(() => { delete btn.dataset.armed; btn.textContent = label; }, 4000);
       return;
     }
     clearTimeout(timer);
-    try { await action(); } catch (err) { $('appError').textContent = err.message; delete btn.dataset.armed; btn.textContent = 'Delete'; }
+    try { await action(); } catch (err) { $('appError').textContent = err.message; delete btn.dataset.armed; btn.textContent = label; }
   });
 }
 
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  $('emergPanel').hidden = b.dataset.tab !== 'emergencies';
   $('requestsPanel').hidden = b.dataset.tab !== 'requests';
   $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';
   $('usersPanel').hidden = b.dataset.tab !== 'users';
 }));
-$('parishFilter').addEventListener('change', () => { renderRequests(); renderVehicles(); });
+$('parishFilter').addEventListener('change', () => { renderRequests(); renderVehicles(); renderEmergencies(); });
 $('reqSearch').addEventListener('input', renderRequests);
 $('reqStatus').addEventListener('change', renderRequests);
 $('vehSearch').addEventListener('input', renderVehicles);

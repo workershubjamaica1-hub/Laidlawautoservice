@@ -96,6 +96,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
       update.role = req.body.role;
     }
     if (req.body.active !== undefined) update.active = !!req.body.active;
+    if (req.body.approved !== undefined) update.approved = !!req.body.approved; // approve a service member's application
     if (req.body.password !== undefined) {
       if (String(req.body.password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
       update.password_hash = auth.hashPassword(String(req.body.password));
@@ -104,7 +105,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     if (contact.error) return res.status(400).json({ error: contact.error });
     Object.assign(update, contact.value);
     if (!Object.keys(update).length) return res.status(400).json({ error: 'Nothing to change.' });
-    if (id === req.user.id && ((update.role && update.role !== 'admin') || update.active === false)) {
+    if (id === req.user.id && ((update.role && update.role !== 'admin') || update.active === false || update.approved === false)) {
       return res.status(400).json({ error: 'You cannot demote or disable your own account.' });
     }
     const { data, error } = await supabase.from('users').update(update).eq('id', id).select().maybeSingle();

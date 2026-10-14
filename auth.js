@@ -53,6 +53,13 @@ const tokenFrom = req => (req.get('authorization') || '').replace(/^Bearer /i, '
 
 const PARISHES = ['Kingston', 'St. Andrew', 'St. Thomas', 'Portland', 'St. Mary', 'St. Ann', 'Trelawny',
   'St. James', 'Hanover', 'Westmoreland', 'St. Elizabeth', 'Manchester', 'Clarendon', 'St. Catherine'];
+// What a service member can do (roadside and towing match the emergency buttons)
+const SPECIALTIES = [
+  { value: 'diagnostics', label: 'Diagnostics' }, { value: 'mechanical', label: 'Mechanical' },
+  { value: 'tire', label: 'Tire' }, { value: 'electrical', label: 'Electrical' },
+  { value: 'maintenance', label: 'Maintenance' }, { value: 'roadside', label: 'Roadside assistance' },
+  { value: 'towing', label: 'Wrecker / towing' }
+];
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
@@ -61,6 +68,9 @@ const publicUser = u => ({
   id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, createdAt: u.created_at,
   phone: u.phone || '', address: u.address || '', parish: u.parish || '',
   hasChassisPhoto: !!u.chassis_photo_path,
+  approved: u.approved !== false,
+  specialties: u.specialties ? u.specialties.split(',') : [],
+  businessName: u.business_name || '', experience: u.experience || '',
   // Customers must have all four before the shop can send someone out
   profileComplete: u.role !== 'customer' || profileComplete(u)
 });
@@ -124,9 +134,14 @@ module.exports = function createAuth({ supabase, handle }) {
     if (error) throw error;
     return data;
   };
-  async function createUser({ name, email, password, role, phone, address, parish }) {
+  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience }) {
     const { data, error } = await supabase.from('users')
-      .insert({ name, email, password_hash: hashPassword(password), role, phone: phone || null, address: address || null, parish: parish || null })
+      .insert({
+        name, email, password_hash: hashPassword(password), role,
+        phone: phone || null, address: address || null, parish: parish || null,
+        approved: approved !== false, specialties: specialties || null,
+        business_name: businessName || null, experience: experience || null
+      })
       .select().single();
     if (error) throw error;
     return data;
@@ -138,7 +153,7 @@ module.exports = function createAuth({ supabase, handle }) {
     try {
       const t = readToken(tokenFrom(req));
       const user = t && await findById(t.uid);
-      if (!user || !user.active) return res.status(401).json({ error: 'Please sign in.' });
+      if (!user || !user.active || user.approved === false) return res.status(401).json({ error: 'Please sign in.' });
       req.user = user;
       next();
     } catch (err) {
@@ -209,6 +224,33 @@ module.exports = function createAuth({ supabase, handle }) {
     res.status(201).json({ token: makeToken(user.id), user: publicUser(user) });
   }));
 
+  // A professional applies to do jobs. They cannot sign in until an admin approves them.
+  router.get('/specialties', (req, res) => res.json(SPECIALTIES));
+  router.post('/register-technician', handle(async (req, res) => {
+    if (signupLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many sign-ups. Try again later.' });
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+    if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Enter your name.' });
+    if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+    if (password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    const contact = checkContact(req.body, true);
+    if (contact.error) return res.status(400).json({ error: contact.error });
+    const allowed = SPECIALTIES.map(s => s.value);
+    const specialties = [...new Set((Array.isArray(req.body.specialties) ? req.body.specialties : []).filter(v => allowed.includes(v)))];
+    if (!specialties.length) return res.status(400).json({ error: 'Choose at least one kind of work you do.' });
+    const businessName = String(req.body.businessName || '').trim().slice(0, 100);
+    const experience = String(req.body.experience || '').trim().slice(0, 600);
+    if (experience.length < 10) return res.status(400).json({ error: 'Tell us a little about your experience and qualifications.' });
+    if (await findByEmail(email)) {
+      signupLimit.fail(req.ip);
+      return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
+    }
+    await createUser({ name, email, password, role: 'staff', approved: false, specialties: specialties.join(','), businessName, experience, ...contact.value });
+    signupLimit.fail(req.ip);
+    res.status(201).json({ pending: true });
+  }));
+
   router.post('/login', handle(async (req, res) => {
     if (loginLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many attempts. Try again in 15 minutes.' });
     const email = String((req.body && req.body.email) || '').trim().toLowerCase();
@@ -219,6 +261,7 @@ module.exports = function createAuth({ supabase, handle }) {
       loginLimit.fail(req.ip);
       return res.status(401).json({ error: 'Wrong email or password.' });
     }
+    if (user.approved === false) return res.status(403).json({ error: 'Your application is still waiting for approval. You can sign in once an admin approves it.' });
     if (!user.active) return res.status(403).json({ error: 'This account has been disabled. Contact the shop.' });
     loginLimit.clear(req.ip);
     res.json({ token: makeToken(user.id), user: publicUser(user) });
@@ -286,5 +329,5 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ url });
   }));
 
-  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, signedPhotoUrl, removePhoto, ROLES, PARISHES };
+  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES };
 };
