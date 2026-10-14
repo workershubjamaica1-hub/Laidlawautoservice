@@ -67,7 +67,7 @@ const profileComplete = u => !!(u.phone && u.address && u.parish && u.chassis_ph
 const publicUser = u => ({
   id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, createdAt: u.created_at,
   phone: u.phone || '', address: u.address || '', parish: u.parish || '',
-  hasChassisPhoto: !!u.chassis_photo_path,
+  hasChassisPhoto: !!u.chassis_photo_path, hasAvatar: !!u.avatar_path,
   approved: u.approved !== false,
   specialties: u.specialties ? u.specialties.split(',') : [],
   businessName: u.business_name || '', experience: u.experience || '',
@@ -96,6 +96,14 @@ function checkContact(body, required) {
     value.parish = body.parish;
   }
   return { value };
+}
+
+// A money amount in JMD. Blank means "not given". Returns { value } (null if blank) or { error }.
+function parseAmount(v) {
+  if (v === undefined || v === null || String(v).trim() === '') return { value: null };
+  const n = Number(String(v).replace(/[,\s]|J\$/g, ''));
+  if (!Number.isFinite(n) || n < 0 || n > 10000000) return { error: 'Enter the amount charged in Jamaican dollars, e.g. 12500.' };
+  return { value: Math.round(n * 100) / 100 };
 }
 
 // Reads the first bytes so only real JPEG, PNG or WebP images are accepted (not just a file name)
@@ -306,20 +314,30 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ user: publicUser(data) });
   }));
 
-  // Photo of the chassis (VIN) number. The browser shrinks it first; sent as base64 JSON.
-  router.post('/chassis-photo', requireAuth, express.json({ limit: '6mb' }), handle(async (req, res) => {
+  // Photos are sent by the browser as base64 JSON, already shrunk. column = which users column keeps the path.
+  const receivePhoto = (column, name) => async (req, res) => {
     const b64 = String((req.body && req.body.image) || '').replace(/^data:[^,]*,/, '');
     const buf = Buffer.from(b64, 'base64');
     if (!buf.length) return res.status(400).json({ error: 'Choose a photo first.' });
     if (buf.length > MAX_PHOTO_BYTES) return res.status(413).json({ error: 'That photo is too large. Try a smaller one (under 4 MB).' });
     const type = sniffImage(buf);
     if (!type) return res.status(400).json({ error: 'The file must be a JPEG, PNG or WebP photo.' });
-    const path = `user-${req.user.id}/chassis`;
+    const path = `user-${req.user.id}/${name}`;
     const up = await supabase.storage.from(PHOTO_BUCKET).upload(path, buf, { contentType: type, upsert: true });
     if (up.error) throw up.error;
-    const { data, error } = await supabase.from('users').update({ chassis_photo_path: path }).eq('id', req.user.id).select().single();
+    const { data, error } = await supabase.from('users').update({ [column]: path }).eq('id', req.user.id).select().single();
     if (error) throw error;
     res.json({ user: publicUser(data) });
+  };
+  const bigJson = express.json({ limit: '6mb' });
+  // Photo of the chassis (VIN) number
+  router.post('/chassis-photo', requireAuth, bigJson, handle(receivePhoto('chassis_photo_path', 'chassis')));
+  // Optional profile photo (technicians show it to customers)
+  router.post('/avatar', requireAuth, bigJson, handle(receivePhoto('avatar_path', 'avatar')));
+  router.get('/avatar', requireAuth, handle(async (req, res) => {
+    const url = await signedPhotoUrl(req.user.avatar_path);
+    if (!url) return res.status(404).json({ error: 'No profile photo yet.' });
+    res.json({ url });
   }));
 
   // A short-lived link to view your own chassis photo
@@ -329,5 +347,5 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ url });
   }));
 
-  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES };
+  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES };
 };

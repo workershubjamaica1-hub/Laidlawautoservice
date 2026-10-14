@@ -56,5 +56,22 @@ create index if not exists emergency_status_idx on emergency_requests(status, pa
 create index if not exists emergency_user_idx on emergency_requests(user_id);
 alter table emergency_requests enable row level security;
 
+-- Technician dashboard: who did each job, what they charged (JMD) and how the customer rated it.
+-- Applies to both regular service requests and emergency requests.
+alter table users add column if not exists avatar_path text;   -- optional profile photo
+alter table service_requests add column if not exists technician_id bigint references users(id) on delete set null;
+alter table service_requests add column if not exists amount numeric(12,2);
+alter table service_requests add column if not exists completed_at timestamptz;
+alter table service_requests add column if not exists rating smallint check (rating between 1 and 5);
+alter table service_requests add column if not exists review text;
+alter table service_requests add column if not exists rated_at timestamptz;
+alter table emergency_requests add column if not exists amount numeric(12,2);
+alter table emergency_requests add column if not exists completed_at timestamptz;
+alter table emergency_requests add column if not exists rating smallint check (rating between 1 and 5);
+alter table emergency_requests add column if not exists review text;
+alter table emergency_requests add column if not exists rated_at timestamptz;
+create index if not exists service_requests_tech_idx on service_requests(technician_id);
+create index if not exists emergency_tech_idx on emergency_requests(technician_id);
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';

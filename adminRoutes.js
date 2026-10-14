@@ -22,21 +22,104 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
       return { ...toVehicle(row), account: acct ? { id: acct.id, name: acct.name, email: acct.email, phone: acct.phone || '', address: acct.address || '', parish: acct.parish || '' } : null };
     });
     const byId = new Map(vehicles.map(x => [x.id, x]));
-    const requests = r.data.map(toRequest).map(x => ({ ...x, vehicle: byId.get(x.vehicleId) || null }));
+    const requests = r.data.map(toRequest).map(x => ({ ...x, vehicle: byId.get(x.vehicleId) || null, technicianName: (accounts.get(x.technicianId) || {}).name || null }));
     const counts = Object.fromEntries(STATUSES.map(s => [s, requests.filter(x => x.status === s).length]));
     const owners = new Set(vehicles.map(x => x.owner.trim().toLowerCase())).size;
     res.json({ counts, totals: { vehicles: vehicles.length, requests: requests.length, owners }, vehicles, requests });
   }));
 
   // --- Service requests ---
+  // A technician can take an unassigned job ("claim") and then update it. Once a job has a technician, only
+  // that technician (or an admin) can change it, so earnings and ratings go to the right person.
+  router.post('/service-request/:id/claim', staffUp, handle(async (req, res) => {
+    const id = Number(req.params.id);
+    const cur = await supabase.from('service_requests').select('*').eq('id', id).maybeSingle();
+    if (cur.error) throw cur.error;
+    if (!cur.data) return res.status(404).json({ error: 'Request not found.' });
+    if (cur.data.technician_id) return res.status(409).json({ error: cur.data.technician_id === req.user.id ? 'You already have this job.' : 'Another technician already took this job.' });
+    if (cur.data.status === 'completed' || cur.data.status === 'cancelled') return res.status(409).json({ error: 'This job is already finished.' });
+    const { data, error } = await supabase.from('service_requests')
+      .update({ technician_id: req.user.id, status: 'in-progress' }).eq('id', id).is('technician_id', null).select().maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(409).json({ error: 'Another technician just took this job.' });
+    res.json(toRequest(data));
+  }));
+
   router.patch('/service-request/:id', staffUp, handle(async (req, res) => {
     const { status } = req.body;
     if (!STATUSES.includes(status)) return res.status(400).json({ error: `Status must be one of: ${STATUSES.join(', ')}.` });
-    const { data, error } = await supabase.from('service_requests')
-      .update({ status }).eq('id', Number(req.params.id)).select().maybeSingle();
+    const id = Number(req.params.id);
+    const cur = await supabase.from('service_requests').select('*').eq('id', id).maybeSingle();
+    if (cur.error) throw cur.error;
+    if (!cur.data) return res.status(404).json({ error: 'Request not found.' });
+    const row = cur.data, isAdmin = req.user.role === 'admin';
+    if (!isAdmin && row.technician_id && row.technician_id !== req.user.id) {
+      return res.status(403).json({ error: 'This job belongs to another technician.' });
+    }
+    const amount = auth.parseAmount(req.body.amount);
+    if (amount.error) return res.status(400).json({ error: amount.error });
+    const update = { status };
+    // moving an unassigned job forward takes it
+    if (!isAdmin && !row.technician_id && (status === 'in-progress' || status === 'completed')) update.technician_id = req.user.id;
+    if (status === 'completed') {
+      update.completed_at = row.completed_at || new Date().toISOString();
+      if (amount.value !== null) update.amount = amount.value; // JMD charged to the customer
+    } else {
+      update.completed_at = null;
+    }
+    const { data, error } = await supabase.from('service_requests').update(update).eq('id', id).select().maybeSingle();
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'Request not found.' });
     res.json(toRequest(data));
+  }));
+
+  // --- Technician dashboard: jobs, earnings (JMD), ratings. Admins can view anyone with ?technicianId= ---
+  router.get('/dashboard', staffUp, handle(async (req, res) => {
+    const techId = req.user.role === 'admin' && req.query.technicianId ? Number(req.query.technicianId) : req.user.id;
+    const [sr, em, tu] = await Promise.all([
+      supabase.from('service_requests').select('*').eq('technician_id', techId),
+      supabase.from('emergency_requests').select('*').eq('technician_id', techId),
+      supabase.from('users').select('*').eq('id', techId).maybeSingle()
+    ]);
+    for (const x of [sr, em, tu]) if (x.error) throw x.error;
+    if (!tu.data) return res.status(404).json({ error: 'Technician not found.' });
+
+    const label = { diagnostics: 'Diagnostics', mechanical: 'Mechanical', tire: 'Tire', electrical: 'Electrical', maintenance: 'Maintenance', other: 'Other' };
+    const jobs = [
+      ...sr.data.map(r => ({ kind: 'service', title: label[r.category] || r.category, done: r.status === 'completed', active: r.status === 'in-progress',
+        when: r.completed_at || r.updated_at || r.created_at, amount: Number(r.amount || 0), rating: r.rating, review: r.review })),
+      ...em.data.map(r => ({ kind: r.kind, title: r.kind === 'towing' ? 'Wrecker / towing' : 'Roadside assistance', done: r.status === 'resolved', active: r.status === 'dispatched',
+        when: r.completed_at || r.updated_at || r.created_at, amount: Number(r.amount || 0), rating: r.rating, review: r.review }))
+    ];
+    const done = jobs.filter(j => j.done).sort((x, y) => new Date(y.when) - new Date(x.when));
+    const monthKey = d => new Date(d).toISOString().slice(0, 7);
+    const thisMonth = monthKey(Date.now());
+    const sum = list => Math.round(list.reduce((t, j) => t + j.amount, 0) * 100) / 100;
+
+    const now = new Date();
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      const key = d.toISOString().slice(0, 7);
+      const inMonth = done.filter(j => monthKey(j.when) === key);
+      months.push({ month: key, label: d.toLocaleString('en', { month: 'short', timeZone: 'UTC' }), earned: sum(inMonth), jobs: inMonth.length });
+    }
+
+    const rated = done.filter(j => j.rating);
+    const breakdown = [1, 2, 3, 4, 5].map(n => rated.filter(j => j.rating === n).length);
+    const avatarUrl = await auth.signedPhotoUrl(tu.data.avatar_path).catch(() => null);
+    res.json({
+      technician: { name: tu.data.name, parish: tu.data.parish || '', specialties: tu.data.specialties ? tu.data.specialties.split(',') : [], avatarUrl },
+      totals: {
+        completed: done.length, inProgress: jobs.filter(j => j.active).length,
+        earnedTotal: sum(done), earnedThisMonth: sum(done.filter(j => monthKey(j.when) === thisMonth)),
+        completedThisMonth: done.filter(j => monthKey(j.when) === thisMonth).length
+      },
+      rating: { average: rated.length ? Math.round(rated.reduce((t, j) => t + j.rating, 0) / rated.length * 10) / 10 : null, count: rated.length, breakdown },
+      months,
+      reviews: rated.filter(j => j.review).slice(0, 5).map(j => ({ rating: j.rating, review: j.review, title: j.title, when: j.when })),
+      recent: done.slice(0, 8).map(j => ({ title: j.title, kind: j.kind, when: j.when, amount: j.amount, rating: j.rating }))
+    });
   }));
 
   router.delete('/service-request/:id', adminOnly, handle(async (req, res) => {

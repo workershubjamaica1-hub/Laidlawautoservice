@@ -15,7 +15,7 @@ app.use(cors(corsOrigins.length ? { origin: corsOrigins } : undefined));
 
 // The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
 const smallJson = express.json();
-app.use((req, res, next) => (req.path === '/auth/chassis-photo' ? next() : smallJson(req, res, next)));
+app.use((req, res, next) => (req.path === '/auth/chassis-photo' || req.path === '/auth/avatar' ? next() : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Supabase ---
@@ -30,7 +30,11 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SEC
 
 // Database columns are snake_case; the API keeps camelCase for the frontend
 const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.category, year: r.year, vin: r.vin, createdAt: r.created_at });
-const toRequest = r => ({ id: r.id, vehicleId: r.vehicle_id, category: r.category, description: r.description, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at });
+const toRequest = r => ({
+  id: r.id, vehicleId: r.vehicle_id, category: r.category, description: r.description, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
+  technicianId: r.technician_id || null, amount: r.amount == null ? null : Number(r.amount),
+  rating: r.rating || null, review: r.review || '', completedAt: r.completed_at || null
+});
 
 // Wraps async routes so database errors return a clean 500 instead of crashing
 const handle = fn => (req, res) => fn(req, res).catch(err => {
@@ -204,7 +208,16 @@ app.get('/service-requests', requireAuth, handle(async (req, res) => {
   if (req.query.vehicleId) query = query.eq('vehicle_id', Number(req.query.vehicleId));
   const { data, error } = await query;
   if (error) throw error;
-  res.json(data.map(toRequest));
+  const techIds = [...new Set(data.map(r => r.technician_id).filter(Boolean))];
+  const techs = new Map();
+  if (techIds.length) {
+    const t = await supabase.from('users').select('id, name, phone, avatar_path').in('id', techIds);
+    if (t.error) throw t.error;
+    await Promise.all(t.data.map(async u => techs.set(u.id, {
+      name: u.name, phone: u.phone || '', avatarUrl: await auth.signedPhotoUrl(u.avatar_path).catch(() => null)
+    })));
+  }
+  res.json(data.map(r => ({ ...toRequest(r), technician: techs.get(r.technician_id) || null })));
 }));
 
 app.post('/service-request', requireAuth, handle(async (req, res) => {
@@ -239,8 +252,9 @@ app.patch('/service-request/:id', requireAuth, handle(async (req, res) => {
     return res.status(400).json({ error: `Status must be one of: ${STATUSES.join(', ')}.` });
   }
   const id = Number(req.params.id);
-  if (isCustomer(req)) {
-    // Customers can only cancel their own requests; staff change status from the admin portal
+  if (!isCustomer(req)) return res.status(403).json({ error: 'Staff update jobs from the technician portal.' });
+  {
+    // Customers can only cancel their own requests
     if (status !== 'cancelled') return res.status(403).json({ error: 'You can only cancel a request.' });
     const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
     if (mine.error) throw mine.error;
@@ -253,6 +267,25 @@ app.patch('/service-request/:id', requireAuth, handle(async (req, res) => {
     .update({ status }).eq('id', id).select().maybeSingle();
   if (error) throw error;
   if (!data) return res.status(404).json({ error: 'Request not found.' });
+  res.json(toRequest(data));
+}));
+
+// Customer rates a finished job (once). 1 to 5 stars and an optional comment.
+app.post('/service-request/:id/rating', requireAuth, handle(async (req, res) => {
+  if (!isCustomer(req)) return res.status(403).json({ error: 'Only customers can rate a job.' });
+  const rating = Number(req.body.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: 'Choose 1 to 5 stars.' });
+  const review = String(req.body.review || '').trim().slice(0, 500);
+  const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
+  if (mine.error) throw mine.error;
+  const cur = await supabase.from('service_requests').select('*').eq('id', Number(req.params.id)).in('vehicle_id', mine.data.map(v => v.id)).maybeSingle();
+  if (cur.error) throw cur.error;
+  if (!cur.data) return res.status(404).json({ error: 'Request not found.' });
+  if (cur.data.status !== 'completed' || !cur.data.technician_id) return res.status(400).json({ error: 'You can rate a job once a technician has finished it.' });
+  if (cur.data.rating) return res.status(409).json({ error: 'You already rated this job.' });
+  const { data, error } = await supabase.from('service_requests')
+    .update({ rating, review: review || null, rated_at: new Date().toISOString() }).eq('id', cur.data.id).select().single();
+  if (error) throw error;
   res.json(toRequest(data));
 }));
 

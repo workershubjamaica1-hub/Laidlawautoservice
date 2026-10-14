@@ -81,6 +81,34 @@
   .pending { border: 2px dashed var(--safety); background: #FFFBEA; border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; }
   .pending .app { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; }
   @media (max-width: 640px) { .emerg, .pending .app { grid-template-columns: 1fr; } .emerg .acts { flex-direction: row; } }
+  /* Dashboard */
+  .dash-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .avatar { width: 76px; height: 76px; border-radius: 50%; object-fit: cover; border: 3px solid var(--safety); background: var(--surface); display: grid; place-items: center; font: 700 30px var(--display); color: var(--ink-soft); flex: none; }
+  .dash-head h2 { margin: 0; }
+  .dash-head .badge { margin: 4px 4px 0 0; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .tile { background: #fff; border: 1px solid var(--line); border-top: 5px solid var(--blue); border-radius: 6px; padding: 12px 14px; }
+  .tile b { display: block; font: 700 32px/1.1 var(--display); overflow-wrap: anywhere; }
+  .tile span { color: var(--ink-soft); font-size: 14px; }
+  .stars { color: #B07A00; letter-spacing: 1px; font-size: 18px; }
+  .stars .off { color: var(--line); }
+  .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 18px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; }
+  .card h3 { font: 600 19px/1.2 var(--display); margin: 0 0 10px; }
+  .bars { display: flex; align-items: flex-end; gap: 10px; height: 170px; padding-top: 6px; }
+  .bar { flex: 1; min-width: 0; max-width: 56px; margin: 0 auto; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+  .bar i { display: block; width: 100%; background: var(--blue); border-radius: 4px 4px 0 0; min-height: 0; }
+  .bar .v { font-size: 12px; font-weight: 600; margin-bottom: 3px; white-space: nowrap; }
+  .bar .m { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+  .rrow { display: grid; grid-template-columns: 34px minmax(0, 1fr) 28px; gap: 8px; align-items: center; margin: 6px 0; font-size: 14px; }
+  .rrow .track { background: var(--surface); border-radius: 4px; height: 12px; overflow: hidden; }
+  .rrow .track i { display: block; height: 100%; background: var(--blue); border-radius: 0 4px 4px 0; }
+  .review { border-top: 1px solid var(--line); padding: 8px 0; }
+  .review:first-of-type { border-top: 0; }
+  .photo-btn { position: relative; overflow: hidden; }
+  .photo-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .amount-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .amount-edit input { width: 120px; padding: 4px 6px; }
   .parishbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
   .parishbar label { margin: 0; }
   .parishbar select { width: auto; min-width: 180px; }
@@ -110,13 +138,16 @@
     </div>
 
     <div class="tabs" role="group" aria-label="Section">
-      <button data-tab="emergencies" id="emergTab" aria-pressed="true">Emergencies</button>
+      <button data-tab="dashboard" aria-pressed="true">My dashboard</button>
+      <button data-tab="emergencies" id="emergTab" aria-pressed="false">Emergencies</button>
       <button data-tab="requests" aria-pressed="false">Service requests</button>
       <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
       <button data-tab="users" id="usersTab" aria-pressed="false" hidden>Users</button>
     </div>
 
-    <div class="panel" id="emergPanel">
+    <div class="panel" id="dashPanel"><p class="empty">Loading your dashboard...</p></div>
+
+    <div class="panel" id="emergPanel" hidden>
       <div class="toolbar" style="grid-template-columns: 1fr auto; align-items: center">
         <span class="empty" id="emergNote" style="margin:0"></span>
         <label style="margin:0; display:flex; gap:6px; align-items:center"><input type="checkbox" id="emergSound" checked style="width:auto"> Sound alert for new emergencies</label>
@@ -137,7 +168,7 @@
         </select>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Vehicle</th><th>Problem</th><th>Status</th><th>Opened</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Vehicle</th><th>Problem</th><th>Job</th><th>Opened</th><th></th></tr></thead>
         <tbody id="reqBody"></tbody>
       </table></div>
       <p class="empty" id="reqEmpty" hidden>No matching requests.</p>
@@ -233,6 +264,7 @@ async function load() {
     }
     data = await api('/admin/overview');
     await refreshEmergencies();
+    await loadDashboard();
     if (me.role === 'admin') users = await api('/admin/users');
   } catch (err) {
     $('appError').textContent = err.message;
@@ -251,6 +283,106 @@ function render() {
   );
   document.querySelectorAll('.stat').forEach((n, i) => { n.dataset.s = Object.keys(STATUS_LABELS)[i] || ''; });
   renderRequests(); renderVehicles();
+}
+
+// --- My dashboard: jobs, earnings, ratings ---
+const money = n => 'J$' + Number(n || 0).toLocaleString('en-JM', { maximumFractionDigits: 2 });
+const starText = n => el('span', { className: 'stars', ariaLabel: n + ' out of 5 stars' },
+  '\u2605'.repeat(Math.round(n)), el('span', { className: 'off', textContent: '\u2605'.repeat(5 - Math.round(n)) }));
+
+// Shrinks a photo to a ~1000px JPEG and returns base64 (profile photos stay small)
+function prepareImage(file, max = 1000) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(blob => {
+        if (!blob) return reject(new Error('Could not read that photo.'));
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result).split(',')[1]);
+        r.onerror = () => reject(new Error('Could not read that photo.'));
+        r.readAsDataURL(blob);
+      }, 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a photo we can read. Use a JPEG or PNG picture.')); };
+    img.src = url;
+  });
+}
+
+async function loadDashboard() {
+  let d;
+  try { d = await api('/admin/dashboard'); } catch (err) { $('dashPanel').replaceChildren(el('p', { className: 'error', textContent: err.message })); return; }
+  const t = d.technician, tot = d.totals, rt = d.rating;
+
+  // photo (optional)
+  const initial = () => el('div', { className: 'avatar', textContent: (t.name || '?').trim().charAt(0).toUpperCase() });
+  let pic = initial();
+  if (t.avatarUrl) {
+    pic = el('img', { className: 'avatar', src: t.avatarUrl, alt: '' });
+    pic.addEventListener('error', () => pic.replaceWith(initial())); // photo link failed: show their initial instead
+  }
+  const input = el('input', { type: 'file', accept: 'image/*', ariaLabel: 'Choose a profile photo' });
+  input.addEventListener('change', async () => {
+    if (!input.files[0]) return;
+    $('appError').textContent = '';
+    try {
+      const image = await prepareImage(input.files[0]);
+      await api('/auth/avatar', { method: 'POST', body: JSON.stringify({ image }) });
+      await loadDashboard();
+    } catch (err) { $('appError').textContent = err.message; }
+  });
+  const photoBtn = el('label', { className: 'btn ghost small photo-btn', style: 'display:inline-block;margin:0' },
+    t.avatarUrl ? 'Change photo' : 'Add a photo (optional)', input);
+
+  const head = el('div', { className: 'dash-head' }, pic,
+    el('div', {},
+      el('h2', { textContent: t.name }),
+      t.parish ? el('span', { className: 'badge', textContent: t.parish }) : null,
+      ...t.specialties.map(x => el('span', { className: 'badge', textContent: x, style: 'background:var(--surface)' })),
+      el('div', { style: 'margin-top:8px' }, photoBtn)));
+
+  const tile = (value, label, node) => el('div', { className: 'tile' }, el('b', {}, node || value), el('span', { textContent: label }));
+  const ratingTile = rt.count
+    ? el('div', { className: 'tile', style: 'border-top-color:var(--safety)' }, el('b', { textContent: rt.average.toFixed(1) + ' / 5' }), starText(rt.average), ' ',
+        el('span', { textContent: rt.count + ' rating' + (rt.count > 1 ? 's' : '') }))
+    : el('div', { className: 'tile', style: 'border-top-color:var(--safety)' }, el('b', { textContent: 'No ratings' }), el('span', { textContent: 'Customers rate you after a job' }));
+  const tiles = el('div', { className: 'tiles' },
+    tile(tot.completed, 'Jobs completed'), tile(tot.inProgress, 'In progress now'),
+    tile(money(tot.earnedThisMonth), 'Earned this month (' + tot.completedThisMonth + ' jobs)'),
+    tile(money(tot.earnedTotal), 'Total earned'), ratingTile);
+
+  // earnings by month: one series, so one colour and no legend; values are printed on the bars
+  const max = Math.max(...d.months.map(m => m.earned), 1);
+  const anyEarned = d.months.some(m => m.earned > 0);
+  const bars = el('div', { className: 'bars', role: 'img', ariaLabel: 'Earnings per month: ' + d.months.map(m => m.label + ' ' + money(m.earned)).join(', ') },
+    ...d.months.map(m => el('div', { className: 'bar', title: m.label + ': ' + money(m.earned) + ' from ' + m.jobs + ' job' + (m.jobs === 1 ? '' : 's') },
+      el('span', { className: 'v', textContent: m.earned ? money(m.earned) : '' }),
+      el('i', { style: 'height:' + (m.earned ? Math.max(3, Math.round(m.earned / max * 100)) : 0) + '%' }),
+      el('span', { className: 'm', textContent: m.label }))));
+  const earnCard = el('div', { className: 'card' }, el('h3', { textContent: 'Earnings, last 6 months' }),
+    anyEarned ? bars : el('p', { className: 'empty', textContent: 'Nothing yet. When you finish a job, enter the amount you charged and it shows up here.' }));
+
+  const ratingCard = el('div', { className: 'card' }, el('h3', { textContent: 'Your ratings' }),
+    ...(rt.count ? [5, 4, 3, 2, 1].map(n => el('div', { className: 'rrow' },
+      el('span', { textContent: n + ' \u2605' }),
+      el('div', { className: 'track' }, el('i', { style: 'width:' + Math.round(rt.breakdown[n - 1] / rt.count * 100) + '%' })),
+      el('span', { textContent: rt.breakdown[n - 1] }))) : [el('p', { className: 'empty', textContent: 'No ratings yet.' })]));
+
+  const reviewCard = el('div', { className: 'card' }, el('h3', { textContent: 'What customers said' }),
+    ...(d.reviews.length ? d.reviews.map(r => el('div', { className: 'review' }, starText(r.rating), el('small', { textContent: '  ' + r.title + ' \u00b7 ' + fmtDate(r.when) }),
+      el('p', { textContent: '"' + r.review + '"', style: 'margin:4px 0 0' }))) : [el('p', { className: 'empty', textContent: 'No written reviews yet.' })]));
+
+  const recentCard = el('div', { className: 'card' }, el('h3', { textContent: 'Recent jobs' }),
+    ...(d.recent.length ? d.recent.map(r => el('div', { className: 'review' }, el('strong', { textContent: r.title }), ' ',
+      el('small', { textContent: fmtDate(r.when) }), ' \u00b7 ', el('b', { textContent: r.amount ? money(r.amount) : 'amount not entered' }),
+      r.rating ? el('span', {}, ' ', starText(r.rating)) : null)) : [el('p', { className: 'empty', textContent: 'No finished jobs yet. Take a job from Service requests or Emergencies.' })]));
+
+  $('dashPanel').replaceChildren(head, tiles, el('div', { className: 'dash-grid' }, earnCard, ratingCard), el('div', { className: 'dash-grid' }, reviewCard, recentCard));
 }
 
 // --- Emergencies: roadside assistance and wrecker requests ---
@@ -283,10 +415,12 @@ async function refreshEmergencies() {
   renderEmergencies();
 }
 
-async function emergencyAction(id, action) {
-  try { await api('/admin/emergencies/' + id, { method: 'PATCH', body: JSON.stringify({ action }) }); }
+async function emergencyAction(id, action, extra = {}) {
+  $('appError').textContent = '';
+  try { await api('/admin/emergencies/' + id, { method: 'PATCH', body: JSON.stringify({ action, ...extra }) }); }
   catch (err) { $('appError').textContent = err.message; }
   await refreshEmergencies();
+  if (action === 'resolve') loadDashboard();
 }
 
 function renderEmergencies() {
@@ -310,7 +444,19 @@ function renderEmergencies() {
       return b;
     };
     if (e.status === 'open') acts.append(btn("I'll take this", 'safety', 'accept'));
-    if (e.status === 'dispatched' && (mine || me.role === 'admin')) { acts.append(btn('Mark done', 'safety', 'resolve')); acts.append(btn('Hand back', 'ghost', 'release')); }
+    if (e.status === 'dispatched' && (mine || me.role === 'admin')) {
+      const done = el('button', { className: 'btn safety small', textContent: 'Mark done' });
+      done.addEventListener('click', () => {
+        // ask what was charged before finishing (can be left blank)
+        const box = el('input', { type: 'text', inputMode: 'decimal', placeholder: 'Amount charged (J$)', ariaLabel: 'Amount charged in Jamaican dollars', style: 'width:100%;padding:5px 6px' });
+        const save = el('button', { className: 'btn safety small', textContent: 'Save and finish' });
+        const back = el('button', { className: 'btn ghost small', textContent: 'Back' });
+        save.addEventListener('click', () => emergencyAction(e.id, 'resolve', { amount: box.value }));
+        back.addEventListener('click', () => renderEmergencies());
+        acts.replaceChildren(box, save, back); box.focus();
+      });
+      acts.append(done); acts.append(btn('Hand back', 'ghost', 'release'));
+    }
     if (me.role === 'admin' && (e.status === 'open' || e.status === 'dispatched')) { const x = btn('Cancel', 'danger', 'cancel', true); x.textContent = 'Cancel'; acts.append(x); }
     const where = [];
     if (e.locationText) where.push(el('span', { textContent: e.locationText }));
@@ -329,6 +475,7 @@ function renderEmergencies() {
         el('p', {}, el('strong', { textContent: 'Location: ' }), ...(where.length ? where : ['not given'])),
         e.vehicle ? el('p', { textContent: 'Vehicle: ' + e.vehicle }) : null,
         e.note ? el('p', { textContent: '"' + e.note + '"' }) : null,
+        e.status === 'resolved' && e.amount ? el('p', {}, el('strong', { textContent: 'Charged: ' + money(e.amount) }), e.rating ? el('span', {}, '  ', starText(e.rating)) : null) : null,
         e.technician ? el('p', {}, el('small', { textContent: 'Accepted by ' + e.technician.name + (e.technician.phone ? ' (' + e.technician.phone + ')' : '') })) : null),
       acts);
   }));
@@ -364,21 +511,52 @@ function renderRequests() {
     (!q || [r.vehicle && r.vehicle.owner, vehicleName(r.vehicle), r.description, r.category].join(' ').toLowerCase().includes(q)));
   $('reqEmpty').hidden = rows.length > 0;
   $('reqBody').replaceChildren(...rows.map(r => {
-    const sel = el('select', { ariaLabel: 'Change status' },
-      ...Object.entries(STATUS_LABELS).map(([v, l]) => el('option', { value: v, textContent: l, selected: v === r.status })));
-    sel.addEventListener('change', async () => {
+    const isAdmin = me.role === 'admin';
+    const mineJob = r.technicianId === me.id;
+    const canEdit = isAdmin || !r.technicianId || mineJob;
+    const jobCell = el('td', {});
+    const cancelEdit = () => renderRequests();
+    const sendStatus = async (status, amount) => {
+      $('appError').textContent = '';
       try {
-        await api('/admin/service-request/' + r.id, { method: 'PATCH', body: JSON.stringify({ status: sel.value }) });
+        await api('/admin/service-request/' + r.id, { method: 'PATCH', body: JSON.stringify({ status, amount }) });
         await load();
-      } catch (err) { $('appError').textContent = err.message; sel.value = r.status; }
-    });
+      } catch (err) { $('appError').textContent = err.message; renderRequests(); }
+    };
+    if (!r.technicianId && !isAdmin && r.status !== 'completed' && r.status !== 'cancelled') {
+      const take = el('button', { className: 'btn safety small', textContent: 'Take this job' });
+      take.addEventListener('click', async () => {
+        try { await api('/admin/service-request/' + r.id + '/claim', { method: 'POST' }); await load(); }
+        catch (err) { $('appError').textContent = err.message; await load(); }
+      });
+      jobCell.append(el('span', { className: 'badge', textContent: STATUS_LABELS[r.status] || r.status }), el('br'), take);
+    } else if (canEdit) {
+      const sel = el('select', { ariaLabel: 'Change status' },
+        ...Object.entries(STATUS_LABELS).map(([v, l]) => el('option', { value: v, textContent: l, selected: v === r.status })));
+      sel.addEventListener('change', () => {
+        if (sel.value !== 'completed') return sendStatus(sel.value);
+        // finishing a job: record what was charged (JMD)
+        const box = el('input', { type: 'text', inputMode: 'decimal', placeholder: 'Amount charged (J$)', ariaLabel: 'Amount charged in Jamaican dollars', value: r.amount || '' });
+        const save = el('button', { className: 'btn safety small', textContent: 'Save and finish' });
+        const back = el('button', { className: 'btn ghost small', textContent: 'Back' });
+        save.addEventListener('click', () => sendStatus('completed', box.value));
+        back.addEventListener('click', cancelEdit);
+        jobCell.replaceChildren(el('div', { className: 'amount-edit' }, box, save, back)); box.focus();
+      });
+      jobCell.append(sel);
+    } else {
+      jobCell.append(el('span', { className: 'badge', textContent: STATUS_LABELS[r.status] || r.status }));
+    }
+    if (r.technicianName) jobCell.append(el('br'), el('small', { textContent: 'Technician: ' + (mineJob ? 'you' : r.technicianName) }));
+    if (r.status === 'completed' && r.amount) jobCell.append(el('br'), el('strong', { textContent: money(r.amount) }));
+    if (r.rating) jobCell.append(el('br'), starText(r.rating));
     const del = el('button', { className: 'btn danger small', textContent: 'Delete', hidden: me.role !== 'admin' });
     armDelete(del, async () => { await api('/admin/service-request/' + r.id, { method: 'DELETE' }); await load(); });
     return el('tr', {},
       el('td', { textContent: r.id }),
       el('td', {}, el('strong', { textContent: vehicleName(r.vehicle) }), el('br'), ...customerCell(r.vehicle && r.vehicle.account, r.vehicle && r.vehicle.owner)),
       el('td', { className: 'desc' }, el('span', { className: 'badge', textContent: r.category, style: 'margin-right:6px' }), r.description),
-      el('td', {}, sel),
+      jobCell,
       el('td', { textContent: fmtDate(r.createdAt) }),
       el('td', { className: 'act' }, del));
   }));
@@ -490,6 +668,7 @@ function armDelete(btn, action, armedLabel = 'Confirm?') {
 
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  $('dashPanel').hidden = b.dataset.tab !== 'dashboard';
   $('emergPanel').hidden = b.dataset.tab !== 'emergencies';
   $('requestsPanel').hidden = b.dataset.tab !== 'requests';
   $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';

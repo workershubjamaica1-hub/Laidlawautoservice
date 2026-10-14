@@ -21,7 +21,9 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
     id: r.id, kind: r.kind, vehicleId: r.vehicle_id, note: r.note || '',
     latitude: r.latitude, longitude: r.longitude, locationText: r.location_text || '',
     parish: r.parish, phone: r.phone, status: r.status, technicianId: r.technician_id,
-    createdAt: r.created_at, updatedAt: r.updated_at, ...extra
+    createdAt: r.created_at, updatedAt: r.updated_at,
+    amount: r.amount == null ? null : Number(r.amount), rating: r.rating || null, review: r.review || '', completedAt: r.completed_at || null,
+    ...extra
   });
   const num = v => (v === null || v === undefined || v === '' ? null : Number(v));
 
@@ -82,13 +84,13 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
     const techIds = [...new Set(recent.map(r => r.technician_id).filter(Boolean))];
     let techs = new Map();
     if (techIds.length) {
-      const t = await supabase.from('users').select('id, name, phone').in('id', techIds);
+      const t = await supabase.from('users').select('id, name, phone, avatar_path').in('id', techIds);
       if (t.error) throw t.error;
-      techs = new Map(t.data.map(x => [x.id, x]));
+      techs = new Map(await Promise.all(t.data.map(async x => [x.id, { ...x, avatarUrl: await auth.signedPhotoUrl(x.avatar_path).catch(() => null) }])));
     }
     res.json(recent.map(r => {
       const t = techs.get(r.technician_id);
-      return toEmergency(r, { technician: t ? { name: t.name, phone: t.phone || '' } : null });
+      return toEmergency(r, { technician: t ? { name: t.name, phone: t.phone || '', avatarUrl: t.avatarUrl } : null });
     }));
   }));
 
@@ -98,6 +100,21 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
       .eq('id', Number(req.params.id)).eq('user_id', req.user.id).in('status', ['open', 'dispatched']).select().maybeSingle();
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'This request is already finished or was not found.' });
+    res.json(toEmergency(data));
+  }));
+
+  router.post('/emergency/:id/rating', customerOnly, handle(async (req, res) => {
+    const rating = Number(req.body.rating);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: 'Choose 1 to 5 stars.' });
+    const review = String(req.body.review || '').trim().slice(0, 500);
+    const cur = await supabase.from('emergency_requests').select('*').eq('id', Number(req.params.id)).eq('user_id', req.user.id).maybeSingle();
+    if (cur.error) throw cur.error;
+    if (!cur.data) return res.status(404).json({ error: 'Request not found.' });
+    if (cur.data.status !== 'resolved' || !cur.data.technician_id) return res.status(400).json({ error: 'You can rate it once the technician has finished.' });
+    if (cur.data.rating) return res.status(409).json({ error: 'You already rated this.' });
+    const { data, error } = await supabase.from('emergency_requests')
+      .update({ rating, review: review || null, rated_at: new Date().toISOString() }).eq('id', cur.data.id).select().single();
+    if (error) throw error;
     res.json(toEmergency(data));
   }));
 
@@ -139,6 +156,8 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
     if (!current.data) return res.status(404).json({ error: 'Request not found.' });
     const r = current.data;
     const mine = r.technician_id === req.user.id;
+    const amount = auth.parseAmount(req.body && req.body.amount);
+    if (amount.error) return res.status(400).json({ error: amount.error });
 
     let update, guard;
     if (action === 'accept') {
@@ -149,7 +168,8 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
       update = { status: 'open', technician_id: null, updated_at: now }; guard = 'dispatched';
     } else if (action === 'resolve') {
       if (r.status !== 'dispatched' || (!mine && !isAdmin)) return res.status(403).json({ error: 'You can only finish a request you accepted.' });
-      update = { status: 'resolved', updated_at: now }; guard = 'dispatched';
+      update = { status: 'resolved', updated_at: now, completed_at: now }; guard = 'dispatched';
+      if (amount.value !== null) update.amount = amount.value; // JMD charged to the customer
     } else if (action === 'cancel') {
       if (!isAdmin) return res.status(403).json({ error: 'Only admins can cancel a request.' });
       if (r.status === 'resolved' || r.status === 'cancelled') return res.status(409).json({ error: 'This request is already finished.' });

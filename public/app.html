@@ -128,6 +128,7 @@
   .ticket .meta { color: var(--ink-soft); font-size: 14px; }
   .ticket .desc { grid-column: 2 / 4; margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
   .ticket select { width: auto; padding: 5px 8px; font-size: 14px; }
+  .ticket .rate { grid-column: 2 / 4; }
   .status-label { font-size: 14px; font-weight: 600; }
 
   /* Assistant */
@@ -146,6 +147,16 @@
   .chat-actions { display: flex; gap: 8px; }
   .chat-actions .btn { margin-top: 10px; }
   .urgency { font-weight: 600; }
+
+  /* Technician, price and rating on a job */
+  .tech-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 0; font-size: 15px; }
+  .tavatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; border: 2px solid var(--safety); flex: none; }
+  .rate { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+  .rate .rate-note { flex: 1 1 200px; min-width: 0; }
+  .star { background: none; border: 0; padding: 0 2px; font-size: 28px; line-height: 1; color: var(--line); cursor: pointer; }
+  .star.on { color: #B07A00; }
+  .rated { color: #B07A00; letter-spacing: 1px; font-size: 18px; }
+  .rate .btn { margin-top: 0; }
 
   /* Emergency help */
   .sos { background: #FFF4F2; border: 2px solid var(--red); border-radius: 6px; padding: 16px; }
@@ -183,6 +194,7 @@
     header p { margin: 0; width: 100%; }
     .ticket { grid-template-columns: auto 1fr; }
     .ticket .desc { grid-column: 1 / -1; }
+    .ticket .rate { grid-column: 1 / -1; }
     .ticket .actions { grid-column: 1 / -1; }
   }
 </style>
@@ -455,6 +467,9 @@ function renderRequests() {
         ${r.status === 'pending' ? `<div><button class="btn small ghost" type="button" data-cancel="${r.id}">Cancel request</button></div>` : ''}
       </div>
       <p class="desc">${esc(r.description)}</p>
+      ${techLine(r.technician)}
+      ${r.status === 'completed' && r.amount ? `<p class="desc">Charged: <strong>${jmd(r.amount)}</strong></p>` : ''}
+      ${rateBlock('job', r.id, r.status === 'completed', !!r.technicianId, r.rating, r.review)}
     </article>`).join('');
 }
 
@@ -667,6 +682,48 @@ function addMsg(html, who) {
   return div;
 }
 
+// --- Technician details, price and star rating (shared by jobs and emergencies) ---
+const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
+const stars = n => '\u2605'.repeat(n) + '\u2606'.repeat(5 - n);
+
+function techLine(t) {
+  if (!t) return '';
+  const call = t.phone ? ' <a href="tel:' + esc(t.phone.replace(/[^\d+]/g, '')) + '">' + esc(t.phone) + '</a>' : '';
+  const pic = t.avatarUrl ? '<img class="tavatar" src="' + esc(t.avatarUrl) + '" alt="" onerror="this.remove()">' : '';
+  return '<p class="desc tech-line">' + pic + '<span>Technician: <strong>' + esc(t.name) + '</strong>' + call + '</span></p>';
+}
+
+// kind is "job" or "emergency". Shows the customer's rating, or the form to give one.
+function rateBlock(kind, id, done, hasTech, rating, review) {
+  if (rating) return '<p class="desc">You rated this <span class="rated">' + stars(rating) + '</span>' + (review ? ' "' + esc(review) + '"' : '') + '</p>';
+  if (!done || !hasTech) return '';
+  return '<div class="rate" data-rate-kind="' + kind + '" data-rate-id="' + id + '" data-value="0">' +
+    '<span>How was it?</span><span role="group" aria-label="Rating out of 5">' +
+    [1, 2, 3, 4, 5].map(n => '<button type="button" class="star" data-star="' + n + '" aria-label="' + n + ' star' + (n > 1 ? 's' : '') + '">\u2605</button>').join('') + '</span>' +
+    '<input class="rate-note" maxlength="500" placeholder="A few words (optional)" aria-label="Your comment">' +
+    '<button type="button" class="btn small safety" data-rate-send disabled>Send rating</button></div>';
+}
+
+document.addEventListener('click', async (e) => {
+  const star = e.target.closest('.star');
+  if (star) {
+    const box = star.closest('.rate'), n = Number(star.dataset.star);
+    box.dataset.value = n;
+    box.querySelectorAll('.star').forEach(b => b.classList.toggle('on', Number(b.dataset.star) <= n));
+    box.querySelector('[data-rate-send]').disabled = false;
+    return;
+  }
+  const send = e.target.closest('[data-rate-send]');
+  if (!send) return;
+  const box = send.closest('.rate');
+  send.disabled = true;
+  try {
+    const path = box.dataset.rateKind === 'job' ? '/service-request/' : '/emergency/';
+    await api(path + box.dataset.rateId + '/rating', { method: 'POST', body: { rating: Number(box.dataset.value), review: box.querySelector('.rate-note').value } });
+    if (box.dataset.rateKind === 'job') await load(); else await loadSos();
+  } catch (err) { alert(err.message); send.disabled = false; }
+});
+
 // --- Emergency help: roadside assistance and wrecker ---
 let sosKind = null, sosCoords = null, shopPhone = '';
 const SOS_LABEL = { roadside: 'Roadside assistance', towing: 'Wrecker / towing' };
@@ -725,6 +782,7 @@ $('sos-form').addEventListener('submit', async (e) => {
 async function loadSos() {
   let list = [];
   try { list = await api('/emergency/mine'); } catch (_) { return; }
+  if ([...document.querySelectorAll('#sos-list .rate')].some(b => b.dataset.value !== '0' || b.querySelector('.rate-note').value)) return;
   const shown = list.filter(r => r.status === 'open' || r.status === 'dispatched' || Date.now() - new Date(r.updatedAt || r.createdAt) < 6 * 3600 * 1000);
   $('sos-list').innerHTML = shown.map(r => {
     const when = new Date(r.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -734,6 +792,13 @@ async function loadSos() {
       (r.technician && r.technician.phone ? ' Call <a href="tel:' + esc(r.technician.phone.replace(/[^\d+]/g, '')) + '">' + esc(r.technician.phone) + '</a>.' : '') + '</p>';
     else if (r.status === 'resolved') body = '<p style="margin:4px 0 0">Completed. We hope you are back on the road.</p>';
     else body = '<p style="margin:4px 0 0">Cancelled.</p>';
+    if (r.status === 'resolved') {
+      if (r.technician) body += techLine(r.technician).replace('class="desc tech-line"', 'class="tech-line"');
+      if (r.amount) body += '<p style="margin:4px 0 0">Charged: <strong>' + jmd(r.amount) + '</strong></p>';
+      body += rateBlock('emergency', r.id, true, !!r.technician, r.rating, r.review);
+    } else if (r.status === 'dispatched' && r.technician && r.technician.avatarUrl) {
+      body = '<p class="tech-line"><img class="tavatar" src="' + esc(r.technician.avatarUrl) + '" alt="" onerror="this.remove()">' + body.replace(/^<p[^>]*>/, '<span>').replace(/<\/p>$/, '</span>') + '</p>';
+    }
     const cancel = (r.status === 'open' || r.status === 'dispatched') ? '<button class="btn ghost small" type="button" data-sos-cancel="' + r.id + '">Cancel request</button>' : '';
     return '<div class="sos-item ' + r.status + '"><strong>' + esc(SOS_LABEL[r.kind] || r.kind) + '</strong> <span class="sos-status">requested ' + when + ' &middot; ' + esc(r.status === 'dispatched' ? 'on the way' : r.status) + '</span>' + body + cancel + '</div>';
   }).join('');
