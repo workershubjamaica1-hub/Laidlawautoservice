@@ -689,17 +689,18 @@ function renderRequests() {
       sel.addEventListener('change', () => {
         if (sel.value !== 'completed') return sendStatus(sel.value);
         // finishing a job: record what was charged (JMD)
-        const box = el('input', { type: 'text', inputMode: 'decimal', placeholder: 'Amount charged (J$)', ariaLabel: 'Amount charged in Jamaican dollars', value: r.amount || '' });
+        const box = el('input', { type: 'text', inputMode: 'decimal', placeholder: r.premiumPerk ? 'Parts cost (J$)' : 'Amount charged (J$)', ariaLabel: 'Amount charged in Jamaican dollars', value: r.amount || '' });
         const save = el('button', { className: 'btn safety small', textContent: 'Save and finish' });
         const back = el('button', { className: 'btn ghost small', textContent: 'Back' });
         save.addEventListener('click', () => sendStatus('completed', box.value));
         back.addEventListener('click', cancelEdit);
-        jobCell.replaceChildren(el('small', { textContent: 'Amount charged (optional)' }), el('div', { className: 'amount-edit' }, box, save, back)); box.focus();
+        jobCell.replaceChildren(el('small', { textContent: r.premiumPerk ? 'Pad parts or other costs the customer pays (optional)' : 'Amount charged (optional)' }), el('div', { className: 'amount-edit' }, box, save, back)); box.focus();
       });
       jobCell.append(sel);
     } else {
       jobCell.append(el('span', { className: 'badge', textContent: STATUS_LABELS[r.status] || r.status }));
     }
+    if (r.premiumPerk && r.platformPay) jobCell.append(el('br'), el('small', { style: 'font-weight:600', textContent: (isAdmin ? 'AutoAid pays the technician ' : 'AutoAid pays you ') + money(r.platformPay) }));
     if (r.technicianName) jobCell.append(el('br'), el('small', { textContent: 'Technician: ' + (mineJob ? 'you' : r.technicianName) }));
     if (r.status === 'completed' && r.amount) jobCell.append(el('br'), el('strong', { textContent: money(r.amount) }));
     if (r.rating) jobCell.append(el('br'), starText(r.rating));
@@ -713,7 +714,8 @@ function renderRequests() {
     return el('tr', {},
       el('td', { textContent: r.id }),
       el('td', {}, el('strong', { textContent: vehicleName(r.vehicle) }), el('br'), ...customerCell(r.vehicle && r.vehicle.account, r.vehicle && r.vehicle.owner)),
-      el('td', { className: 'desc' }, el('span', { className: 'badge', textContent: r.category, style: 'margin-right:6px' }), r.description),
+      el('td', { className: 'desc' }, el('span', { className: 'badge', textContent: r.category, style: 'margin-right:6px' }),
+        r.premiumPerk ? el('span', { className: 'badge', style: 'margin-right:6px;background:#1D2731;color:#F2B705', textContent: 'Premium: free ' + (r.premiumPerk === 'oil' ? 'oil and filter change' : 'brake pad check') }) : null, r.description),
       jobCell,
       el('td', { textContent: fmtDate(r.createdAt) }),
       el('td', { className: 'act' }, del));
@@ -739,6 +741,19 @@ function renderVehicles() {
   }));
 }
 
+function premiumKids() {
+  const p = subInfo.premium;
+  if (!p || !p.enabled) {
+    return [el('p', { className: 'empty', style: 'margin:12px 0 0', textContent: 'Premium customer membership is OFF. To switch it on, follow PAYMENTS.md and set PREMIUM_ENABLED=true in Render.' })];
+  }
+  const plans = p.plans.map(x => x.label + ' ' + x.priceLabel + (x.saving ? ' (' + x.saving + '% cheaper per year)' : '')).join(', ');
+  return [
+    el('strong', { style: 'display:block;margin-top:12px', textContent: 'Premium customers are ON: ' + (plans || 'no plan has a price yet') }),
+    el('p', { style: 'margin:6px 0 0', textContent: p.activeMembers + ' active member' + (p.activeMembers === 1 ? '' : 's') + '. Free oil and filter changes: ' + p.oilPerYear + ' a year, one every ' + p.oilGapDays + ' days at most. One free brake pad check a year (the customer pays for pad parts).' }),
+    el('p', { style: 'margin:6px 0 0', textContent: 'AutoAid pays technicians ' + money(p.payOil) + ' per oil and filter change and ' + money(p.payBrakes) + ' per brake pad check.' })
+  ];
+}
+
 async function renderSubBox() {
   const box = $('subBox');
   if (!subInfo) { box.hidden = true; return; }
@@ -746,7 +761,8 @@ async function renderSubBox() {
   const money = n => subInfo.currency + ' ' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
   if (!subInfo.enabled) {
     box.replaceChildren(el('strong', { textContent: 'Monthly subscriptions are OFF' }),
-      el('p', { className: 'empty', style: 'margin:4px 0 0', textContent: 'Service providers are not charged. To switch them on, follow the steps in PAYMENTS.md and set SUBSCRIPTIONS_ENABLED=true in Render.' }));
+      el('p', { className: 'empty', style: 'margin:4px 0 0', textContent: 'Service providers are not charged. To switch them on, follow the steps in PAYMENTS.md and set SUBSCRIPTIONS_ENABLED=true in Render.' }),
+      ...premiumKids());
     return;
   }
   const kids = [
@@ -763,7 +779,8 @@ async function renderSubBox() {
     });
     kids.push(el('p', { style: 'margin:10px 0 0' }, subInfo.providersNeverPaid + ' approved provider' + (subInfo.providersNeverPaid > 1 ? 's have' : ' has') + ' never paid and cannot work right now. ', go));
   }
-  const det = el('details', { style: 'margin-top:10px' }, el('summary', { textContent: 'Recent subscription payments', style: 'cursor:pointer;font-weight:600' }));
+  kids.push(...premiumKids());
+  const det = el('details', { style: 'margin-top:10px' }, el('summary', { textContent: 'Recent payments (providers and Premium)', style: 'cursor:pointer;font-weight:600' }));
   det.addEventListener('toggle', async () => {
     if (!det.open || det.dataset.loaded) return;
     det.dataset.loaded = '1';
@@ -771,8 +788,8 @@ async function renderSubBox() {
       const rows = await api('/admin/subscription-payments');
       det.append(rows.length
         ? el('div', { className: 'table-wrap' }, el('table', { style: 'min-width:420px' },
-            el('thead', {}, el('tr', {}, ...['Provider', 'Paid', 'Amount', 'How', 'Access until'].map(h => el('th', { textContent: h })))),
-            el('tbody', {}, ...rows.map(r => el('tr', {}, el('td', { textContent: r.name }), el('td', { textContent: fmtDate(r.createdAt) }),
+            el('thead', {}, el('tr', {}, ...['Who', 'For', 'Paid', 'Amount', 'How', 'Access until'].map(h => el('th', { textContent: h })))),
+            el('tbody', {}, ...rows.map(r => el('tr', {}, el('td', { textContent: r.name }), el('td', { textContent: r.kind === 'premium' ? 'Premium' + (r.plan && r.plan !== 'manual' ? ' (' + r.plan + ')' : '') : 'Provider fee' }), el('td', { textContent: fmtDate(r.createdAt) }),
               el('td', { textContent: r.amount ? money(r.amount) : '-' }), el('td', { textContent: r.provider === 'manual' ? 'Added by admin' : 'Card' }), el('td', { textContent: r.periodEnd ? fmtDate(r.periodEnd) : '' }))))))
         : el('p', { className: 'empty', textContent: 'No payments yet.' }));
     } catch (err) { det.append(el('p', { className: 'error', textContent: err.message })); }
@@ -832,6 +849,19 @@ function renderUsers() {
       : u.subscription.status === 'none' ? 'Subscription: not paid'
       : u.subscription.status === 'active' ? 'Paid until ' + dateLabel(u.subscription.paidUntil)
       : u.subscription.status === 'grace' ? 'Ended ' + dateLabel(u.subscription.paidUntil) + ' (grace)' : 'Expired ' + dateLabel(u.subscription.paidUntil);
+    const premOn = !!(subInfo && subInfo.premium && subInfo.premium.enabled && u.role === 'customer');
+    const premText = !premOn || !u.premium || u.premium.status === 'none' || u.premium.status === 'not-required' ? null
+      : u.premium.status === 'active' ? 'Premium until ' + dateLabel(u.premium.paidUntil) : 'Premium ended ' + dateLabel(u.premium.paidUntil);
+    const addPremium = el('button', { className: 'btn ghost small', textContent: 'Add Premium days', hidden: !premOn });
+    addPremium.addEventListener('click', () => {
+      const box = el('input', { type: 'number', min: 1, max: 732, value: 30, ariaLabel: 'Premium days to add', style: 'width:70px;padding:4px 6px' });
+      const ok = el('button', { className: 'btn safety small', textContent: 'Add' });
+      ok.addEventListener('click', async () => {
+        try { await api('/admin/users/' + u.id + '/premium', { method: 'POST', body: JSON.stringify({ days: Number(box.value) }) }); await load(); }
+        catch (err) { $('appError').textContent = err.message; }
+      });
+      addPremium.replaceWith(box, ' ', ok); box.focus();
+    });
     const addDays = el('button', { className: 'btn ghost small', textContent: 'Add days', hidden: !(subInfo && subInfo.enabled && u.role === 'staff') });
     addDays.addEventListener('click', () => {
       const box = el('input', { type: 'number', min: 1, max: 366, value: subInfo.days, ariaLabel: 'Days to add', style: 'width:70px;padding:4px 6px' });
@@ -851,8 +881,8 @@ function renderUsers() {
       el('td', {}, el('span', { className: 'who', textContent: u.email }), u.phone ? el('span', { className: 'who', textContent: u.phone }) : null, u.address ? el('small', { className: 'who', textContent: u.address }) : null),
       el('td', {}, role),
       el('td', {}, parish),
-      el('td', {}, el('span', { className: u.active ? 'badge' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), subText ? el('br') : null, subText ? el('small', { textContent: subText }) : null),
-      el('td', { className: 'act' }, addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
+      el('td', {}, el('span', { className: u.active ? 'badge' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), (subText || premText) ? el('br') : null, (subText || premText) ? el('small', { textContent: subText || premText }) : null),
+      el('td', { className: 'act' }, addPremium, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }
 async function patchUser(id, body) {

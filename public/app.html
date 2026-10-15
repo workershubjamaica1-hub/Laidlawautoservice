@@ -71,6 +71,7 @@
   .btn.safety { background: var(--safety); color: var(--ink); }
   .btn.safety:hover { background: #FFC81F; }
   .btn.small { margin: 0; padding: 5px 10px; font-size: 14px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
   .btn.ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
   .btn.ghost:hover { background: var(--surface); }
   .error { color: var(--red); font-size: 14px; margin: 8px 0 0; min-height: 1em; }
@@ -163,6 +164,27 @@
   .rated { color: #B07A00; letter-spacing: 1px; font-size: 18px; }
   .rate .btn { margin-top: 0; }
 
+  /* Premium membership */
+  .premium { background: #FFF9E5; border: 2px solid var(--safety); border-radius: 6px; padding: 16px; }
+  .premium h2 { margin-bottom: 6px; }
+  .premium .member { display: inline-block; vertical-align: middle; margin-left: 8px; padding: 3px 10px; border-radius: 12px; background: var(--ink); color: var(--safety); font: 700 15px/1.2 var(--display); letter-spacing: .05em; text-transform: uppercase; }
+  .premium ul { margin: 6px 0 12px; padding-left: 22px; }
+  .premium li { margin: 4px 0; }
+  .plans { display: flex; gap: 12px; flex-wrap: wrap; }
+  .plan { flex: 1 1 200px; text-align: left; padding: 12px 16px; background: #fff; border: 2px solid var(--ink); border-radius: 6px; cursor: pointer; }
+  .plan:hover:not(:disabled) { background: var(--ink); color: #fff; }
+  .plan:disabled { opacity: .55; cursor: not-allowed; }
+  .plan strong { display: block; font: 700 22px/1.1 var(--display); }
+  .plan span { display: block; font-size: 16px; }
+  .plan small { display: block; color: var(--green); font-weight: 600; }
+  .plan:hover:not(:disabled) small { color: #9BE0B3; }
+  .perks { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 10px 0; }
+  .perk { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+  .perk strong { display: block; font: 600 19px/1.2 var(--display); }
+  .perk .count { font: 700 26px/1 var(--display); margin: 6px 0 2px; }
+  .perk p { margin: 4px 0 8px; font-size: 14px; color: var(--ink-soft); }
+  .pbadge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; background: var(--ink); color: var(--safety); font: 700 13px/1.4 var(--display); letter-spacing: .04em; text-transform: uppercase; vertical-align: middle; }
+
   /* Emergency help */
   .sos { background: #FFF4F2; border: 2px solid var(--red); border-radius: 6px; padding: 16px; }
   .sos h2 { margin-bottom: 4px; color: var(--red); }
@@ -247,6 +269,9 @@
     <p class="sos-status ok" id="sos-sent" role="status" hidden style="font-size:16px;margin:12px 0 0"></p>
     <div id="sos-list" aria-live="polite"></div>
   </section>
+
+  <!-- Premium membership: join, or use the free services -->
+  <section class="premium" id="premium-box" style="grid-column: 1 / -1" aria-labelledby="premium-h" hidden></section>
 
   <!-- Profile: shown until phone, address, parish and vehicle photo are all on file -->
   <form class="panel" id="profile-box" style="grid-column: 1 / -1" hidden novalidate>
@@ -397,6 +422,7 @@ async function load() {
     $('owner').value = user.name;
     setupProfile(user);
     loadSos();
+    loadPremium();
     const [vehicles, requests, categories, catalog] = await Promise.all([
       api('/vehicles'), api('/service-requests'), api('/categories'), api('/vehicle-catalog')
     ]);
@@ -487,7 +513,7 @@ function renderRequests() {
     <article class="ticket" data-status="${r.status}">
       <span class="num" aria-label="Job ${r.id}">${r.id}</span>
       <div>
-        <div class="title">${esc(labelOf(state.categories.service, r.category))}: ${esc(vehicleName(r.vehicleId))}</div>
+        <div class="title">${esc(labelOf(state.categories.service, r.category))}: ${esc(vehicleName(r.vehicleId))}${r.premiumPerk ? '<span class="pbadge">Premium &middot; free</span>' : ''}</div>
         <div class="meta">Booked ${new Date(r.createdAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</div>
       </div>
       <div class="actions">
@@ -498,7 +524,7 @@ function renderRequests() {
       <p class="desc">${esc(r.description)}</p>
       ${techLine(r.technician)}
       ${workPhoto(r.workPhotoUrl, 'desc')}
-      ${r.status === 'completed' && r.amount ? `<p class="desc">Charged: <strong>${jmd(r.amount)}</strong></p>` : ''}
+      ${r.status === 'completed' && r.amount ? `<p class="desc">${r.premiumPerk ? 'Parts and extras you paid' : 'Charged'}: <strong>${jmd(r.amount)}</strong></p>` : ''}
       ${rateBlock('job', r.id, r.status === 'completed', !!r.technicianId, r.rating, r.review)}
     </article>`).join('');
 }
@@ -760,6 +786,113 @@ document.addEventListener('click', async (e) => {
     if (box.dataset.rateKind === 'job') await load(); else await loadSos();
   } catch (err) { alert(err.message); send.disabled = false; }
 });
+
+// --- Premium membership ---
+let premiumPerkOpen = null;   // which free service the booking form is open for
+const PERK_TEXT = { oil: 'Free oil and filter change', brakes: 'Yearly brake disc pad check' };
+const longDate = iso => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+function plansHtml(p, label) {
+  return '<div class="plans" role="group" aria-label="' + esc(label) + '">' + p.plans.map(pl =>
+    '<button class="plan" type="button" data-plan="' + esc(pl.id) + '"' + (p.canPayOnline ? '' : ' disabled') + '><strong>' + esc(pl.label) + '</strong><span>' + esc(pl.priceLabel) +
+    (pl.id === 'yearly' ? ' for 12 months' : ' a month') + '</span>' + (pl.saving ? '<small>Save ' + pl.saving + '% a year</small>' : '') + '</button>').join('') + '</div>' +
+    (p.canPayOnline ? '<p class="empty" style="font-size:14px;margin-top:8px">You pay securely by card on the payment page. Your Premium starts as soon as the payment goes through.</p>'
+      : '<p class="error">Online payment is not set up yet. Please contact AutoAid 24/7 to join.</p>');
+}
+
+function renderPremium(p) {
+  const box = $('premium-box');
+  const benefits = '<ul><li><strong>' + p.oilPerYear + ' free oil and filter changes</strong> every membership year (about one every 3 months)</li>' +
+    '<li><strong>A free yearly brake disc pad check</strong>, and the labour to change the pads is free if they need replacing. You only pay for the pad parts.</li></ul>';
+  if (p.status !== 'active') {
+    const expired = p.status === 'expired';
+    box.innerHTML = '<h2 id="premium-h">AutoAid Premium</h2><p style="margin:0">' + (expired
+      ? 'Your Premium membership ended on ' + esc(longDate(p.paidUntil)) + '. Renew to use your free services again.'
+      : 'Join Premium and get free servicing all year:') + '</p>' + benefits + (p.plans.length ? plansHtml(p, 'Choose a plan') : '<p class="empty">Premium plans are coming soon.</p>');
+    return;
+  }
+  const o = p.perks.oil, b = p.perks.brakes;
+  const oilNote = o.left === 0 ? 'All used for this membership year.' : (o.nextAvailable ? 'Next one available from ' + esc(longDate(o.nextAvailable)) + '.' : 'Available now.');
+  const brakeNote = b.canBook ? 'Available now. Pad parts are paid by you if they need replacing.' : 'Used for this membership year.';
+  box.innerHTML = '<h2 id="premium-h">AutoAid Premium<span class="member">Member</span></h2>' +
+    '<p style="margin:0">Active until <strong>' + esc(longDate(p.paidUntil)) + '</strong> (' + p.daysLeft + ' day' + (p.daysLeft === 1 ? '' : 's') + ' left).</p>' +
+    '<div class="perks">' +
+      '<div class="perk"><strong>' + PERK_TEXT.oil + '</strong><div class="count">' + o.used + ' of ' + o.limit + ' used</div><p>' + oilNote + '</p>' +
+        '<button class="btn small safety" type="button" data-perk="oil"' + (o.canBook ? '' : ' disabled') + '>Book free oil change</button></div>' +
+      '<div class="perk"><strong>' + PERK_TEXT.brakes + '</strong><div class="count">' + (b.used ? 'Used' : 'Not used yet') + '</div><p>' + brakeNote + '</p>' +
+        '<button class="btn small safety" type="button" data-perk="brakes"' + (b.canBook ? '' : ' disabled') + '>Book free brake check</button></div>' +
+    '</div>' +
+    '<form id="perk-form" hidden novalidate><h3 id="perk-title"></h3>' +
+      '<label for="perk-vehicle">Which vehicle?</label><select id="perk-vehicle"></select>' +
+      '<label for="perk-note">Anything the technician should know? (optional)</label><input id="perk-note" maxlength="300" placeholder="e.g. my oil type, or a noise when braking">' +
+      '<button class="btn safety" id="perk-send" type="submit">Book it</button> <button class="btn ghost" id="perk-cancel" type="button">Cancel</button>' +
+      '<p class="error" id="perk-error" role="alert"></p></form>' +
+    '<p class="found" id="perk-done" role="status" hidden></p>' +
+    (p.plans.length ? '<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Extend my membership</summary><div style="margin-top:8px">' + plansHtml(p, 'Extend your membership') + '</div></details>' : '');
+  if (premiumPerkOpen) openPerkForm(premiumPerkOpen);
+}
+
+async function loadPremium() {
+  let p;
+  try { p = await api('/premium'); } catch (_) { return; }
+  const box = $('premium-box');
+  if (!p.enabled) { box.hidden = true; return; }
+  box.hidden = false;
+  renderPremium(p);
+}
+
+function openPerkForm(perk) {
+  premiumPerkOpen = perk;
+  const f = $('perk-form'); if (!f) return;
+  $('perk-title').textContent = 'Book: ' + PERK_TEXT[perk];
+  $('perk-vehicle').innerHTML = state.vehicles.length
+    ? state.vehicles.map(v => '<option value="' + v.id + '">' + esc(v.year) + ' ' + esc(v.type) + '</option>').join('')
+    : '<option value="">Add a vehicle to your garage first</option>';
+  $('perk-error').textContent = state.vehicles.length ? '' : 'Add your vehicle in "Your garage" below, then book.';
+  f.hidden = false;
+}
+
+$('premium-box').addEventListener('click', async (e) => {
+  const plan = e.target.closest('[data-plan]');
+  if (plan) {
+    plan.disabled = true;
+    try { const r = await api('/premium/checkout', { method: 'POST', body: { plan: plan.dataset.plan } }); location.href = r.url; }
+    catch (err) { alert(err.message); plan.disabled = false; }
+    return;
+  }
+  const perk = e.target.closest('[data-perk]');
+  if (perk) { openPerkForm(perk.dataset.perk); $('perk-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return; }
+  if (e.target.id === 'perk-cancel') { premiumPerkOpen = null; $('perk-form').hidden = true; }
+});
+$('premium-box').addEventListener('submit', async (e) => {
+  if (e.target.id !== 'perk-form') return;
+  e.preventDefault();
+  $('perk-error').textContent = '';
+  const vehicleId = Number($('perk-vehicle').value);
+  if (!vehicleId) { $('perk-error').textContent = 'Add a vehicle to your garage first.'; return; }
+  $('perk-send').disabled = true;
+  try {
+    await api('/premium/redeem', { method: 'POST', body: { perk: premiumPerkOpen, vehicleId, note: $('perk-note').value } });
+    const label = PERK_TEXT[premiumPerkOpen];
+    premiumPerkOpen = null;
+    await Promise.all([loadPremium(), (async () => { state.requests = await api('/service-requests'); renderRequests(); })()]);
+    const done = $('perk-done'); if (done) { done.textContent = label + ' booked. A technician will pick it up. You can see it under Service requests.'; done.hidden = false; }
+  } catch (err) { $('perk-error').textContent = err.message; const b = $('perk-send'); if (b) b.disabled = false; }
+});
+
+// back from the payment page: the payment notification can take a moment to arrive
+if (new URLSearchParams(location.search).get('premium') === 'paid') {
+  let tries = 0;
+  const wait = async () => {
+    let p; try { p = await api('/premium'); } catch (_) {}
+    const box = $('premium-box');
+    if (p && p.status === 'active') { history.replaceState(null, '', '/app.html'); return loadPremium(); }
+    box.hidden = false; box.innerHTML = '<h2>AutoAid Premium</h2><p><strong>Payment received? We are activating your Premium...</strong></p>';
+    if (++tries < 12) setTimeout(wait, 3000);
+    else box.innerHTML = '<h2>AutoAid Premium</h2><p>Your payment can take a minute to show. Refresh this page shortly. If it still does not appear, please contact AutoAid 24/7.</p>';
+  };
+  setTimeout(wait, 800);
+}
 
 // --- Emergency help: roadside assistance and wrecker ---
 let sosKind = null, sosCoords = null, shopPhone = '';

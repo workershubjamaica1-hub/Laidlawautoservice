@@ -67,3 +67,55 @@ Customers only see technicians whose subscription is in good standing.
 * Fygaro's documents do not say whether they retry a notification that fails. The site always records a payment only once
   (a repeated notification is ignored), and **Add days** is the manual backup.
 * Check taxes, your terms for providers, and your refund policy before charging. We are not able to advise on that.
+
+---
+
+# Premium customers (free servicing perks)
+
+Customers can join **AutoAid Premium** (monthly or yearly, they choose) and get:
+
+* **Free oil and filter changes** (default 4 per membership year, at most one every 80 days, so about one every 3 months).
+* **A free yearly brake disc pad check.** If the pads need replacing, the **labour is free** and the customer pays only for the pad
+  parts (the technician enters the parts cost as the job amount).
+
+Premium uses the **same Fygaro account, button and keys** as the provider subscription (see above), so set that up first.
+It is **off** until you set `PREMIUM_ENABLED=true`.
+
+## How it works for customers
+
+1. In the app a **Premium** card shows the benefits and the monthly and yearly prices. They pay by card on Fygaro's page.
+2. When the payment goes through, the card changes to **Premium member**, showing how many free oil changes are used and whether
+   the brake check is used.
+3. **Book free oil change** / **Book free brake check** creates a normal service request marked **Premium**. A technician takes it
+   like any other job. Cancelling the booking gives the perk back.
+4. Paying again (**Extend my membership**) adds to the end date. If a membership lapses and the customer comes back, a new
+   membership year starts.
+
+## How technicians are paid
+
+AutoAid pays the technician a set amount per premium job (you choose the amounts below). It is added to the technician's earnings
+on their dashboard when they finish the job, on top of any parts cost the customer paid. **You settle that money with the
+technician yourself**; the site only records it. Customers never see what the technician is paid.
+
+## Render settings for Premium
+
+| Name | Example | What it is |
+|---|---|---|
+| `PREMIUM_ENABLED` | `true` | turns Premium on |
+| `PREMIUM_PRICE_MONTHLY` | `1500` | monthly fee (leave blank to not offer monthly) |
+| `PREMIUM_PRICE_YEARLY` | `15000` | yearly fee (leave blank to not offer yearly) |
+| `PREMIUM_PAY_OIL` | `800` | what AutoAid pays a technician per free oil and filter change |
+| `PREMIUM_PAY_BRAKES` | `600` | what AutoAid pays per brake pad check (includes the labour to change pads) |
+| `PREMIUM_OIL_PER_YEAR` | `4` | free oil changes per membership year (optional, default 4) |
+| `PREMIUM_OIL_GAP_DAYS` | `80` | minimum days between free oil changes (optional, default 80) |
+
+The currency is the same `SUBSCRIPTION_CURRENCY` (default `JMD`). Premium payments reach the site through the same Hook URL
+(`/webhooks/fygaro`); no extra Fygaro setup is needed.
+
+## Admin
+
+* In **Users**, customers show **Premium until ...** and have **Add Premium days** (cash payments, gifts, or fixing a missed
+  payment). The settings box at the top shows the prices, the number of active members and the technician pay rates, and the
+  **Recent payments** list shows Premium payments too.
+* **Do the numbers first.** Work out what a free oil change and a brake check really cost you (technician pay plus oil and filter),
+  and make sure the yearly fee covers four oil changes and a brake check.

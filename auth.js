@@ -5,7 +5,7 @@
 //         staff     = sees every vehicle and request, can update request status
 //         admin     = everything, plus deleting records and managing users
 const crypto = require('crypto');
-const { statusOf } = require('./subscriptionConfig');
+const { statusOf, premiumStatusOf } = require('./subscriptionConfig');
 const express = require('express');
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -72,6 +72,7 @@ const publicUser = u => ({
   approved: u.approved !== false,
   subscriptionPaidUntil: u.subscription_paid_until || null,
   subscription: u.role === 'staff' ? statusOf(u) : null,   // only service providers have one
+  premium: u.role === 'customer' ? premiumStatusOf(u) : null, premiumPaidUntil: u.premium_paid_until || null,   // only customers can be Premium members
   specialties: u.specialties ? u.specialties.split(',') : [],
   businessName: u.business_name || '', experience: u.experience || '',
   // Customers must have all four before the shop can send someone out

@@ -35,7 +35,9 @@ const toRequest = r => ({
   id: r.id, vehicleId: r.vehicle_id, category: r.category, description: r.description, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
   technicianId: r.technician_id || null, amount: r.amount == null ? null : Number(r.amount),
   rating: r.rating || null, review: r.review || '', completedAt: r.completed_at || null,
-  hasWorkPhoto: !!r.work_photo_path
+  hasWorkPhoto: !!r.work_photo_path,
+  premiumPerk: r.premium_perk || null,                       // 'oil' or 'brakes' when this job is a free Premium service
+  platformPay: r.platform_pay == null ? null : Number(r.platform_pay)   // what AutoAid pays the technician for it
 });
 
 // Wraps async routes so database errors return a clean 500 instead of crashing
@@ -224,7 +226,7 @@ app.get('/service-requests', requireAuth, handle(async (req, res) => {
     })));
   }
   res.json(await Promise.all(data.map(async r => ({
-    ...toRequest(r), technician: techs.get(r.technician_id) || null,
+    ...toRequest(r), ...(isCustomer(req) ? { platformPay: null } : {}), technician: techs.get(r.technician_id) || null,
     workPhotoUrl: r.work_photo_path ? await auth.signedPhotoUrl(r.work_photo_path).catch(() => null) : null
   }))));
 }));

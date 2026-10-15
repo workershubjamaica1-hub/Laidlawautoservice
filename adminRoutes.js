@@ -1,6 +1,7 @@
 // adminRoutes.js — the staff/admin portal API, mounted at /admin.
 // Staff and admins can view everything and change request status. Only admins can delete records or manage users.
 const express = require('express');
+const { premium, premiumPlans, premiumStatusOf } = require('./subscriptionConfig');
 
 module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle, toRequest, STATUSES }) {
   const router = express.Router();
@@ -120,7 +121,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     const label = { diagnostics: 'Diagnostics', mechanical: 'Mechanical', tire: 'Tire', electrical: 'Electrical', maintenance: 'Maintenance', other: 'Other' };
     const jobs = [
       ...sr.data.map(r => ({ id: r.id, jobType: 'service', photoPath: r.work_photo_path, kind: 'service', title: label[r.category] || r.category, done: r.status === 'completed', active: r.status === 'in-progress',
-        when: r.completed_at || r.updated_at || r.created_at, amount: Number(r.amount || 0), rating: r.rating, review: r.review })),
+        when: r.completed_at || r.updated_at || r.created_at, amount: Number(r.amount || 0) + Number(r.platform_pay || 0), rating: r.rating, review: r.review })),
       ...em.data.map(r => ({ id: r.id, jobType: 'emergency', photoPath: r.work_photo_path, kind: r.kind, title: r.kind === 'towing' ? 'Wrecker / towing' : 'Roadside assistance', done: r.status === 'resolved', active: r.status === 'dispatched',
         when: r.completed_at || r.updated_at || r.created_at, amount: Number(r.amount || 0), rating: r.rating, review: r.review }))
     ];
@@ -190,8 +191,15 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
   router.get('/subscription-info', adminOnly, handle(async (req, res) => {
     const { data, error } = await supabase.from('users').select('id, approved, subscription_paid_until').eq('role', 'staff');
     if (error) throw error;
+    const members = await supabase.from('users').select('id, role, premium_paid_until').eq('role', 'customer');
+    if (members.error) throw members.error;
     const proto = req.get('x-forwarded-proto') || req.protocol;
     res.json({
+      premium: {
+        enabled: premium.enabled, plans: premiumPlans(), oilPerYear: premium.oilPerYear, oilGapDays: premium.oilGapDays,
+        payOil: premium.payOil, payBrakes: premium.payBrakes,
+        activeMembers: members.data.filter(u => premiumStatusOf(u).status === 'active').length
+      },
       enabled: subs.config.enabled, price: subs.config.price, currency: subs.config.currency, days: subs.config.days, graceDays: subs.config.graceDays,
       gatewayConfigured: subs.gatewayReady(), webhookUrl: proto + '://' + req.get('host') + '/webhooks/fygaro',
       providersNeverPaid: data.filter(u => u.approved !== false && !u.subscription_paid_until).length
@@ -204,6 +212,18 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     if (!Number.isInteger(days) || days < 1 || days > 366) return res.status(400).json({ error: 'Enter a number of days between 1 and 366.' });
     const out = await subs.credit({ userId: Number(req.params.id), provider: 'manual', days });
     if (!out.ok) return res.status(404).json({ error: 'Service provider not found.' });
+    const { data, error } = await supabase.from('users').select('*').eq('id', Number(req.params.id)).single();
+    if (error) throw error;
+    res.json(auth.publicUser(data));
+  }));
+
+  // Give a customer Premium days by hand (cash, a gift, or a fix if a payment did not arrive). Recorded as a manual payment.
+  router.post('/users/:id/premium', adminOnly, handle(async (req, res) => {
+    if (!premium.enabled) return res.status(400).json({ error: 'Premium is not switched on.' });
+    const days = Number(req.body.days);
+    if (!Number.isInteger(days) || days < 1 || days > 732) return res.status(400).json({ error: 'Enter a number of days between 1 and 732.' });
+    const out = await subs.credit({ userId: Number(req.params.id), provider: 'manual', days, kind: 'premium', plan: 'manual' });
+    if (!out.ok) return res.status(404).json({ error: 'Customer not found.' });
     const { data, error } = await supabase.from('users').select('*').eq('id', Number(req.params.id)).single();
     if (error) throw error;
     res.json(auth.publicUser(data));
@@ -228,7 +248,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     const u = ids.length ? await supabase.from('users').select('id, name').in('id', ids) : { data: [] };
     if (u.error) throw u.error;
     const names = new Map(u.data.map(x => [x.id, x.name]));
-    res.json(rows.map(r => ({ id: r.id, name: names.get(r.user_id) || 'Deleted user', provider: r.provider, amount: r.amount == null ? null : Number(r.amount),
+    res.json(rows.map(r => ({ id: r.id, name: names.get(r.user_id) || 'Deleted user', provider: r.provider, kind: r.kind || 'provider', plan: r.plan || null, amount: r.amount == null ? null : Number(r.amount),
       currency: r.currency, periodEnd: r.period_end, createdAt: r.created_at })));
   }));
 

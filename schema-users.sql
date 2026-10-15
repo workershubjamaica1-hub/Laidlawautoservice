@@ -96,5 +96,16 @@ create table if not exists subscription_payments (
 create index if not exists subscription_payments_user_idx on subscription_payments(user_id);
 alter table subscription_payments enable row level security;
 
+-- Premium customers: a paid membership with free servicing perks (free oil and filter changes, yearly brake pad check).
+-- premium_year_start is when the current membership year began; perks are counted per year.
+alter table users add column if not exists premium_paid_until timestamptz;
+alter table users add column if not exists premium_year_start timestamptz;
+-- A service request booked with a premium perk, and what AutoAid pays the technician for it (their earnings for the job)
+alter table service_requests add column if not exists premium_perk text check (premium_perk in ('oil', 'brakes'));
+alter table service_requests add column if not exists platform_pay numeric(12,2);
+-- The payment log now covers both provider subscriptions and Premium memberships
+alter table subscription_payments add column if not exists kind text not null default 'provider';
+alter table subscription_payments add column if not exists plan text;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
