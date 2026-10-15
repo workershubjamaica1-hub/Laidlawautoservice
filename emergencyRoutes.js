@@ -15,7 +15,7 @@ const HOUR = 3600 * 1000;
 module.exports = function emergencyRoutes({ supabase, handle, auth }) {
   const router = express.Router();
   const customerOnly = auth.requireRole('customer');
-  const staffUp = auth.requireRole('staff', 'admin');
+  const staffUp = auth.requireWorker;   // staff and admin; a provider with a lapsed subscription is stopped (402)
 
   const toEmergency = (r, extra = {}) => ({
     id: r.id, kind: r.kind, vehicleId: r.vehicle_id, note: r.note || '',

@@ -5,6 +5,7 @@
 //         staff     = sees every vehicle and request, can update request status
 //         admin     = everything, plus deleting records and managing users
 const crypto = require('crypto');
+const { statusOf } = require('./subscriptionConfig');
 const express = require('express');
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -69,6 +70,8 @@ const publicUser = u => ({
   phone: u.phone || '', address: u.address || '', parish: u.parish || '',
   hasChassisPhoto: !!u.chassis_photo_path, hasAvatar: !!u.avatar_path,
   approved: u.approved !== false,
+  subscriptionPaidUntil: u.subscription_paid_until || null,
+  subscription: u.role === 'staff' ? statusOf(u) : null,   // only service providers have one
   specialties: u.specialties ? u.specialties.split(',') : [],
   businessName: u.business_name || '', experience: u.experience || '',
   // Customers must have all four before the shop can send someone out
@@ -183,6 +186,15 @@ module.exports = function createAuth({ supabase, handle }) {
   // Usage: app.get('/x', ...requireRole('staff', 'admin'), handler)
   const requireRole = (...roles) => [requireAuth, (req, res, next) => {
     if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'You do not have access to this.' });
+    next();
+  }];
+
+  // Staff and admin routes. A service provider whose subscription is not active is stopped here (HTTP 402).
+  const requireWorker = [requireAuth, (req, res, next) => {
+    if (req.user.role !== 'staff' && req.user.role !== 'admin') return res.status(403).json({ error: 'You do not have access to this.' });
+    if (statusOf(req.user).restricted) {
+      return res.status(402).json({ error: 'Your subscription is not active. Pay your monthly fee to keep taking jobs.', code: 'subscription_required' });
+    }
     next();
   }];
 
@@ -306,10 +318,10 @@ module.exports = function createAuth({ supabase, handle }) {
   // The technicians (staff) working in the signed-in customer's parish
   router.get('/technicians', requireAuth, handle(async (req, res) => {
     if (!req.user.parish) return res.json([]);
-    const { data, error } = await supabase.from('users').select('name, phone')
+    const { data, error } = await supabase.from('users').select('name, phone, role, approved, subscription_paid_until')
       .eq('role', 'staff').eq('active', true).eq('parish', req.user.parish).order('name');
     if (error) throw error;
-    res.json(data.map(t => ({ name: t.name, phone: t.phone || '' })));
+    res.json(data.filter(t => t.approved !== false && !statusOf(t).restricted).map(t => ({ name: t.name, phone: t.phone || '' })));
   }));
 
   // Customers (and staff) update their own contact details
@@ -362,5 +374,5 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ url });
   }));
 
-  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES };
+  return { router, requireAuth, requireRole, requireWorker, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES };
 };

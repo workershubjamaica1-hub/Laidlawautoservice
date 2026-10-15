@@ -79,5 +79,22 @@ alter table service_requests add column if not exists work_photo_at timestamptz;
 alter table emergency_requests add column if not exists work_photo_path text;
 alter table emergency_requests add column if not exists work_photo_at timestamptz;
 
+-- Monthly subscription for service providers. paid_until is how long their access runs; payments is the receipt book.
+-- transaction_id is unique so the same payment notification can never be credited twice.
+alter table users add column if not exists subscription_paid_until timestamptz;
+create table if not exists subscription_payments (
+  id             bigint generated always as identity primary key,
+  user_id        bigint not null references users(id) on delete cascade,
+  provider       text not null,              -- 'fygaro' or 'manual' (added by an admin)
+  transaction_id text unique,
+  amount         numeric(12,2),
+  currency       text,
+  period_start   timestamptz,
+  period_end     timestamptz,
+  created_at     timestamptz not null default now()
+);
+create index if not exists subscription_payments_user_idx on subscription_payments(user_id);
+alter table subscription_payments enable row level security;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';

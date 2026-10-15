@@ -15,7 +15,7 @@ app.use(cors(corsOrigins.length ? { origin: corsOrigins } : undefined));
 
 // The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
 const smallJson = express.json();
-const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|admin\/jobs\/(service|emergency)\/\d+\/photo)$/;
+const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
 app.use((req, res, next) => (bigBodyPaths.test(req.path) ? next() : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -48,6 +48,10 @@ const handle = fn => (req, res) => fn(req, res).catch(err => {
 const auth = require('./auth')({ supabase, handle });
 const { requireAuth } = auth;
 app.use('/auth', auth.router);
+
+// Monthly subscription for service providers (subscriptions.js). Off until SUBSCRIPTIONS_ENABLED=true.
+const subs = require('./subscriptions')({ supabase, handle, auth });
+app.use(subs.router);
 const isCustomer = req => req.user.role === 'customer';
 
 // Vehicle categories
@@ -376,10 +380,13 @@ app.post('/ai-assist', requireAuth, handle(async (req, res) => {
 app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
 
 // Public settings the pages need (the shop's phone number for the call buttons)
-app.get('/config', (req, res) => res.json({ businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '' }));
+app.get('/config', (req, res) => res.json({
+  businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '',
+  subscription: { enabled: subs.config.enabled, priceLabel: require('./subscriptionConfig').priceLabel(), days: subs.config.days }
+}));
 
 // --- Staff/admin portal API (adminRoutes.js) ---
-app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, toVehicle, toRequest, STATUSES }));
+app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, subs, toVehicle, toRequest, STATUSES }));
 
 // Streaming chat with the mechanic assistant (ai.js). The older /ai-assist above is kept for simple one-shot use.
 app.post('/ai-chat', requireAuth, handle(require('./ai')({ supabase, diagnose, isCustomer })));

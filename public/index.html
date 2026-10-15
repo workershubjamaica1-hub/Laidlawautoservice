@@ -161,6 +161,7 @@
         <input id="business" autocomplete="organization">
         <label for="experience">Your experience and qualifications</label>
         <textarea id="experience" placeholder="Years of experience, certifications, the kinds of vehicles you work on"></textarea>
+        <p class="hint" id="feeHint" hidden></p>
         <p class="hint">An admin reviews every application. You can sign in once you are approved.</p>
       </div>
       <label for="pw">Password</label>
@@ -250,6 +251,14 @@ const home = role => role === 'customer' ? '/app.html' : '/admin.html';
   } catch (e) {}
   try { localStorage.removeItem('authToken'); } catch (e) {}
 })();
+
+// If monthly subscriptions are on, tell applicants up front what it costs
+fetch('/config').then(r => r.json()).then(c => {
+  if (c.subscription && c.subscription.enabled && c.subscription.priceLabel) {
+    $('feeHint').textContent = 'After you are approved, service providers pay a monthly subscription of ' + c.subscription.priceLabel + ' to start taking jobs.';
+    $('feeHint').hidden = false;
+  }
+}).catch(() => {});
 
 // Kinds of work a service member can offer
 fetch('/auth/specialties').then(r => r.json()).then(list => {

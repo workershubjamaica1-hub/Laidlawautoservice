@@ -109,6 +109,13 @@
   .rrow .track i { display: block; height: 100%; background: var(--blue); border-radius: 0 4px 4px 0; }
   .review { border-top: 1px solid var(--line); padding: 8px 0; }
   .review:first-of-type { border-top: 0; }
+  .subbar { background: #FFF4D6; border: 1px solid var(--safety); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .gate { max-width: 640px; margin: 24px auto; text-align: center; padding: 28px 24px; }
+  .gate h2 { font-size: 30px; }
+  .gate ul { text-align: left; display: inline-block; margin: 8px 0 16px; padding-left: 22px; }
+  .gate .btn.big { font-size: 20px; padding: 14px 28px; margin-top: 6px; }
+  .subinfo { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; }
+  .subinfo code { background: var(--surface); padding: 2px 6px; border-radius: 3px; overflow-wrap: anywhere; }
   .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
   .gallery a { display: block; color: inherit; text-decoration: none; }
   .gallery img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); display: block; }
@@ -140,6 +147,8 @@
   </header>
   <main>
     <p class="error" id="appError" role="alert"></p>
+    <div class="panel gate" id="gatePanel" hidden></div>
+    <div class="subbar" id="subBanner" hidden></div>
     <div class="stats" id="stats"></div>
 
     <div class="parishbar">
@@ -185,6 +194,7 @@
     </div>
 
     <div class="panel" id="usersPanel" hidden>
+      <div id="subBox" class="subinfo" hidden></div>
       <div id="pendingBox" class="pending" hidden></div>
       <form id="userForm" class="userform">
         <input id="uName" placeholder="Full name" aria-label="Full name" required>
@@ -241,8 +251,72 @@ async function api(path, options = {}) {
   });
   const body = await res.json().catch(() => ({}));
   if (res.status === 401) { signOut(); throw new Error('Session expired. Sign in again.'); }
+  if (res.status === 402) {
+    // the provider's subscription has run out: show the pay screen instead of the portal
+    if (!gated) showGate();
+    const e = new Error(body.error || 'Your subscription is not active.'); e.code = 'subscription_required'; throw e;
+  }
   if (!res.ok) throw new Error(body.error || 'Request failed.');
   return body;
+}
+
+// --- Monthly subscription (service providers) ---
+let gated = false;     // true while the pay screen is showing
+let subInfo = null;    // admin: subscription settings
+function dateLabel(iso) { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
+
+async function startCheckout(btn) {
+  btn.disabled = true; $('appError').textContent = '';
+  try { const r = await api('/subscription/checkout', { method: 'POST' }); location.href = r.url; }
+  catch (err) { $('appError').textContent = err.message; btn.disabled = false; }
+}
+
+async function showGate() {
+  gated = true;
+  let sub;
+  try { sub = await api('/subscription'); } catch (err) { $('appError').textContent = err.message; return; }
+  ['stats', 'dashPanel', 'emergPanel', 'requestsPanel', 'vehiclesPanel', 'usersPanel', 'subBanner'].forEach(id => { $(id).hidden = true; });
+  document.querySelector('.parishbar').hidden = true; document.querySelector('.tabs').hidden = true;
+  const returning = new URLSearchParams(location.search).get('paid') === '1';
+  const expired = sub.status === 'expired';
+  const pay = el('button', { className: 'btn safety big', textContent: 'Pay ' + (sub.priceLabel || 'now') + ' now', disabled: !sub.canPayOnline });
+  pay.addEventListener('click', () => startCheckout(pay));
+  const g = $('gatePanel');
+  g.hidden = false;
+  g.replaceChildren(
+    el('h2', { textContent: expired ? 'Your subscription has ended' : 'Activate your account' }),
+    el('p', { textContent: expired
+      ? 'Your subscription ended on ' + dateLabel(sub.graceUntil || sub.paidUntil) + '. Renew to see customers and emergency requests again.'
+      : 'Welcome to AutoAid 24/7. Your application is approved. Pay your monthly subscription to start taking jobs.' }),
+    el('p', {}, 'With an active subscription you get:'),
+    el('ul', {}, el('li', { textContent: 'Emergency requests (roadside and towing) in your area' }), el('li', { textContent: 'Customer details and locations for your jobs' }),
+      el('li', { textContent: 'Your dashboard with earnings, ratings and proof-of-work photos' })),
+    el('div', {}, pay),
+    sub.canPayOnline
+      ? el('p', { className: 'empty', textContent: 'You pay securely by card on the payment page. One payment covers ' + sub.days + ' days, and your access starts as soon as it goes through.' })
+      : el('p', { className: 'error', textContent: 'Online payment is not set up yet. Please contact AutoAid 24/7 to activate your account.' }),
+    ...(returning ? [el('p', { id: 'paidNote', textContent: 'Payment received? We are activating your account...', style: 'font-weight:600' })] : []));
+  if (returning) pollPaid(0);
+}
+// after returning from the payment page the notification can take a moment to arrive
+async function pollPaid(n) {
+  try {
+    const sub = await api('/subscription');
+    if (!sub.restricted) return location.replace('/admin.html');
+  } catch (e) {}
+  if (n >= 12) { const note = $('paidNote'); if (note) note.textContent = 'Your payment can take a minute to show. Refresh this page shortly. If it still does not unlock, contact AutoAid 24/7.'; return; }
+  setTimeout(() => pollPaid(n + 1), 3000);
+}
+// providers near the end of their month see a reminder with a renew button
+function showRenewBanner() {
+  const s = me && me.subscription;
+  if (!s || (s.status !== 'grace' && !(s.status === 'active' && s.daysLeft <= 7))) { $('subBanner').hidden = true; return; }
+  const renew = el('button', { className: 'btn safety small', textContent: 'Renew now' });
+  renew.addEventListener('click', () => startCheckout(renew));
+  $('subBanner').hidden = false;
+  $('subBanner').replaceChildren(el('span', { textContent: s.status === 'grace'
+    ? 'Your subscription has ended. You have ' + s.daysLeft + ' day' + (s.daysLeft === 1 ? '' : 's') + ' left to renew before access stops.'
+    : 'Your subscription ends on ' + dateLabel(s.paidUntil) + ' (' + s.daysLeft + ' day' + (s.daysLeft === 1 ? '' : 's') + ' left).' }), renew);
 }
 
 function signOut() {
@@ -259,6 +333,7 @@ $('logout').addEventListener('click', async () => {
 $('refresh').addEventListener('click', () => load());
 
 async function load() {
+  if (gated) return location.reload();
   $('appError').textContent = '';
   try {
     if (!me) {
@@ -272,6 +347,8 @@ async function load() {
       // A technician starts on their own parish; they can switch to All parishes
       if (me.role === 'staff' && me.parish) $('parishFilter').value = me.parish;
     }
+    if (me.subscription && me.subscription.restricted) { await showGate(); return; }
+    showRenewBanner();
     data = await api('/admin/overview');
     await refreshEmergencies();
     if (!window.__firstLoadDone) {
@@ -279,9 +356,9 @@ async function load() {
       if (emergencies.some(e => e.status === 'open')) document.querySelector('.tabs button[data-tab="emergencies"]').click();
     }
     await loadDashboard();
-    if (me.role === 'admin') users = await api('/admin/users');
+    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); }
   } catch (err) {
-    $('appError').textContent = err.message;
+    if (err.code !== 'subscription_required') $('appError').textContent = err.message;
     return;
   }
   render();
@@ -647,6 +724,48 @@ function renderVehicles() {
   }));
 }
 
+async function renderSubBox() {
+  const box = $('subBox');
+  if (!subInfo) { box.hidden = true; return; }
+  box.hidden = false;
+  const money = n => subInfo.currency + ' ' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
+  if (!subInfo.enabled) {
+    box.replaceChildren(el('strong', { textContent: 'Monthly subscriptions are OFF' }),
+      el('p', { className: 'empty', style: 'margin:4px 0 0', textContent: 'Service providers are not charged. To switch them on, follow the steps in PAYMENTS.md and set SUBSCRIPTIONS_ENABLED=true in Render.' }));
+    return;
+  }
+  const kids = [
+    el('strong', { textContent: 'Monthly subscriptions are ON: ' + money(subInfo.price) + ' per ' + subInfo.days + ' days (' + subInfo.graceDays + ' days grace)' }),
+    el('p', { style: 'margin:6px 0 0', textContent: subInfo.gatewayConfigured ? 'Payment gateway: connected.' : 'Payment gateway: NOT set up. Providers cannot pay online yet. You can still add days by hand.' }),
+    el('p', { style: 'margin:6px 0 0' }, 'Payment notification address for Fygaro: ', el('code', { textContent: subInfo.webhookUrl }))
+  ];
+  if (subInfo.providersNeverPaid > 0) {
+    const go = el('button', { className: 'btn safety small', textContent: 'Give them ' + subInfo.days + ' free days' });
+    go.addEventListener('click', async () => {
+      go.disabled = true;
+      try { await api('/admin/subscriptions/grandfather', { method: 'POST', body: JSON.stringify({ days: subInfo.days }) }); await load(); }
+      catch (err) { $('appError').textContent = err.message; go.disabled = false; }
+    });
+    kids.push(el('p', { style: 'margin:10px 0 0' }, subInfo.providersNeverPaid + ' approved provider' + (subInfo.providersNeverPaid > 1 ? 's have' : ' has') + ' never paid and cannot work right now. ', go));
+  }
+  const det = el('details', { style: 'margin-top:10px' }, el('summary', { textContent: 'Recent subscription payments', style: 'cursor:pointer;font-weight:600' }));
+  det.addEventListener('toggle', async () => {
+    if (!det.open || det.dataset.loaded) return;
+    det.dataset.loaded = '1';
+    try {
+      const rows = await api('/admin/subscription-payments');
+      det.append(rows.length
+        ? el('div', { className: 'table-wrap' }, el('table', { style: 'min-width:420px' },
+            el('thead', {}, el('tr', {}, ...['Provider', 'Paid', 'Amount', 'How', 'Access until'].map(h => el('th', { textContent: h })))),
+            el('tbody', {}, ...rows.map(r => el('tr', {}, el('td', { textContent: r.name }), el('td', { textContent: fmtDate(r.createdAt) }),
+              el('td', { textContent: r.amount ? money(r.amount) : '-' }), el('td', { textContent: r.provider === 'manual' ? 'Added by admin' : 'Card' }), el('td', { textContent: r.periodEnd ? fmtDate(r.periodEnd) : '' }))))))
+        : el('p', { className: 'empty', textContent: 'No payments yet.' }));
+    } catch (err) { det.append(el('p', { className: 'error', textContent: err.message })); }
+  });
+  kids.push(det);
+  box.replaceChildren(...kids);
+}
+
 function renderPending() {
   const pending = users.filter(u => u.approved === false);
   $('usersTab').textContent = 'Users' + (pending.length ? ' (' + pending.length + ' to approve)' : '');
@@ -674,6 +793,7 @@ function renderPending() {
 function renderUsers() {
   if (me.role !== 'admin') return;
   renderPending();
+  renderSubBox();
   $('userBody').replaceChildren(...users.filter(u => u.approved !== false).map(u => {
     const isMe = u.id === me.id;
     const role = el('select', { ariaLabel: 'Role', disabled: isMe },
@@ -693,6 +813,20 @@ function renderUsers() {
     const parish = el('select', { ariaLabel: 'Parish' }, el('option', { value: '', textContent: u.role === 'staff' ? 'Not assigned' : '-' }),
       ...parishes.map(p => el('option', { value: p, textContent: p, selected: p === u.parish })));
     parish.addEventListener('change', () => patchUser(u.id, { parish: parish.value }));
+    const subText = !subInfo || !subInfo.enabled || !u.subscription || u.subscription.status === 'not-required' ? null
+      : u.subscription.status === 'none' ? 'Subscription: not paid'
+      : u.subscription.status === 'active' ? 'Paid until ' + dateLabel(u.subscription.paidUntil)
+      : u.subscription.status === 'grace' ? 'Ended ' + dateLabel(u.subscription.paidUntil) + ' (grace)' : 'Expired ' + dateLabel(u.subscription.paidUntil);
+    const addDays = el('button', { className: 'btn ghost small', textContent: 'Add days', hidden: !(subInfo && subInfo.enabled && u.role === 'staff') });
+    addDays.addEventListener('click', () => {
+      const box = el('input', { type: 'number', min: 1, max: 366, value: subInfo.days, ariaLabel: 'Days to add', style: 'width:70px;padding:4px 6px' });
+      const ok = el('button', { className: 'btn safety small', textContent: 'Add' });
+      ok.addEventListener('click', async () => {
+        try { await api('/admin/users/' + u.id + '/subscription', { method: 'POST', body: JSON.stringify({ days: Number(box.value) }) }); await load(); }
+        catch (err) { $('appError').textContent = err.message; }
+      });
+      addDays.replaceWith(box, ' ', ok); box.focus();
+    });
     const jobsBtn = el('button', { className: 'btn ghost small', textContent: 'Jobs & photos', hidden: u.role !== 'staff' });
     jobsBtn.addEventListener('click', () => viewTechnician(u.id));
     const photo = el('button', { className: 'btn ghost small', textContent: 'Vehicle photo', hidden: !u.hasChassisPhoto });
@@ -702,8 +836,8 @@ function renderUsers() {
       el('td', {}, el('span', { className: 'who', textContent: u.email }), u.phone ? el('span', { className: 'who', textContent: u.phone }) : null, u.address ? el('small', { className: 'who', textContent: u.address }) : null),
       el('td', {}, role),
       el('td', {}, parish),
-      el('td', {}, el('span', { className: u.active ? 'badge' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' })),
-      el('td', { className: 'act' }, jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
+      el('td', {}, el('span', { className: u.active ? 'badge' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), subText ? el('br') : null, subText ? el('small', { textContent: subText }) : null),
+      el('td', { className: 'act' }, addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }
 async function patchUser(id, body) {

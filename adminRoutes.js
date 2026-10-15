@@ -2,9 +2,9 @@
 // Staff and admins can view everything and change request status. Only admins can delete records or manage users.
 const express = require('express');
 
-module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toRequest, STATUSES }) {
+module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle, toRequest, STATUSES }) {
   const router = express.Router();
-  const staffUp = auth.requireRole('staff', 'admin');
+  const staffUp = auth.requireWorker;   // staff and admin; a provider with a lapsed subscription is stopped (402)
   const adminOnly = auth.requireRole('admin');
 
   // --- Dashboard ---
@@ -184,6 +184,52 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     const url = data && await auth.signedPhotoUrl(data.chassis_photo_path);
     if (!url) return res.status(404).json({ error: 'This customer has not uploaded a vehicle photo.' });
     res.json({ url });
+  }));
+
+  // --- Subscriptions (admin only) ---
+  router.get('/subscription-info', adminOnly, handle(async (req, res) => {
+    const { data, error } = await supabase.from('users').select('id, approved, subscription_paid_until').eq('role', 'staff');
+    if (error) throw error;
+    const proto = req.get('x-forwarded-proto') || req.protocol;
+    res.json({
+      enabled: subs.config.enabled, price: subs.config.price, currency: subs.config.currency, days: subs.config.days, graceDays: subs.config.graceDays,
+      gatewayConfigured: subs.gatewayReady(), webhookUrl: proto + '://' + req.get('host') + '/webhooks/fygaro',
+      providersNeverPaid: data.filter(u => u.approved !== false && !u.subscription_paid_until).length
+    });
+  }));
+
+  // Add access days to one provider (cash, bank transfer, a free month, or a fix if the gateway hiccups). Recorded as a manual payment.
+  router.post('/users/:id/subscription', adminOnly, handle(async (req, res) => {
+    const days = Number(req.body.days);
+    if (!Number.isInteger(days) || days < 1 || days > 366) return res.status(400).json({ error: 'Enter a number of days between 1 and 366.' });
+    const out = await subs.credit({ userId: Number(req.params.id), provider: 'manual', days });
+    if (!out.ok) return res.status(404).json({ error: 'Service provider not found.' });
+    const { data, error } = await supabase.from('users').select('*').eq('id', Number(req.params.id)).single();
+    if (error) throw error;
+    res.json(auth.publicUser(data));
+  }));
+
+  // Switching subscriptions on would lock out technicians who joined before it existed. This gives all of them free days at once.
+  router.post('/subscriptions/grandfather', adminOnly, handle(async (req, res) => {
+    const days = Number(req.body.days || 30);
+    if (!Number.isInteger(days) || days < 1 || days > 366) return res.status(400).json({ error: 'Enter a number of days between 1 and 366.' });
+    const { data, error } = await supabase.from('users').select('id, approved, subscription_paid_until').eq('role', 'staff');
+    if (error) throw error;
+    const targets = data.filter(u => u.approved !== false && !u.subscription_paid_until);
+    for (const u of targets) await subs.credit({ userId: u.id, provider: 'manual', days });
+    res.json({ count: targets.length, days });
+  }));
+
+  router.get('/subscription-payments', adminOnly, handle(async (req, res) => {
+    const { data, error } = await supabase.from('subscription_payments').select('*').order('id', { ascending: false });
+    if (error) throw error;
+    const rows = data.slice(0, 50);
+    const ids = [...new Set(rows.map(r => r.user_id))];
+    const u = ids.length ? await supabase.from('users').select('id, name').in('id', ids) : { data: [] };
+    if (u.error) throw u.error;
+    const names = new Map(u.data.map(x => [x.id, x.name]));
+    res.json(rows.map(r => ({ id: r.id, name: names.get(r.user_id) || 'Deleted user', provider: r.provider, amount: r.amount == null ? null : Number(r.amount),
+      currency: r.currency, periodEnd: r.period_end, createdAt: r.created_at })));
   }));
 
   // --- Users (admin only) ---
