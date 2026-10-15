@@ -111,5 +111,13 @@ alter table subscription_payments add column if not exists plan text;
 alter table users add column if not exists terms_accepted_at timestamptz;
 alter table users add column if not exists terms_version text;
 
+-- Email verification: a 6-digit code is emailed when someone signs up. Everyone who already has an account counts as verified.
+-- Only a scrambled copy of the code is stored.
+alter table users add column if not exists email_verified boolean not null default true;
+alter table users add column if not exists verify_code_hash text;
+alter table users add column if not exists verify_expires_at timestamptz;
+alter table users add column if not exists verify_attempts integer not null default 0;
+alter table users add column if not exists verify_sent_at timestamptz;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';

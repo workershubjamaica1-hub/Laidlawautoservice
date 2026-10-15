@@ -6,6 +6,7 @@
 //         admin     = everything, plus deleting records and managing users
 const crypto = require('crypto');
 const { statusOf, premiumStatusOf } = require('./subscriptionConfig');
+const mailer = require('./mailer');
 const express = require('express');
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -61,6 +62,14 @@ const SPECIALTIES = [
   { value: 'maintenance', label: 'Maintenance' }, { value: 'roadside', label: 'Roadside assistance' },
   { value: 'towing', label: 'Wrecker / towing' }
 ];
+// Email verification: a 6-digit code is emailed when someone signs up. Off until VERIFY_EMAIL=true (and email is set up, see EMAIL.md).
+const VERIFY = {
+  enabled: String(process.env.VERIFY_EMAIL || '').toLowerCase() === 'true',
+  ttlMs: (Number(process.env.EMAIL_CODE_TTL_MINUTES) > 0 ? Number(process.env.EMAIL_CODE_TTL_MINUTES) : 10) * 60 * 1000,
+  cooldownMs: (process.env.EMAIL_RESEND_SECONDS !== undefined && Number.isFinite(Number(process.env.EMAIL_RESEND_SECONDS)) ? Number(process.env.EMAIL_RESEND_SECONDS) : 60) * 1000,
+  maxAttempts: 5
+};
+const BUSINESS = process.env.BUSINESS_NAME || 'AutoAid 24/7';
 const TERMS_VERSION = '2026-10-15';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
@@ -71,6 +80,7 @@ const publicUser = u => ({
   phone: u.phone || '', address: u.address || '', parish: u.parish || '',
   hasChassisPhoto: !!u.chassis_photo_path, hasAvatar: !!u.avatar_path,
   approved: u.approved !== false,
+  emailVerified: u.email_verified !== false,
   subscriptionPaidUntil: u.subscription_paid_until || null,
   termsAcceptedAt: u.terms_accepted_at || null,   // when they agreed to the Terms and Privacy Notice
   subscription: u.role === 'staff' ? statusOf(u) : null,   // only service providers have one
@@ -159,13 +169,14 @@ module.exports = function createAuth({ supabase, handle }) {
     if (error) throw error;
     return data;
   };
-  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience, termsAcceptedAt }) {
+  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience, termsAcceptedAt, emailVerified }) {
     const { data, error } = await supabase.from('users')
       .insert({
         name, email, password_hash: hashPassword(password), role,
         phone: phone || null, address: address || null, parish: parish || null,
         approved: approved !== false, specialties: specialties || null,
         business_name: businessName || null, experience: experience || null,
+        email_verified: emailVerified !== false,
         terms_accepted_at: termsAcceptedAt || null, terms_version: termsAcceptedAt ? TERMS_VERSION : null
       })
       .select().single();
@@ -179,7 +190,7 @@ module.exports = function createAuth({ supabase, handle }) {
     try {
       const t = readToken(tokenFrom(req));
       const user = t && await findById(t.uid);
-      if (!user || !user.active || user.approved === false) return res.status(401).json({ error: 'Please sign in.' });
+      if (!user || !user.active || user.approved === false || user.email_verified === false) return res.status(401).json({ error: 'Please sign in.' });
       req.user = user;
       next();
     } catch (err) {
@@ -241,6 +252,47 @@ module.exports = function createAuth({ supabase, handle }) {
     if (path) await supabase.storage.from(PHOTO_BUCKET).remove([path]);
   }
 
+  // --- Email verification codes ---
+  const verifyLimit = makeLimiter(10, 15 * 60 * 1000);   // wrong codes per address
+  const resendLimit = makeLimiter(10, 60 * 60 * 1000);   // "send me a code" requests per address
+  const codeHash = (userId, code) => crypto.createHmac('sha256', SECRET).update(`verify:${userId}:${code}`).digest('hex');
+
+  // Makes a new code, saves only a scrambled copy of it, and emails the real one.
+  // Returns { sent: true } | { sent: false, wait: seconds } (asked too soon) | { sent: false, failed: true } (email service problem)
+  async function sendCode(user) {
+    const since = user.verify_sent_at ? Date.now() - Date.parse(user.verify_sent_at) : Infinity;
+    if (since < VERIFY.cooldownMs) return { sent: false, wait: Math.max(1, Math.ceil((VERIFY.cooldownMs - since) / 1000)) };
+    const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+    const save = await supabase.from('users').update({
+      verify_code_hash: codeHash(user.id, code), verify_expires_at: new Date(Date.now() + VERIFY.ttlMs).toISOString(),
+      verify_attempts: 0, verify_sent_at: new Date().toISOString()
+    }).eq('id', user.id);
+    if (save.error) throw save.error;
+    const minutes = Math.max(1, Math.round(VERIFY.ttlMs / 60000));
+    const text = `Your ${BUSINESS} verification code is ${code}.\n\nIt expires in ${minutes} minutes. If you did not try to sign up, you can ignore this email.`;
+    const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:auto;padding:24px;color:#0F1B2D">
+      <h2 style="margin:0 0 12px;color:#0B2545">${BUSINESS}</h2>
+      <p style="margin:0 0 16px">Use this code to verify your email address:</p>
+      <p style="font-size:34px;font-weight:800;letter-spacing:8px;margin:0 0 16px;color:#0F6FDE">${code}</p>
+      <p style="margin:0;color:#55657B;font-size:14px">It expires in ${minutes} minutes. If you did not try to sign up, you can ignore this email.</p></div>`;
+    try {
+      await mailer.sendMail({ to: user.email, subject: `Your ${BUSINESS} code: ${code}`, text, html });
+      return { sent: true };
+    } catch (err) {
+      console.error('Could not send the verification email:', err.message);
+      await supabase.from('users').update({ verify_sent_at: null }).eq('id', user.id);   // let them ask again straight away
+      return { sent: false, failed: true };
+    }
+  }
+  const notReady = res => res.status(503).json({ error: 'Email verification is not set up yet. Please contact AutoAid 24/7.' });
+  // A sign-up that was never verified holds no data, so signing up again with the same email simply replaces it.
+  // (This stops someone from "squatting" on another person's email address.)
+  async function replaceUnverified(existing, fields) {
+    const { data, error } = await supabase.from('users').update(fields).eq('id', existing.id).select().single();
+    if (error) throw error;
+    return data;
+  }
+
   // --- /auth routes ---
   const router = express.Router();
 
@@ -255,12 +307,21 @@ module.exports = function createAuth({ supabase, handle }) {
     if (req.body.agreed !== true) return res.status(400).json({ error: 'Please agree to the Terms and the Privacy Notice to create an account.' });
     const contact = checkContact(req.body, true);
     if (contact.error) return res.status(400).json({ error: contact.error });
-    if (await findByEmail(email)) {
+    if (VERIFY.enabled && !mailer.ready()) return notReady(res);
+    const existing = await findByEmail(email);
+    if (existing && !(VERIFY.enabled && existing.email_verified === false && existing.role === 'customer')) {
       signupLimit.fail(req.ip);
       return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
     }
-    const user = await createUser({ name, email, password, role: 'customer', termsAcceptedAt: new Date().toISOString(), ...contact.value }); // sign-up is always a customer
+    const now = new Date().toISOString();
+    const user = existing
+      ? await replaceUnverified(existing, { name, password_hash: hashPassword(password), phone: contact.value.phone, address: contact.value.address, parish: contact.value.parish, terms_accepted_at: now, terms_version: TERMS_VERSION })
+      : await createUser({ name, email, password, role: 'customer', termsAcceptedAt: now, emailVerified: !VERIFY.enabled, ...contact.value }); // sign-up is always a customer
     signupLimit.fail(req.ip); // counts every sign-up toward the hourly limit
+    if (VERIFY.enabled) {
+      const sent = await sendCode(user);
+      return res.status(201).json({ verificationRequired: true, email, emailSent: !!sent.sent || !!sent.wait });
+    }
     res.status(201).json({ token: makeToken(user.id), user: publicUser(user) });
   }));
 
@@ -283,13 +344,62 @@ module.exports = function createAuth({ supabase, handle }) {
     const businessName = String(req.body.businessName || '').trim().slice(0, 100);
     const experience = String(req.body.experience || '').trim().slice(0, 600);
     if (experience.length < 10) return res.status(400).json({ error: 'Tell us a little about your experience and qualifications.' });
-    if (await findByEmail(email)) {
+    if (VERIFY.enabled && !mailer.ready()) return notReady(res);
+    const existing = await findByEmail(email);
+    if (existing && !(VERIFY.enabled && existing.email_verified === false && existing.role === 'staff')) {
       signupLimit.fail(req.ip);
       return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
     }
-    await createUser({ name, email, password, role: 'staff', approved: false, specialties: specialties.join(','), businessName, experience, termsAcceptedAt: new Date().toISOString(), ...contact.value });
+    const now = new Date().toISOString();
+    const user = existing
+      ? await replaceUnverified(existing, { name, password_hash: hashPassword(password), phone: contact.value.phone, address: contact.value.address, parish: contact.value.parish,
+          specialties: specialties.join(','), business_name: businessName || null, experience, terms_accepted_at: now, terms_version: TERMS_VERSION })
+      : await createUser({ name, email, password, role: 'staff', approved: false, specialties: specialties.join(','), businessName, experience, termsAcceptedAt: now, emailVerified: !VERIFY.enabled, ...contact.value });
     signupLimit.fail(req.ip);
+    if (VERIFY.enabled) {
+      const sent = await sendCode(user);
+      return res.status(201).json({ pending: true, verificationRequired: true, email, emailSent: !!sent.sent || !!sent.wait });
+    }
     res.status(201).json({ pending: true });
+  }));
+
+  // Enter the code from the email. A customer is signed in; a service provider's application moves on to admin approval.
+  router.post('/verify', handle(async (req, res) => {
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    const code = String((req.body && req.body.code) || '').replace(/\s+/g, '');
+    if (verifyLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many wrong codes. Ask for a new code in a few minutes.' });
+    const user = email ? await findByEmail(email) : null;
+    const wrong = left => { verifyLimit.fail(req.ip); return res.status(400).json({ error: 'That code is not right. Check the newest email and try again.', attemptsLeft: left }); };
+    if (!user || user.email_verified !== false || !/^\d{6}$/.test(code)) return wrong();
+    if (!user.verify_code_hash || !user.verify_expires_at || Date.parse(user.verify_expires_at) < Date.now()) {
+      return res.status(400).json({ error: 'That code has expired. Ask for a new one.', code: 'expired' });
+    }
+    const used = user.verify_attempts || 0;
+    if (used >= VERIFY.maxAttempts) return res.status(429).json({ error: 'Too many wrong tries for that code. Ask for a new one.', code: 'locked' });
+    if (!safeEqual(codeHash(user.id, code), user.verify_code_hash)) {
+      await supabase.from('users').update({ verify_attempts: used + 1 }).eq('id', user.id);
+      return wrong(VERIFY.maxAttempts - used - 1);
+    }
+    const { data, error } = await supabase.from('users')
+      .update({ email_verified: true, verify_code_hash: null, verify_expires_at: null, verify_attempts: 0 }).eq('id', user.id).select().single();
+    if (error) throw error;
+    verifyLimit.clear(req.ip);
+    if (data.role === 'staff' || data.approved === false) return res.json({ verified: true, pending: data.approved === false });   // providers wait for approval
+    if (!data.active) return res.status(403).json({ error: 'This account has been disabled. Contact the shop.' });
+    res.json({ verified: true, token: makeToken(data.id), user: publicUser(data) });
+  }));
+
+  // "Send me a new code". Always answers the same way, so it cannot be used to find out who has an account.
+  router.post('/resend', handle(async (req, res) => {
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    if (resendLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many requests. Try again in an hour.' });
+    resendLimit.fail(req.ip);
+    const user = email ? await findByEmail(email) : null;
+    if (!VERIFY.enabled || !user || user.email_verified !== false) return res.json({ ok: true, emailSent: true });
+    if (!mailer.ready()) return notReady(res);
+    const r = await sendCode(user);
+    if (r.wait) return res.status(429).json({ error: `Please wait ${r.wait} seconds before asking for another code.`, wait: r.wait });
+    res.json({ ok: true, emailSent: !!r.sent });
   }));
 
   router.post('/login', handle(async (req, res) => {
@@ -301,6 +411,10 @@ module.exports = function createAuth({ supabase, handle }) {
     if (!ok) {
       loginLimit.fail(req.ip);
       return res.status(401).json({ error: 'Wrong email or password.' });
+    }
+    if (user.email_verified === false) {
+      if (VERIFY.enabled && mailer.ready()) await sendCode(user);   // (does nothing if a code was just sent)
+      return res.status(403).json({ error: 'Please verify your email address first. We sent you a 6-digit code.', code: 'email_unverified', email: user.email });
     }
     if (user.approved === false) return res.status(403).json({ error: 'Your application is still waiting for approval. You can sign in once an admin approves it.' });
     if (!user.active) return res.status(403).json({ error: 'This account has been disabled. Contact the shop.' });

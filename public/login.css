@@ -49,6 +49,16 @@ main { flex: 1; display: grid; place-items: center; padding: 32px 16px 40px; }
 .legal-links a, .agree a { color: var(--brand-600); }
 .hint { font-size: 12.5px; color: var(--ink-soft); margin: 6px 0 0; }
 .card .btn { width: 100%; margin-top: 20px; padding: 14px 18px; font-size: 15.5px; }
-#submit { background: linear-gradient(135deg, #2186F5 0%, #0B5CC0 100%); box-shadow: 0 1px 2px rgba(11, 92, 192, .3), 0 12px 24px -10px rgba(15, 111, 222, .8); }
-#submit:hover { background: linear-gradient(135deg, #3A97FA 0%, #0F6FDE 100%); }
+#submit, #verifyBtn { background: linear-gradient(135deg, #2186F5 0%, #0B5CC0 100%); box-shadow: 0 1px 2px rgba(11, 92, 192, .3), 0 12px 24px -10px rgba(15, 111, 222, .8); }
+#submit:hover, #verifyBtn:hover { background: linear-gradient(135deg, #3A97FA 0%, #0F6FDE 100%); }
 .btn:disabled { opacity: .65; cursor: wait; }
+
+/* email verification code screen */
+.mail-ico { width: 64px; height: 64px; margin: 4px auto 14px; border-radius: 20px; display: grid; place-items: center; background: linear-gradient(135deg, #2186F5, #0B5CC0); box-shadow: 0 14px 26px -12px rgba(15, 111, 222, .9); }
+.mail-ico svg { width: 30px; height: 30px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.verify-msg { margin: 0 0 6px; text-align: center; color: var(--ink-soft); font-size: 14.5px; overflow-wrap: anywhere; }
+.code-input { text-align: center; font-size: 32px; font-weight: 800; letter-spacing: .4em; padding-left: calc(14px + .4em); min-height: 62px; }
+.resend-row { text-align: center; margin: 14px 0 2px; }
+#verifyForm .linkbtn { display: block; margin: 8px auto 0; }
+.linkbtn:disabled { opacity: .45; cursor: not-allowed; }
+#resendNote { color: var(--muted); font-size: 12.5px; margin-left: 6px; }

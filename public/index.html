@@ -90,11 +90,22 @@
       <button class="btn" id="submit" type="submit">Sign in</button>
       <p class="error" id="error" role="alert"></p>
     </form>
-    <p class="legal-links"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a></p>
+    <form id="verifyForm" hidden novalidate>
+      <div class="mail-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/></svg></div>
+      <p class="verify-msg" id="verifyMsg"></p>
+      <label for="code">6-digit code</label>
+      <input id="code" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000" aria-describedby="verifyError">
+      <button class="btn" id="verifyBtn" type="submit">Verify and continue</button>
+      <p class="error" id="verifyError" role="alert"></p>
+      <p class="hint resend-row"><button type="button" class="linkbtn" id="resendBtn">Send a new code</button> <span id="resendNote"></span></p>
+      <button type="button" class="linkbtn" id="verifyBack">&larr; Use a different email</button>
+    </form>
+
     <div class="done" id="applied" hidden>
       <h3>Application received</h3>
       <p style="margin:0">Thank you. An admin will review your details and approve your account. Once approved, come back here and sign in with the email and password you just chose.</p>
     </div>
+    <p class="legal-links"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a></p>
   </div>
 </main>
 <script>
@@ -191,6 +202,7 @@ function setMode(m) {
   $('submit').textContent = COPY[m].button;
   $('error').textContent = '';
   $('applied').hidden = true;
+  $('verifyForm').hidden = true;
 }
 $('tab-login').addEventListener('click', () => { setMode('login'); $('email').focus(); });
 $('tab-create').addEventListener('click', () => setMode('create'));
@@ -204,6 +216,95 @@ $('show').addEventListener('click', () => {
   $('show').textContent = hidden ? 'Hide' : 'Show';
 });
 
+// Signed in: keep the session, send the vehicle photo (customers), and go to the right page
+async function finishSignIn(token, role, image) {
+  localStorage.setItem('authToken', token);
+  if (image) {
+    // Account is made: now send the photo. If it fails the app asks for it again, so carry on.
+    try {
+      await fetch('/auth/chassis-photo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ image })
+      });
+    } catch (e) {}
+  }
+  location.replace(home(role));
+}
+
+// A service provider's application is complete (email verified, or verification is off): it now waits for admin approval
+function showApplied() {
+  $('form').hidden = true; $('chooser').hidden = true; $('verifyForm').hidden = true; $('applied').hidden = false;
+  $('title').textContent = 'Thank you'; $('sub').textContent = '';
+}
+
+// ---- email verification code screen ----
+let pending = { email: '', image: null };
+let cooldownTimer = null;
+function startCooldown(seconds) {
+  clearInterval(cooldownTimer);
+  let left = seconds;
+  const tick = () => {
+    $('resendBtn').disabled = left > 0;
+    $('resendNote').textContent = left > 0 ? 'You can ask again in ' + left + 's' : '';
+    if (left <= 0) clearInterval(cooldownTimer);
+    left--;
+  };
+  tick();
+  if (seconds > 0) cooldownTimer = setInterval(tick, 1000);
+}
+function showVerify(email, emailSent, image) {
+  pending = { email, image: image || null };
+  mode = 'verify';
+  $('form').hidden = true; $('chooser').hidden = true; $('applied').hidden = true; $('verifyForm').hidden = false;
+  $('tab-login').setAttribute('aria-selected', 'false'); $('tab-create').setAttribute('aria-selected', 'true');
+  $('title').textContent = 'Check your email';
+  $('sub').textContent = '';
+  $('verifyMsg').textContent = emailSent === false
+    ? "We couldn't send the email just now. Tap \"Send a new code\" to try again."
+    : 'We sent a 6-digit code to ' + email + '. It can take a minute to arrive. Check your spam folder too.';
+  $('code').value = ''; $('verifyError').textContent = '';
+  startCooldown(emailSent === false ? 0 : 60);
+  $('code').focus();
+}
+$('code').addEventListener('input', () => { $('code').value = $('code').value.replace(/\D/g, '').slice(0, 6); });
+$('verifyBack').addEventListener('click', () => setMode('create'));
+
+$('resendBtn').addEventListener('click', async () => {
+  $('verifyError').textContent = '';
+  $('resendBtn').disabled = true;
+  try {
+    const res = await fetch('/auth/resend', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: pending.email }) });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 429 && data.wait) { startCooldown(data.wait); $('verifyError').textContent = data.error; return; }
+    if (!res.ok) throw new Error(data.error || 'Could not send a new code.');
+    $('verifyMsg').textContent = data.emailSent === false ? "We couldn't send the email just now. Please try again in a moment." : 'A new code is on its way to ' + pending.email + '. Use the newest email.';
+    $('code').value = ''; $('code').focus();
+    startCooldown(data.emailSent === false ? 0 : 60);
+  } catch (err) { $('verifyError').textContent = err.message; startCooldown(0); }
+});
+
+$('verifyForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('verifyError').textContent = '';
+  const code = $('code').value.replace(/\D/g, '');
+  if (code.length !== 6) { $('verifyError').textContent = 'Enter the 6-digit code from the email.'; return; }
+  $('verifyBtn').disabled = true;
+  try {
+    const res = await fetch('/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: pending.email, code }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not verify that code.');
+    if (data.token) return finishSignIn(data.token, data.user.role, pending.image);   // customers are signed in
+    if (data.pending) return showApplied();                                             // service providers wait for approval
+    setMode('login'); $('email').value = pending.email;                                 // verified, nothing else to wait for
+    $('error').textContent = 'Email verified. You can sign in now.';
+  } catch (err) {
+    $('verifyError').textContent = err.message;
+    $('code').select();
+  } finally {
+    $('verifyBtn').disabled = false;
+  }
+});
+
+// ---- sign in / sign up / apply ----
 $('form').addEventListener('submit', async e => {
   e.preventDefault();
   $('error').textContent = '';
@@ -223,9 +324,8 @@ $('form').addEventListener('submit', async e => {
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || 'Could not submit your application.');
-      $('form').hidden = true; $('applied').hidden = false; $('chooser').hidden = true;
-      $('title').textContent = 'Thank you'; $('sub').textContent = '';
-      return;
+      if (out.verificationRequired) return showVerify(body.email, out.emailSent, null);
+      return showApplied();
     }
     if (mode === 'register') {
       Object.assign(body, { agreed: true, name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value });
@@ -238,19 +338,10 @@ $('form').addEventListener('submit', async e => {
       body: JSON.stringify(body)
     });
     const data = await res.json().catch(() => ({}));
+    if (res.status === 403 && data.code === 'email_unverified') return showVerify(data.email || body.email, true, null);   // signed up earlier but never verified
     if (!res.ok) throw new Error(data.error || 'Could not sign in.');
-    localStorage.setItem('authToken', data.token);
-    if (image) {
-      // Account is made: now send the photo. If it fails the app asks for it again, so carry on.
-      try {
-        await fetch('/auth/chassis-photo', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + data.token },
-          body: JSON.stringify({ image })
-        });
-      } catch (e) {}
-    }
-    location.replace(home(data.user.role));
+    if (data.verificationRequired) return showVerify(body.email, data.emailSent, image);
+    await finishSignIn(data.token, data.user.role, image);
   } catch (err) {
     $('error').textContent = err.message;
     if (mode === 'login') $('pw').select();

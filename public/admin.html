@@ -683,28 +683,53 @@ async function renderSubBox() {
   box.replaceChildren(...kids);
 }
 
+async function markVerified(id) {
+  $('appError').textContent = '';
+  try { await api('/admin/users/' + id + '/verify', { method: 'POST' }); await load(); }
+  catch (err) { $('appError').textContent = err.message; }
+}
+
 function renderPending() {
-  const pending = users.filter(u => u.approved === false);
+  // Applicants appear for approval once they have verified their email. Anyone still unverified is listed underneath.
+  const pending = users.filter(u => u.approved === false && u.emailVerified !== false);
+  const unverified = users.filter(u => u.emailVerified === false);
   $('usersTab').textContent = 'Users' + (pending.length ? ' (' + pending.length + ' to approve)' : '');
-  $('pendingBox').hidden = !pending.length;
-  if (!pending.length) return;
-  $('pendingBox').replaceChildren(
-    el('strong', { textContent: pending.length + ' service member application' + (pending.length > 1 ? 's' : '') + ' waiting for approval' }),
-    el('p', { className: 'empty', textContent: 'Approved members can see customer phone numbers, addresses and vehicle photos. Check their details first.' }),
-    ...pending.map(u => {
-      const ok = el('button', { className: 'btn safety small', textContent: 'Approve' });
-      ok.addEventListener('click', () => patchUser(u.id, { approved: true }));
-      const no = el('button', { className: 'btn danger small', textContent: 'Reject' });
-      armDelete(no, async () => { await api('/admin/users/' + u.id, { method: 'DELETE' }); await load(); }, 'Confirm reject?');
-      return el('div', { className: 'app' },
-        el('div', {},
-          el('strong', { textContent: u.name }), u.businessName ? ' \u00b7 ' + u.businessName : '', el('br'),
-          el('span', { className: 'who', textContent: u.email + ' \u00b7 ' + u.phone }),
-          el('span', { className: 'who', textContent: u.address + (u.parish ? ', ' + u.parish : '') }),
-          el('span', { className: 'who' }, 'Does: ' + u.specialties.join(', ')),
-          el('small', { className: 'who', textContent: u.experience })),
-        el('div', { className: 'acts', style: 'display:flex;flex-direction:column;gap:6px' }, ok, no));
-    }));
+  $('pendingBox').hidden = !pending.length && !unverified.length;
+  if (!pending.length && !unverified.length) return;
+  const kids = [];
+  if (pending.length) {
+    kids.push(
+      el('strong', { textContent: pending.length + ' service member application' + (pending.length > 1 ? 's' : '') + ' waiting for approval' }),
+      el('p', { className: 'empty', textContent: 'Approved members can see customer phone numbers, addresses and vehicle photos. Check their details first.' }),
+      ...pending.map(u => {
+        const ok = el('button', { className: 'btn safety small', textContent: 'Approve' });
+        ok.addEventListener('click', () => patchUser(u.id, { approved: true }));
+        const no = el('button', { className: 'btn danger small', textContent: 'Reject' });
+        armDelete(no, async () => { await api('/admin/users/' + u.id, { method: 'DELETE' }); await load(); }, 'Confirm reject?');
+        return el('div', { className: 'app' },
+          el('div', {},
+            el('strong', { textContent: u.name }), u.businessName ? ' \u00b7 ' + u.businessName : '', ' ', el('span', { className: 'badge completed', textContent: 'Email verified' }), el('br'),
+            el('span', { className: 'who', textContent: u.email + ' \u00b7 ' + u.phone }),
+            el('span', { className: 'who', textContent: u.address + (u.parish ? ', ' + u.parish : '') }),
+            el('span', { className: 'who' }, 'Does: ' + u.specialties.join(', ')),
+            el('small', { className: 'who', textContent: u.experience })),
+          el('div', { className: 'acts', style: 'display:flex;flex-direction:column;gap:6px' }, ok, no));
+      }));
+  }
+  if (unverified.length) {
+    kids.push(el('details', { style: 'margin-top:' + (pending.length ? '14px' : '0') },
+      el('summary', { textContent: unverified.length + ' sign-up' + (unverified.length > 1 ? 's' : '') + ' waiting for email verification', style: 'cursor:pointer;font-weight:700' }),
+      el('p', { className: 'empty', textContent: 'They have been emailed a code. If someone cannot get theirs, you can mark their email as verified yourself.' }),
+      ...unverified.map(u => {
+        const btn = el('button', { className: 'btn ghost small', textContent: 'Mark email verified' });
+        btn.addEventListener('click', () => markVerified(u.id));
+        return el('div', { className: 'app' },
+          el('div', {}, el('strong', { textContent: u.name }), ' ', el('span', { className: 'badge', textContent: u.role === 'staff' ? 'Service provider' : u.role }), el('br'),
+            el('span', { className: 'who', textContent: u.email + (u.phone ? ' \u00b7 ' + u.phone : '') }), el('small', { className: 'who', textContent: 'Signed up ' + fmtDate(u.createdAt) })),
+          el('div', { className: 'acts' }, btn));
+      })));
+  }
+  $('pendingBox').replaceChildren(...kids);
 }
 
 function renderUsers() {
@@ -757,17 +782,20 @@ function renderUsers() {
       });
       addDays.replaceWith(box, ' ', ok); box.focus();
     });
+    const verifyBtn = el('button', { className: 'btn ghost small', textContent: 'Verify email', hidden: u.emailVerified !== false });
+    verifyBtn.addEventListener('click', () => markVerified(u.id));
     const jobsBtn = el('button', { className: 'btn ghost small', textContent: 'Jobs & photos', hidden: u.role !== 'staff' });
     jobsBtn.addEventListener('click', () => viewTechnician(u.id));
     const photo = el('button', { className: 'btn ghost small', textContent: 'Vehicle photo', hidden: !u.hasChassisPhoto });
     photo.addEventListener('click', () => openPhoto(u.id));
     return el('tr', {},
-      el('td', {}, el('strong', { textContent: u.name + (isMe ? ' (you)' : '') }), el('br'), el('small', { textContent: 'Joined ' + fmtDate(u.createdAt) })),
+      el('td', {}, el('strong', { textContent: u.name + (isMe ? ' (you)' : '') }), el('br'), el('small', { textContent: 'Joined ' + fmtDate(u.createdAt) }),
+        u.emailVerified === false ? el('br') : null, u.emailVerified === false ? el('span', { className: 'badge off', textContent: 'Email not verified' }) : null),
       el('td', {}, el('span', { className: 'who', textContent: u.email }), u.phone ? el('span', { className: 'who', textContent: u.phone }) : null, u.address ? el('small', { className: 'who', textContent: u.address }) : null),
       el('td', {}, role),
       el('td', {}, parish),
       el('td', {}, el('span', { className: u.active ? 'badge completed' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), (subText || premText) ? el('br') : null, (subText || premText) ? el('small', { textContent: subText || premText }) : null),
-      el('td', { className: 'act' }, addPremium, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
+      el('td', { className: 'act' }, verifyBtn, ' ', addPremium, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }
 async function patchUser(id, body) {

@@ -38,6 +38,18 @@ After changing a setting in Render, save and let it redeploy.
 | `AI_EFFORT` | `medium` | how hard the chat thinks: `low`, `medium`, `high` |
 | `AI_HOURLY_LIMIT` | `40` | questions per customer per hour |
 
+## Email verification codes (optional, off until you switch it on)
+
+See **EMAIL.md**. A 6-digit code is emailed when customers and service providers sign up.
+
+| Name | Example | What it is |
+|---|---|---|
+| `VERIFY_EMAIL` | `true` | turns the codes on (add it last) |
+| `EMAIL_PROVIDER` | `brevo` or `resend` | which email service you use |
+| `EMAIL_API_KEY` | from that service | keep private |
+| `EMAIL_FROM` | `no-reply@yourdomain.com` | a sender you have verified with the service |
+| `EMAIL_FROM_NAME` | `AutoAid 24/7` | the name people see (optional) |
+
 ## Payments
 
 See **PAYMENTS.md** for the service provider subscription (`SUBSCRIPTIONS_ENABLED`, `SUBSCRIPTION_PRICE`, `FYGARO_*`, ...)

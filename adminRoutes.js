@@ -252,6 +252,15 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
       currency: r.currency, periodEnd: r.period_end, createdAt: r.created_at })));
   }));
 
+  // If the email service is down, or someone cannot get their code, an admin can mark an email as verified by hand.
+  router.post('/users/:id/verify', adminOnly, handle(async (req, res) => {
+    const { data, error } = await supabase.from('users')
+      .update({ email_verified: true, verify_code_hash: null, verify_expires_at: null, verify_attempts: 0 }).eq('id', Number(req.params.id)).select().maybeSingle();
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'User not found.' });
+    res.json(auth.publicUser(data));
+  }));
+
   // --- Users (admin only) ---
   router.get('/users', adminOnly, handle(async (req, res) => {
     const { data, error } = await supabase.from('users').select('*').order('id');
