@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Notice | AutoAid 24/7</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="/"><img src="/logo.png" alt="AutoAid 24/7"></a>
+  <a class="back" href="/">Back to sign in</a>
+</header>
+<main>
+<article>
+  <h1>Privacy Notice</h1>
+  <p class="updated">Last updated: 15 October 2026</p>
+  <p>This notice explains what personal information <strong>AutoAid 24/7</strong> collects, why, who can see it, and the choices you have.
+    It applies to customers and to service providers who use our website.</p>
+
+  <h2>1. Who we are</h2>
+  <p>AutoAid 24/7 is a vehicle servicing and roadside assistance service in Jamaica<span id="legalName"></span>. We connect customers with approved service providers
+    (technicians). <span id="contactLine">If you have a question about your information, contact us through the AutoAid 24/7 team.</span></p>
+
+  <h2>2. What we collect</h2>
+  <ul>
+    <li><strong>Your account:</strong> name, email address, phone number, address and parish. Your password is stored in a scrambled form that we cannot read.</li>
+    <li><strong>Your vehicles:</strong> the make and model, year, the registration or VIN number if you add it, and a photo of your motor vehicle.</li>
+    <li><strong>Your requests:</strong> service requests and what you describe, emergency requests (roadside assistance and wrecker), the status of each, the price charged, and ratings and reviews you leave.</li>
+    <li><strong>Your location, only if you choose to share it:</strong> when you ask for emergency help you can tap "Share my current location". We use it to send help to you. We do not track your location at other times.</li>
+    <li><strong>Mechanic chat:</strong> the messages you type to our "Ask the mechanic" assistant, and the type and year of the vehicle you pick, are sent to our AI provider to write the answer.</li>
+    <li><strong>Service providers:</strong> business name, the kinds of work you do, your experience, an optional profile photo, photos of finished work, the jobs you did, what you earned and your ratings.</li>
+    <li><strong>Payments:</strong> card details are typed on our payment provider's page and never reach us. We keep only the fact that a payment was made: who, how much, when and the payment reference.</li>
+    <li><strong>Basic technical records</strong> such as the time of a request and error logs, so we can keep the service running and secure.</li>
+  </ul>
+
+  <h2>3. How we use it</h2>
+  <ul>
+    <li>To run your account, book services and send the nearest suitable technician (we match by parish).</li>
+    <li>To respond to emergency requests and let you and the technician reach each other.</li>
+    <li>To process payments for Premium memberships and service provider subscriptions, and to track free Premium services.</li>
+    <li>To show ratings and a provider's completed work, so customers can trust who they hire.</li>
+    <li>To keep the service safe, prevent fraud and misuse, fix problems, and follow the law.</li>
+  </ul>
+  <p>We do not sell your personal information.</p>
+
+  <h2>4. Who can see it</h2>
+  <ul>
+    <li><strong>Technicians:</strong> approved service providers can see the details they need to do a job. For a job you book, or an emergency request you send, that includes your name, phone number, address, parish, vehicle details and photo, and the location you shared. Open emergency requests are visible to approved technicians so that one can respond quickly.</li>
+    <li><strong>AutoAid 24/7 staff and administrators</strong>, to run the service and help you.</li>
+    <li><strong>Companies that help us run the service:</strong> our database and photo storage provider (Supabase), our hosting provider (Render), our payment provider (Fygaro), and our AI provider (Anthropic) for the mechanic chat. They handle information only to help us run the service.</li>
+    <li><strong>Authorities</strong>, if the law requires us to share information.</li>
+  </ul>
+  <p>Customers see a technician's name, phone number, photo (if added), ratings, and the photo of the finished work for their job.</p>
+
+  <h2>5. Photos</h2>
+  <p>Photos you or a technician upload are kept in private storage. They are opened only through short-lived links, and only by the people who need them for the job.</p>
+
+  <h2>6. How long we keep it</h2>
+  <p>We keep your information while your account is open and for as long as we need it for your service history, payment records and safety. If you ask us to delete your account we will do so,
+    but we may keep records that we must keep by law or need to settle a dispute, such as payment records.</p>
+
+  <h2>7. How we protect it</h2>
+  <p>The website uses an encrypted connection, passwords are stored scrambled, photos are private, and access is limited to what each person needs.
+    No system is perfectly secure, so please choose a strong password and keep it to yourself.</p>
+
+  <h2>8. Your choices</h2>
+  <ul>
+    <li>You can update your phone, address and parish from your account.</li>
+    <li>You can ask us to show you the information we hold about you, correct it, or delete your account.</li>
+    <li>You can choose not to share your location. You can still describe where you are in words.</li>
+  </ul>
+  <p>You may also have rights under data protection laws that apply in Jamaica. To use any of these choices, contact us using the details above.</p>
+
+  <h2>9. Children</h2>
+  <p>AutoAid 24/7 is for adults who own or drive vehicles. It is not meant for anyone under 18.</p>
+
+  <h2>10. Changes</h2>
+  <p>We may update this notice. When we make an important change we will change the date above and, where needed, ask you to agree again.</p>
+
+  <p class="note">Read our <a href="/terms.html">Terms of Use</a> as well.</p>
+</article>
+</main>
+<footer><a href="/terms.html">Terms of Use</a> &middot; <a href="/">Sign in</a></footer>
+<script>
+fetch('/config').then(r => r.json()).then(c => {
+  if (c.legalName) document.getElementById('legalName').textContent = ', operated by ' + c.legalName;
+  const bits = [];
+  if (c.contactEmail) bits.push('email ' + c.contactEmail);
+  if (c.shopPhone) bits.push('phone ' + c.shopPhone);
+  if (bits.length) document.getElementById('contactLine').textContent = 'If you have a question about your information, contact us by ' + bits.join(' or ') + '.';
+}).catch(() => {});
+</script>
+</body>
+</html>

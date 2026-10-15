@@ -7,132 +7,12 @@
 <title>Admin | AutoAid 24/7</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --ink: #1D2731; --ink-soft: #4A5663; --surface: #E6E9EC; --card: #FBFBFA; --line: #C9CFD5;
-    --safety: #F2B705; --red: #B83A2B; --green: #2F7A4D; --blue: #2D5F8A;
-    --display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-    --body: 'Barlow', 'Segoe UI', Arial, sans-serif;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--surface); color: var(--ink); font: 16px/1.5 var(--body); }
-  button, input, select { font: inherit; color: inherit; }
-  :focus-visible { outline: 3px solid var(--safety); outline-offset: 2px; }
-  [hidden] { display: none !important; }
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  header { background: var(--ink); color: #fff; display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 6px solid var(--safety); }
-  header h1 { font: 700 28px/1 var(--display); margin: 0; }
-  .brand { display: flex; align-items: center; background: #fff; border-radius: 8px; padding: 5px 12px; flex: none; }
-  .brand img { height: 42px; width: auto; display: block; }
-  header .sp { margin-left: auto; display: flex; gap: 10px; align-items: center; }
-  header a { color: #B9C3CC; font-size: 15px; }
-
-  main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
-  h2 { font: 700 24px/1.1 var(--display); margin: 0 0 12px; }
-  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 16px; margin-bottom: 20px; }
-
-  label { display: block; font-size: 14px; font-weight: 600; color: var(--ink-soft); margin: 10px 0 4px; }
-  input, select { width: 100%; padding: 9px 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
-  .btn { padding: 8px 14px; background: var(--ink); color: #fff; border: 0; border-radius: 4px; font-weight: 600; cursor: pointer; }
-  .btn:hover { background: #2C3A47; }
-  .btn.safety { background: var(--safety); color: var(--ink); }
-  .btn.ghost { background: transparent; color: var(--ink-soft); border: 1px solid var(--line); }
-  .btn.ghost:hover { background: var(--surface); }
-  .btn.danger { background: transparent; color: var(--red); border: 1px solid var(--red); }
-  .btn.danger:hover { background: var(--red); color: #fff; }
-  .btn.small { padding: 4px 10px; font-size: 14px; }
-  .error { color: var(--red); font-size: 14px; margin: 8px 0 0; min-height: 1.4em; }
-
-  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .stat { background: var(--card); border: 1px solid var(--line); border-top: 5px solid var(--safety); border-radius: 6px; padding: 12px 16px; }
-  .stat[data-s="in-progress"] { border-top-color: var(--blue); }
-  .stat[data-s="completed"] { border-top-color: var(--green); }
-  .stat[data-s="cancelled"] { border-top-color: var(--ink-soft); }
-  .stat b { display: block; font: 700 36px/1 var(--display); }
-  .stat span { color: var(--ink-soft); font-size: 14px; }
-
-  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-  .tabs button { background: transparent; border: 1px solid var(--line); border-radius: 20px; padding: 5px 16px; cursor: pointer; }
-  .tabs button.alert { background: var(--red); color: #fff; border-color: var(--red); font-weight: 600; }
-  .tabs button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
-  .toolbar { display: grid; grid-template-columns: 1fr 200px; gap: 10px; margin-bottom: 12px; }
-
-  .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; min-width: 640px; }
-  th, td { text-align: left; padding: 10px 8px; border-top: 1px solid var(--line); vertical-align: top; }
-  th { font: 600 15px var(--display); color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; border-top: 0; }
-  td select { width: auto; padding: 4px 6px; }
-  td.desc { max-width: 340px; overflow-wrap: anywhere; }
-  td.act { white-space: nowrap; text-align: right; }
-  small { color: var(--ink-soft); }
-  .empty { color: var(--ink-soft); margin: 8px 0 0; }
-  .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 13px; font-weight: 600; background: var(--safety); color: var(--ink); }
-  .badge[data-s="in-progress"] { background: var(--blue); color: #fff; }
-  .badge[data-s="completed"] { background: var(--green); color: #fff; }
-  .badge[data-s="cancelled"] { background: var(--ink-soft); color: #fff; }
-
-  .userform { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-  .badge.off { background: var(--red); color: #fff; }
-  .emerg { background: #fff; border: 1px solid var(--line); border-left: 8px solid var(--red); border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; }
-  .emerg.dispatched { border-left-color: var(--blue); }
-  .emerg.resolved, .emerg.cancelled { border-left-color: var(--line); opacity: .75; }
-  .emerg.towing .kind { background: #A34A0A; }
-  .emerg .kind { display: inline-block; background: var(--red); color: #fff; font: 700 15px/1 var(--display); letter-spacing: .04em; text-transform: uppercase; padding: 4px 8px; border-radius: 3px; }
-  .emerg .acts { display: flex; flex-direction: column; gap: 6px; align-items: stretch; min-width: 130px; }
-  .emerg .acts .btn { margin: 0; }
-  .emerg p { margin: 4px 0 0; }
-  .pending { border: 2px dashed var(--safety); background: #FFFBEA; border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; }
-  .pending .app { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; }
-  @media (max-width: 640px) { .emerg, .pending .app { grid-template-columns: 1fr; } .emerg .acts { flex-direction: row; } }
-  /* Dashboard */
-  .dash-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
-  .avatar { width: 76px; height: 76px; border-radius: 50%; object-fit: cover; border: 3px solid var(--safety); background: var(--surface); display: grid; place-items: center; font: 700 30px var(--display); color: var(--ink-soft); flex: none; }
-  .dash-head h2 { margin: 0; }
-  .dash-head .badge { margin: 4px 4px 0 0; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
-  .tile { background: #fff; border: 1px solid var(--line); border-top: 5px solid var(--blue); border-radius: 6px; padding: 12px 14px; }
-  .tile b { display: block; font: 700 32px/1.1 var(--display); overflow-wrap: anywhere; }
-  .tile span { color: var(--ink-soft); font-size: 14px; }
-  .stars { color: #B07A00; letter-spacing: 1px; font-size: 18px; }
-  .stars .off { color: var(--line); }
-  .dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 18px; }
-  .card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; }
-  .card h3 { font: 600 19px/1.2 var(--display); margin: 0 0 10px; }
-  .bars { display: flex; align-items: flex-end; gap: 10px; height: 170px; padding-top: 6px; }
-  .bar { flex: 1; min-width: 0; max-width: 56px; margin: 0 auto; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
-  .bar i { display: block; width: 100%; background: var(--blue); border-radius: 4px 4px 0 0; min-height: 0; }
-  .bar .v { font-size: 12px; font-weight: 600; margin-bottom: 3px; white-space: nowrap; }
-  .bar .m { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
-  .rrow { display: grid; grid-template-columns: 34px minmax(0, 1fr) 28px; gap: 8px; align-items: center; margin: 6px 0; font-size: 14px; }
-  .rrow .track { background: var(--surface); border-radius: 4px; height: 12px; overflow: hidden; }
-  .rrow .track i { display: block; height: 100%; background: var(--blue); border-radius: 0 4px 4px 0; }
-  .review { border-top: 1px solid var(--line); padding: 8px 0; }
-  .review:first-of-type { border-top: 0; }
-  .subbar { background: #FFF4D6; border: 1px solid var(--safety); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .gate { max-width: 640px; margin: 24px auto; text-align: center; padding: 28px 24px; }
-  .gate h2 { font-size: 30px; }
-  .gate ul { text-align: left; display: inline-block; margin: 8px 0 16px; padding-left: 22px; }
-  .gate .btn.big { font-size: 20px; padding: 14px 28px; margin-top: 6px; }
-  .subinfo { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin-bottom: 16px; }
-  .subinfo code { background: var(--surface); padding: 2px 6px; border-radius: 3px; overflow-wrap: anywhere; }
-  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
-  .gallery a { display: block; color: inherit; text-decoration: none; }
-  .gallery img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); display: block; }
-  .gallery small { display: block; margin-top: 4px; font-size: 13px; color: var(--ink-soft); }
-  .viewing { background: #EEF4FA; border: 1px solid var(--blue); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .photo-btn { position: relative; overflow: hidden; }
-  .photo-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-  .amount-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .amount-edit input { width: 120px; padding: 4px 6px; }
-  .parishbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-  .parishbar label { margin: 0; }
-  .parishbar select { width: auto; min-width: 180px; }
-  .who { display: block; line-height: 1.35; }
-  @media (max-width: 900px) { .userform { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 640px) { main { padding: 14px; } .toolbar { grid-template-columns: 1fr; } }
-</style>
 <link rel="stylesheet" href="/banner.css">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/icons.css">
+<link rel="stylesheet" href="/portal.css">
 <script src="/banner.js" defer></script>
 </head>
 <body class="hdr-right">
@@ -143,12 +23,21 @@
     <h1 id="portalTitle">Portal</h1>
     <div class="slides" role="region" aria-roledescription="carousel" aria-label="Services we provide"></div>
     <div class="sp">
-      <span id="who" style="color:#fff;font-weight:600"></span>
-      <button class="btn ghost small" id="refresh" style="color:#fff;border-color:#4A5663">Refresh</button>
+      <span class="who-dot" id="who-dot" aria-hidden="true"></span>
+      <span id="who"></span>
+      <button class="btn ghost small" id="refresh">Refresh</button>
       <button class="btn safety small" id="logout">Log out</button>
     </div>
   </header>
-  <main>
+  <main class="portal">
+    <nav class="tabs" role="group" aria-label="Section">
+      <button data-tab="dashboard" aria-pressed="true">My dashboard</button>
+      <button data-tab="emergencies" id="emergTab" aria-pressed="false">Emergencies</button>
+      <button data-tab="requests" aria-pressed="false">Service requests</button>
+      <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
+      <button data-tab="users" id="usersTab" aria-pressed="false" hidden>Users</button>
+    </nav>
+    <div class="content">
     <p class="error" id="appError" role="alert"></p>
     <div class="panel gate" id="gatePanel" hidden></div>
     <div class="subbar" id="subBanner" hidden></div>
@@ -159,13 +48,6 @@
       <select id="parishFilter"><option value="">All parishes</option></select>
     </div>
 
-    <div class="tabs" role="group" aria-label="Section">
-      <button data-tab="dashboard" aria-pressed="true">My dashboard</button>
-      <button data-tab="emergencies" id="emergTab" aria-pressed="false">Emergencies</button>
-      <button data-tab="requests" aria-pressed="false">Service requests</button>
-      <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
-      <button data-tab="users" id="usersTab" aria-pressed="false" hidden>Users</button>
-    </div>
 
     <div class="panel" id="dashPanel"><p class="empty">Loading your dashboard...</p></div>
 
@@ -225,7 +107,9 @@
       </table></div>
       <p class="empty" id="vehEmpty" hidden>No matching vehicles.</p>
     </div>
+    </div>
   </main>
+  <footer class="legal-foot"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a></footer>
 </div>
 
 <script>
@@ -343,6 +227,7 @@ async function load() {
       me = (await api('/auth/me')).user;
       if (me.role === 'customer') return location.replace('/app.html');
       $('who').textContent = me.name + ' (' + me.role + ')';
+      $('who-dot').textContent = (me.name || '?').trim().charAt(0).toUpperCase();
       $('usersTab').hidden = me.role !== 'admin';
       $('portalTitle').textContent = (me.role === 'admin' ? 'Admin' : 'Technician portal');
       parishes = await api('/auth/parishes');
@@ -619,7 +504,7 @@ function renderEmergencies() {
     return el('div', { className: 'emerg ' + e.kind + ' ' + e.status },
       el('div', {},
         el('span', { className: 'kind', textContent: KIND_LABEL[e.kind] || e.kind }), ' ',
-        el('span', { className: 'badge', textContent: e.status === 'dispatched' ? 'On the way' : e.status }), ' ',
+        el('span', { className: 'badge ' + e.status, textContent: e.status === 'dispatched' ? 'On the way' : e.status }), ' ',
         el('small', { textContent: ago(e.createdAt) + ' \u00b7 ' + e.parish }),
         me.parish && e.parish === me.parish ? el('span', { className: 'badge', textContent: 'In your parish', style: 'margin-left:6px;background:var(--green);color:#fff' }) : null,
         el('p', {}, el('strong', { textContent: c ? c.name : 'Customer' }), ' ',
@@ -682,7 +567,7 @@ function renderRequests() {
         try { await api('/admin/service-request/' + r.id + '/claim', { method: 'POST' }); await load(); }
         catch (err) { $('appError').textContent = err.message; await load(); }
       });
-      jobCell.append(el('span', { className: 'badge', textContent: STATUS_LABELS[r.status] || r.status }), el('br'), take);
+      jobCell.append(el('span', { className: 'badge ' + r.status, textContent: STATUS_LABELS[r.status] || r.status }), el('br'), take);
     } else if (canEdit) {
       const sel = el('select', { ariaLabel: 'Change status' },
         ...Object.entries(STATUS_LABELS).map(([v, l]) => el('option', { value: v, textContent: l, selected: v === r.status })));
@@ -698,7 +583,7 @@ function renderRequests() {
       });
       jobCell.append(sel);
     } else {
-      jobCell.append(el('span', { className: 'badge', textContent: STATUS_LABELS[r.status] || r.status }));
+      jobCell.append(el('span', { className: 'badge ' + r.status, textContent: STATUS_LABELS[r.status] || r.status }));
     }
     if (r.premiumPerk && r.platformPay) jobCell.append(el('br'), el('small', { style: 'font-weight:600', textContent: (isAdmin ? 'AutoAid pays the technician ' : 'AutoAid pays you ') + money(r.platformPay) }));
     if (r.technicianName) jobCell.append(el('br'), el('small', { textContent: 'Technician: ' + (mineJob ? 'you' : r.technicianName) }));
@@ -881,7 +766,7 @@ function renderUsers() {
       el('td', {}, el('span', { className: 'who', textContent: u.email }), u.phone ? el('span', { className: 'who', textContent: u.phone }) : null, u.address ? el('small', { className: 'who', textContent: u.address }) : null),
       el('td', {}, role),
       el('td', {}, parish),
-      el('td', {}, el('span', { className: u.active ? 'badge' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), (subText || premText) ? el('br') : null, (subText || premText) ? el('small', { textContent: subText || premText }) : null),
+      el('td', {}, el('span', { className: u.active ? 'badge completed' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), (subText || premText) ? el('br') : null, (subText || premText) ? el('small', { textContent: subText || premText }) : null),
       el('td', { className: 'act' }, addPremium, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }

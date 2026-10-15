@@ -8,16 +8,46 @@ const vehicleCatalog = require('./vehicleCatalog');
 
 const app = express();
 
-// CORS: allows other websites or apps to call this API.
-// Set CORS_ORIGIN in .env to limit access (comma-separated); leave it empty to allow all.
+app.disable('x-powered-by');   // don't announce which framework runs the site
+
+// Security headers on every response. The site and its API share one address, so the page may only talk to itself.
+// (Inline scripts and styles are allowed because the pages use them; everything else is locked down.)
+const SUPABASE_ORIGIN = (() => { try { return new URL(process.env.SUPABASE_URL).origin; } catch (_) { return ''; } })();
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src https://fonts.gstatic.com",
+  "img-src 'self' data: blob: " + (SUPABASE_ORIGIN || 'https://*.supabase.co'),   // photos are shown through short-lived Supabase links
+  "connect-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'"
+].join('; ');
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
+    'Content-Security-Policy': CSP
+  });
+  if (req.get('x-forwarded-proto') === 'https') res.set('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  next();
+});
+
+// CORS: by default no other website may call this API (the site and its API live at the same address).
+// To let another website or app call it, set CORS_ORIGIN in .env (comma-separated addresses).
 const corsOrigins = (process.env.CORS_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean);
-app.use(cors(corsOrigins.length ? { origin: corsOrigins } : undefined));
+if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 
 // The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
 const smallJson = express.json();
 const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
 app.use((req, res, next) => (bigBodyPaths.test(req.path) ? next() : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
+app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 // --- Supabase ---
 // Uses the secret (service role) key, so this must only ever run on the server.
@@ -382,9 +412,13 @@ app.post('/ai-assist', requireAuth, handle(async (req, res) => {
 app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
 
 // Public settings the pages need (the shop's phone number for the call buttons)
+const subCfg = require('./subscriptionConfig');
 app.get('/config', (req, res) => res.json({
   businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '',
-  subscription: { enabled: subs.config.enabled, priceLabel: require('./subscriptionConfig').priceLabel(), days: subs.config.days }
+  legalName: process.env.LEGAL_NAME || '', contactEmail: process.env.CONTACT_EMAIL || '',   // shown on the privacy notice and terms
+  subscription: { enabled: subs.config.enabled, priceLabel: subCfg.priceLabel(), days: subs.config.days },
+  premium: { enabled: subCfg.premium.enabled, oilPerYear: subCfg.premium.oilPerYear, oilGapDays: subCfg.premium.oilGapDays,
+    plans: subCfg.premiumPlans().map(p => ({ id: p.id, label: p.label, priceLabel: p.priceLabel, days: p.days })) }
 }));
 
 // --- Staff/admin portal API (adminRoutes.js) ---

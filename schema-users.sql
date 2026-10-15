@@ -107,5 +107,9 @@ alter table service_requests add column if not exists platform_pay numeric(12,2)
 alter table subscription_payments add column if not exists kind text not null default 'provider';
 alter table subscription_payments add column if not exists plan text;
 
+-- Record that a person agreed to the Terms and Privacy Notice when they signed up (and which version)
+alter table users add column if not exists terms_accepted_at timestamptz;
+alter table users add column if not exists terms_version text;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';

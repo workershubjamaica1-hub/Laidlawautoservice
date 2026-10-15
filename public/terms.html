@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terms of Use | AutoAid 24/7</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/legal.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="/"><img src="/logo.png" alt="AutoAid 24/7"></a>
+  <a class="back" href="/">Back to sign in</a>
+</header>
+<main>
+<article>
+  <h1>Terms of Use</h1>
+  <p class="updated">Last updated: 15 October 2026</p>
+  <p>These terms are the agreement between you and <strong>AutoAid 24/7</strong> when you use our website. By creating an account you agree to them and to our
+    <a href="/privacy.html">Privacy Notice</a>. If you do not agree, please do not use the service.</p>
+
+  <h2>1. What AutoAid 24/7 does</h2>
+  <p>AutoAid 24/7 connects vehicle owners (customers) with approved service providers (technicians) for repairs, servicing, roadside assistance and wrecker (towing) services in Jamaica.
+    Service providers are approved by us but are independent professionals, unless we agree otherwise in writing.</p>
+
+  <h2>2. Your account</h2>
+  <ul>
+    <li>Give true, current information, including your phone number and parish, so help can reach you.</li>
+    <li>Keep your password private. You are responsible for what happens under your account. Tell us at once if you think someone else has used it.</li>
+    <li>You must be at least 18 years old.</li>
+    <li>We may suspend or close an account that breaks these terms, is used to cheat or harm others, or puts anyone's safety at risk.</li>
+  </ul>
+
+  <h2>3. Emergencies</h2>
+  <p class="note"><strong>If anyone is hurt or in danger, call 119 (police) or 110 (fire and ambulance) first.</strong></p>
+  <p>The roadside assistance and wrecker buttons send your request to technicians. We do our best to get help to you quickly, but we cannot promise that a technician will accept,
+    or how long it will take, especially at busy times or in areas with few technicians. Stay somewhere safe while you wait. You can cancel a request at any time.</p>
+
+  <h2>4. The "Ask the mechanic" assistant</h2>
+  <p>The assistant is an AI. It gives general information about vehicle problems and is not a diagnosis or a repair guarantee. It can be wrong. Do not rely on it for safety decisions:
+    if something could be unsafe, stop driving and have a qualified technician check your vehicle.</p>
+
+  <h2>5. Booking and paying for services</h2>
+  <ul>
+    <li>When you book a service, a technician may take the job and agree the work and price with you. Prices and payments for repairs are between you and the technician unless we tell you otherwise.</li>
+    <li>You can rate the work and leave a review once a job is finished. Reviews must be honest and respectful.</li>
+    <li>Technicians may add a photo of finished work to their profile and to your job.</li>
+  </ul>
+
+  <h2>6. Premium membership (customers)</h2>
+  <p id="premiumTerms">Premium is a paid membership with free servicing perks. Details, prices and limits are shown in the app when Premium is available.</p>
+  <ul>
+    <li>You can pay monthly or yearly. Membership runs for the period you paid for and ends then, unless you pay again. We do not charge you automatically.</li>
+    <li>Free oil and filter changes are limited per membership year, and only one can be booked within a short period of the last one (shown in the app).</li>
+    <li>The yearly brake disc pad check is free, and the labour to replace the pads is free if they need replacing. <strong>You pay for the pad parts</strong> and for any other work or parts beyond the free service.</li>
+    <li>Free services are for the vehicles in your account and are not transferable. If you cancel a booking, the free service is returned to you.</li>
+    <li>Membership fees are paid in advance. Refunds are considered case by case. Contact us if there is a problem with a payment.</li>
+  </ul>
+
+  <h2>7. Service providers</h2>
+  <ul>
+    <li>You must give true information about your skills and experience, and do the work with proper care, skill and safety.</li>
+    <li>Access to jobs, emergency requests and customer details requires an approved account and, when switched on, an active monthly subscription. Access stops if the subscription is not renewed after any grace period we show you.</li>
+    <li>Customer details are only for doing the job. Do not share them, contact customers for other purposes, or keep them after the job.</li>
+    <li>Record the amount you charged honestly. Free Premium jobs pay you the amount AutoAid 24/7 sets for that job, which is recorded in your earnings.</li>
+    <li>Photos of finished work must be of the actual job and must not show anything that breaks the law or another person's privacy.</li>
+    <li>We may suspend or remove a provider who gets repeated complaints, gives false information, or puts customers at risk.</li>
+  </ul>
+
+  <h2>8. Using the service properly</h2>
+  <p>Do not misuse the service: no false emergency requests, no false information, no attempts to break into the site or other people's accounts, and no abuse of customers, providers or our team.</p>
+
+  <h2>9. Our responsibility</h2>
+  <p>We provide the website "as is" and work to keep it available, but we cannot promise it will always run without interruption or errors. We are not responsible for the quality of work done by
+    independent service providers, or for losses that we could not reasonably have prevented. Nothing in these terms limits anything that the law does not allow us to limit.</p>
+
+  <h2>10. Changes</h2>
+  <p>We may change these terms or the service. When we make an important change we will update the date above and, where needed, ask you to agree again. Continuing to use the service after a change means you accept it.</p>
+
+  <h2>11. Law</h2>
+  <p>These terms are governed by the laws of Jamaica.</p>
+
+  <h2>12. Contact</h2>
+  <p id="contactLine">If you have a question about these terms, contact the AutoAid 24/7 team.</p>
+</article>
+</main>
+<footer><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/">Sign in</a></footer>
+<script>
+fetch('/config').then(r => r.json()).then(c => {
+  const bits = [];
+  if (c.contactEmail) bits.push('email ' + c.contactEmail);
+  if (c.shopPhone) bits.push('phone ' + c.shopPhone);
+  if (bits.length) document.getElementById('contactLine').textContent = 'If you have a question about these terms, contact us by ' + bits.join(' or ') + '.';
+  const p = c.premium;
+  if (p && p.enabled) {
+    const plans = (p.plans || []).map(x => x.label.toLowerCase() + ' (' + x.priceLabel + ')').join(' or ');
+    document.getElementById('premiumTerms').textContent = 'Premium is a paid membership with free servicing perks: ' + p.oilPerYear +
+      ' free oil and filter changes each membership year (at least ' + p.oilGapDays + ' days apart) and one free brake disc pad check each year.' + (plans ? ' You can join ' + plans + '.' : '');
+  }
+}).catch(() => {});
+</script>
+</body>
+</html>

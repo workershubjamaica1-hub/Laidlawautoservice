@@ -6,69 +6,12 @@
 <title>Sign in | AutoAid 24/7</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --ink: #1D2731; --ink-soft: #4A5663; --surface: #E6E9EC; --card: #FBFBFA; --line: #C9CFD5;
-    --safety: #F2B705; --red: #B83A2B;
-    --display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-    --body: 'Barlow', 'Segoe UI', Arial, sans-serif;
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; background: var(--surface); color: var(--ink); font: 16px/1.5 var(--body); }
-  button, input { font: inherit; color: inherit; }
-  :focus-visible { outline: 3px solid var(--safety); outline-offset: 2px; }
-  [hidden] { display: none !important; }
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  /* The logo repeated across the whole grey background, very faint and slightly tilted (the form card stays solid on top) */
-  body::before { content: ''; position: fixed; inset: -35%; z-index: 0; pointer-events: none; opacity: .09; transform: rotate(-12deg);
-    background: url('/pattern.png') 0 0 / 480px auto repeat; }
-  header, main { position: relative; z-index: 1; }
-
-  @media (max-width: 480px) { body::before { background-size: 320px auto; opacity: .07; } }
-  header { background: var(--ink); color: #fff; display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 6px solid var(--safety); }
-  header h1 { font: 700 28px/1 var(--display); margin: 0; }
-  .brand { display: flex; align-items: center; background: #fff; border-radius: 8px; padding: 6px 16px; flex: none; }
-  .brand img { height: 60px; width: auto; display: block; }
-
-  main { flex: 1; display: grid; place-items: center; padding: 24px 16px; }
-  .card { width: 100%; max-width: 440px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 24px; }
-  h2 { font: 700 28px/1.1 var(--display); margin: 0 0 4px; }
-  .sub { color: var(--ink-soft); margin: 0 0 8px; font-size: 15px; }
-
-  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
-  .tabs button { padding: 9px; background: #fff; border: 0; font-weight: 600; cursor: pointer; color: var(--ink-soft); }
-  .tabs button[aria-selected="true"] { background: var(--ink); color: #fff; }
-  .choice { display: block; width: 100%; text-align: left; background: #fff; border: 2px solid var(--line); border-radius: 6px; padding: 14px 16px; margin-top: 12px; cursor: pointer; }
-  .choice:hover, .choice:focus-visible { border-color: var(--ink); }
-  .choice strong { display: block; font: 700 22px/1.1 var(--display); }
-  .choice small { display: block; margin-top: 4px; font-size: 14px; color: var(--ink-soft); line-height: 1.35; }
-  .choice .arrow { float: right; font-size: 22px; color: var(--ink-soft); }
-  .linkbtn { background: none; border: 0; padding: 0; color: var(--ink-soft); font-weight: 600; cursor: pointer; text-decoration: underline; margin-bottom: 4px; }
-
-  label { display: block; font-size: 14px; font-weight: 600; color: var(--ink-soft); margin: 14px 0 4px; }
-  input { width: 100%; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
-  .pw { position: relative; }
-  .pw input { padding-right: 64px; }
-  .show { position: absolute; right: 4px; top: 4px; bottom: 4px; padding: 0 10px; background: none; border: 0; color: var(--ink-soft); font-size: 14px; font-weight: 600; cursor: pointer; }
-  select, textarea { width: 100%; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; font: inherit; color: inherit; }
-  textarea { resize: vertical; min-height: 64px; }
-  .photo { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-  .photo input[type=file] { flex: 1; min-width: 180px; padding: 8px; }
-  .photo img { width: 72px; height: 72px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
-  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
-  .checks label { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 500; color: var(--ink); }
-  .checks input { width: auto; }
-  .done { background: #EAF4EE; border: 1px solid #2F7A4D; border-radius: 6px; padding: 14px 16px; }
-  .done h3 { font: 700 22px/1.1 var(--display); margin: 0 0 6px; }
-  @media (max-width: 420px) { .checks { grid-template-columns: 1fr; } }
-  .hint { font-size: 13px; color: var(--ink-soft); margin: 4px 0 0; }
-  .btn { width: 100%; margin-top: 18px; padding: 11px 16px; background: var(--safety); color: var(--ink); border: 0; border-radius: 4px; font-weight: 600; cursor: pointer; }
-  .btn:hover { background: #FFC81F; }
-  .btn:disabled { opacity: .6; cursor: wait; }
-  .error { color: var(--red); font-size: 14px; margin: 10px 0 0; min-height: 1.4em; }
-</style>
 <link rel="stylesheet" href="/banner.css">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/icons.css">
+<link rel="stylesheet" href="/login.css">
 <script src="/banner.js" defer></script>
 </head>
 <body>
@@ -89,14 +32,16 @@
     <!-- Create account: pick what you are first -->
     <div id="chooser" hidden>
       <button type="button" class="choice" id="choose-customer">
+        <span class="cico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17h14M5 17v-6l2-5h10l2 5v6M3 11h2m14 0h2"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg></span>
+        <span class="ctext"><strong>I'm a customer</strong>
+        <small>Add my vehicles, book services, and get roadside assistance or a wrecker when I need one.</small></span>
         <span class="arrow" aria-hidden="true">&rsaquo;</span>
-        <strong>I'm a customer</strong>
-        <small>Add my vehicles, book services, and get roadside assistance or a wrecker when I need one.</small>
       </button>
       <button type="button" class="choice" id="choose-tech">
+        <span class="cico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></span>
+        <span class="ctext"><strong>I'm a service provider</strong>
+        <small>Mechanic, tire, electrical, roadside or towing professional. Apply to take jobs in your parish.</small></span>
         <span class="arrow" aria-hidden="true">&rsaquo;</span>
-        <strong>I'm a service provider</strong>
-        <small>Mechanic, tire, electrical, roadside or towing professional. Apply to take jobs in your parish.</small>
       </button>
     </div>
 
@@ -141,9 +86,11 @@
         <button type="button" class="show" id="show" aria-controls="pw">Show</button>
       </div>
       <p class="hint" id="pwHint" hidden>At least 8 characters.</p>
+      <label class="agree" id="agreeRow" hidden><input type="checkbox" id="agree"> <span>I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a> and the <a href="/privacy.html" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
       <button class="btn" id="submit" type="submit">Sign in</button>
       <p class="error" id="error" role="alert"></p>
     </form>
+    <p class="legal-links"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a></p>
     <div class="done" id="applied" hidden>
       <h3>Application received</h3>
       <p style="margin:0">Thank you. An admin will review your details and approve your account. Once approved, come back here and sign in with the email and password you just chose.</p>
@@ -235,6 +182,7 @@ function setMode(m) {
   $('techFields').hidden = m !== 'tech';
   $('nameRow').hidden = !creating;
   $('pwHint').hidden = !creating;
+  $('agreeRow').hidden = !creating;
   $('pw').autocomplete = creating ? 'new-password' : 'current-password';
   $('tab-login').setAttribute('aria-selected', m === 'login');
   $('tab-create').setAttribute('aria-selected', m !== 'login');
@@ -263,8 +211,9 @@ $('form').addEventListener('submit', async e => {
   let image = null;
   $('submit').disabled = true;
   try {
+    if (mode !== 'login' && !$('agree').checked) throw new Error('Please agree to the Terms of Use and the Privacy Notice.');
     if (mode === 'tech') {
-      Object.assign(body, {
+      Object.assign(body, { agreed: true,
         name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value,
         specialties: [...document.querySelectorAll('#specialties input:checked')].map(c => c.value),
         businessName: $('business').value, experience: $('experience').value
@@ -279,7 +228,7 @@ $('form').addEventListener('submit', async e => {
       return;
     }
     if (mode === 'register') {
-      Object.assign(body, { name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value });
+      Object.assign(body, { agreed: true, name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value });
       if (!$('photo').files[0]) throw new Error("Add a photo of your motor vehicle.");
       image = await prepareImage($('photo').files[0]); // check the photo first so we don't create an account that can't finish
     }

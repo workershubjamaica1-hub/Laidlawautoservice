@@ -61,6 +61,7 @@ const SPECIALTIES = [
   { value: 'maintenance', label: 'Maintenance' }, { value: 'roadside', label: 'Roadside assistance' },
   { value: 'towing', label: 'Wrecker / towing' }
 ];
+const TERMS_VERSION = '2026-10-15';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
@@ -71,6 +72,7 @@ const publicUser = u => ({
   hasChassisPhoto: !!u.chassis_photo_path, hasAvatar: !!u.avatar_path,
   approved: u.approved !== false,
   subscriptionPaidUntil: u.subscription_paid_until || null,
+  termsAcceptedAt: u.terms_accepted_at || null,   // when they agreed to the Terms and Privacy Notice
   subscription: u.role === 'staff' ? statusOf(u) : null,   // only service providers have one
   premium: u.role === 'customer' ? premiumStatusOf(u) : null, premiumPaidUntil: u.premium_paid_until || null,   // only customers can be Premium members
   specialties: u.specialties ? u.specialties.split(',') : [],
@@ -157,13 +159,14 @@ module.exports = function createAuth({ supabase, handle }) {
     if (error) throw error;
     return data;
   };
-  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience }) {
+  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience, termsAcceptedAt }) {
     const { data, error } = await supabase.from('users')
       .insert({
         name, email, password_hash: hashPassword(password), role,
         phone: phone || null, address: address || null, parish: parish || null,
         approved: approved !== false, specialties: specialties || null,
-        business_name: businessName || null, experience: experience || null
+        business_name: businessName || null, experience: experience || null,
+        terms_accepted_at: termsAcceptedAt || null, terms_version: termsAcceptedAt ? TERMS_VERSION : null
       })
       .select().single();
     if (error) throw error;
@@ -249,13 +252,14 @@ module.exports = function createAuth({ supabase, handle }) {
     if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Enter your name.' });
     if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
     if (password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    if (req.body.agreed !== true) return res.status(400).json({ error: 'Please agree to the Terms and the Privacy Notice to create an account.' });
     const contact = checkContact(req.body, true);
     if (contact.error) return res.status(400).json({ error: contact.error });
     if (await findByEmail(email)) {
       signupLimit.fail(req.ip);
       return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
     }
-    const user = await createUser({ name, email, password, role: 'customer', ...contact.value }); // sign-up is always a customer
+    const user = await createUser({ name, email, password, role: 'customer', termsAcceptedAt: new Date().toISOString(), ...contact.value }); // sign-up is always a customer
     signupLimit.fail(req.ip); // counts every sign-up toward the hourly limit
     res.status(201).json({ token: makeToken(user.id), user: publicUser(user) });
   }));
@@ -270,6 +274,7 @@ module.exports = function createAuth({ supabase, handle }) {
     if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Enter your name.' });
     if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
     if (password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    if (req.body.agreed !== true) return res.status(400).json({ error: 'Please agree to the Terms and the Privacy Notice to apply.' });
     const contact = checkContact(req.body, true);
     if (contact.error) return res.status(400).json({ error: contact.error });
     const allowed = SPECIALTIES.map(s => s.value);
@@ -282,7 +287,7 @@ module.exports = function createAuth({ supabase, handle }) {
       signupLimit.fail(req.ip);
       return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
     }
-    await createUser({ name, email, password, role: 'staff', approved: false, specialties: specialties.join(','), businessName, experience, ...contact.value });
+    await createUser({ name, email, password, role: 'staff', approved: false, specialties: specialties.join(','), businessName, experience, termsAcceptedAt: new Date().toISOString(), ...contact.value });
     signupLimit.fail(req.ip);
     res.status(201).json({ pending: true });
   }));
