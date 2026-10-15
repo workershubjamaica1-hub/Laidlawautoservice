@@ -1,4 +1,4 @@
-// server.js — Laidlaw Auto Services
+// server.js — AutoAid 24/7
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -376,7 +376,7 @@ app.post('/ai-assist', requireAuth, handle(async (req, res) => {
 app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
 
 // Public settings the pages need (the shop's phone number for the call buttons)
-app.get('/config', (req, res) => res.json({ businessName: process.env.BUSINESS_NAME || 'Laidlaw Auto Services', shopPhone: process.env.SHOP_PHONE || '' }));
+app.get('/config', (req, res) => res.json({ businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '' }));
 
 // --- Staff/admin portal API (adminRoutes.js) ---
 app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, toVehicle, toRequest, STATUSES }));
@@ -385,7 +385,7 @@ app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, toVehicle, 
 app.post('/ai-chat', requireAuth, handle(require('./ai')({ supabase, diagnose, isCustomer })));
 
 const PORT = process.env.PORT || 3000;
-const BUSINESS_NAME = process.env.BUSINESS_NAME || 'Laidlaw Auto Services';
+const BUSINESS_NAME = process.env.BUSINESS_NAME || 'AutoAid 24/7';
 // Last resort for errors that happen before a route runs (oversized or malformed request bodies)
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);

@@ -1,7 +1,7 @@
 {
-  "name": "laidlaw-auto-services",
+  "name": "autoaid-24-7",
   "version": "1.0.0",
-  "description": "Laidlaw Auto Services: vehicle profiles, service bookings and a repair assistant",
+  "description": "AutoAid 24/7: vehicle profiles, service bookings, roadside assistance and a repair assistant",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

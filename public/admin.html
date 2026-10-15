@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Admin | Laidlaw Auto Services</title>
+<title>Admin | AutoAid 24/7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -127,7 +127,7 @@
 
 <div id="app">
   <header>
-    <h1 id="portalTitle">Laidlaw Auto Services</h1>
+    <h1 id="portalTitle">AutoAid 24/7</h1>
     <div class="sp">
       <span id="who" style="color:#fff;font-weight:600"></span>
       <button class="btn ghost small" id="refresh" style="color:#fff;border-color:#4A5663">Refresh</button>
@@ -262,7 +262,7 @@ async function load() {
       if (me.role === 'customer') return location.replace('/app.html');
       $('who').textContent = me.name + ' (' + me.role + ')';
       $('usersTab').hidden = me.role !== 'admin';
-      $('portalTitle').textContent = 'Laidlaw Auto Services \u00b7 ' + (me.role === 'admin' ? 'Admin' : 'Technician portal');
+      $('portalTitle').textContent = 'AutoAid 24/7 \u00b7 ' + (me.role === 'admin' ? 'Admin' : 'Technician portal');
       parishes = await api('/auth/parishes');
       for (const p of parishes) { $('parishFilter').append(new Option(p, p)); $('uParish').append(new Option(p, p)); }
       // A technician starts on their own parish; they can switch to All parishes
