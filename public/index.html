@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sign in | AutoAid 24/7</title>
+<link rel="icon" type="image/png" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -21,6 +22,8 @@
 
   header { background: var(--ink); color: #fff; display: flex; align-items: center; gap: 14px; padding: 14px 24px; border-bottom: 6px solid var(--safety); }
   header h1 { font: 700 28px/1 var(--display); margin: 0; }
+  .brand { display: flex; align-items: center; background: #fff; border-radius: 8px; padding: 6px 16px; flex: none; }
+  .brand img { height: 60px; width: auto; display: block; }
 
   main { flex: 1; display: grid; place-items: center; padding: 24px 16px; }
   .card { width: 100%; max-width: 440px; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 24px; }
@@ -61,7 +64,7 @@
 </style>
 </head>
 <body>
-<header><h1>AutoAid 24/7</h1></header>
+<header><h1 class="brand"><img src="/logo.png" alt="AutoAid 24/7"></h1></header>
 <main>
   <div class="card">
     <h2 id="title">Welcome back</h2>
