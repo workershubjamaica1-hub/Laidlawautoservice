@@ -203,11 +203,13 @@
     .ticket .actions { grid-column: 1 / -1; }
   }
 </style>
+<link rel="stylesheet" href="/banner.css">
+<script src="/banner.js" defer></script>
 </head>
-<body>
+<body class="hdr-right">
 <header>
   <h1 class="brand"><img src="/logo.png" alt="AutoAid 24/7"></h1>
-  <p>Add your vehicle, book a repair, or ask what that noise is.</p>
+  <div class="slides" role="region" aria-roledescription="carousel" aria-label="Services we provide"></div>
   <div class="who"><span id="who"></span><button class="btn small safety" id="logout" type="button">Log out</button></div>
 </header>
 

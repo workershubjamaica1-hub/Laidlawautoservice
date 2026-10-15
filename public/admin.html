@@ -52,7 +52,7 @@
   .stat b { display: block; font: 700 36px/1 var(--display); }
   .stat span { color: var(--ink-soft); font-size: 14px; }
 
-  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
   .tabs button { background: transparent; border: 1px solid var(--line); border-radius: 20px; padding: 5px 16px; cursor: pointer; }
   .tabs button.alert { background: var(--red); color: #fff; border-color: var(--red); font-weight: 600; }
   .tabs button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
@@ -132,13 +132,16 @@
   @media (max-width: 900px) { .userform { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 640px) { main { padding: 14px; } .toolbar { grid-template-columns: 1fr; } }
 </style>
+<link rel="stylesheet" href="/banner.css">
+<script src="/banner.js" defer></script>
 </head>
-<body>
+<body class="hdr-right">
 
 <div id="app">
   <header>
     <span class="brand"><img src="/logo.png" alt="AutoAid 24/7"></span>
     <h1 id="portalTitle">Portal</h1>
+    <div class="slides" role="region" aria-roledescription="carousel" aria-label="Services we provide"></div>
     <div class="sp">
       <span id="who" style="color:#fff;font-weight:600"></span>
       <button class="btn ghost small" id="refresh" style="color:#fff;border-color:#4A5663">Refresh</button>
@@ -510,7 +513,19 @@ async function loadDashboard() {
   const banner = viewingTech ? el('div', { className: 'viewing' }, el('span', { textContent: 'You are viewing ' + t.name + "'s jobs and photos." }),
     (() => { const back = el('button', { className: 'btn ghost small', textContent: 'Back to my dashboard' }); back.addEventListener('click', () => { viewingTech = null; loadDashboard(); }); return back; })()) : null;
 
-  $('dashPanel').replaceChildren(...[banner, head, tiles, el('div', { className: 'dash-grid' }, earnCard, ratingCard), galleryCard, el('div', { className: 'dash-grid' }, reviewCard, recentCard)].filter(Boolean));
+  const sub = me && me.subscription;
+  let subCard = null;
+  if (!viewingTech && me.role === 'staff' && sub && sub.status !== 'not-required') {
+    const pay = el('button', { className: 'btn safety small', textContent: sub.status === 'grace' ? 'Renew now' : 'Pay early' });
+    pay.addEventListener('click', () => startCheckout(pay));
+    subCard = el('div', { className: 'viewing', style: 'background:#FFF9E5;border-color:var(--safety)' },
+      el('strong', { textContent: 'Monthly subscription' }),
+      el('span', { textContent: sub.status === 'grace'
+        ? 'Ended ' + dateLabel(sub.paidUntil) + '. ' + sub.daysLeft + ' day' + (sub.daysLeft === 1 ? '' : 's') + ' left to renew.'
+        : 'Active until ' + dateLabel(sub.paidUntil) + ' (' + sub.daysLeft + ' day' + (sub.daysLeft === 1 ? '' : 's') + ' left).' }),
+      pay);
+  }
+  $('dashPanel').replaceChildren(...[banner, subCard, head, tiles, el('div', { className: 'dash-grid' }, earnCard, ratingCard), galleryCard, el('div', { className: 'dash-grid' }, reviewCard, recentCard)].filter(Boolean));
 }
 
 // --- Emergencies: roadside assistance and wrecker requests ---

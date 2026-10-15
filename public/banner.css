@@ -1,0 +1,39 @@
+/* Shared AutoAid 24/7 header banner: the logo badge (styled per page) plus the rotating list of services.
+   Used by the sign-in page, the customer app and the technician/admin portal. */
+
+header { flex-wrap: wrap; }
+.slides { flex: 1 1 320px; min-width: 0; position: relative; height: 64px; margin-left: 28px; }
+.slide { position: absolute; inset: 0; padding-right: 96px; display: flex; align-items: center; gap: 14px; color: #fff;
+  opacity: 0; transform: translateY(10px); transition: opacity .6s ease, transform .6s ease; pointer-events: none; }
+.slide.on { opacity: 1; transform: none; pointer-events: auto; }
+.slide > div:last-child { min-width: 0; }
+.slide .ico { flex: none; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--safety, #F2B705); }
+.slide .ico svg { width: 24px; height: 24px; stroke: var(--safety, #F2B705); fill: none; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.slide strong { display: block; font: 700 26px/1.05 var(--display, 'Barlow Condensed', sans-serif); letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slide span.line { display: block; margin-top: 3px; color: #B9C3CC; font-size: 15px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dots { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: flex; gap: 2px; }
+.dots button { width: 22px; height: 22px; padding: 0; background: none; border: 0; cursor: pointer; display: grid; place-items: center; }
+.dots button::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #5B6874; transition: background .3s, transform .3s; }
+.dots button[aria-current="true"]::before { background: var(--safety, #F2B705); transform: scale(1.25); }
+
+/* Pages with name / buttons on the right of the header (customer app, portal): no dots, and the banner drops to its own row on narrower screens */
+body.hdr-right .dots { display: none; }
+body.hdr-right .slide { padding-right: 0; }
+body.hdr-right header .sp, body.hdr-right header .who { margin-left: auto; }
+@media (max-width: 900px) {
+  body.hdr-right header .slides { order: 9; flex: 1 1 100%; margin-left: 0; height: 52px; }
+}
+
+@media (max-width: 640px) {
+  body header { padding: 10px 16px; gap: 8px; }
+  body header .brand img { height: 44px; }
+  body header .brand { padding: 4px 12px; }
+  .slides { flex-basis: 100%; margin-left: 0; height: 46px; }
+  .slide { padding-right: 0; gap: 10px; }
+  .slide .ico { width: 38px; height: 38px; }
+  .slide .ico svg { width: 20px; height: 20px; }
+  .slide strong { font-size: 21px; }
+  .slide span.line { font-size: 13px; }
+  .dots { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .slide { transition: none; transform: none; } }
