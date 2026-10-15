@@ -539,14 +539,14 @@ function renderEmergencies() {
 }
 setInterval(() => { if (!document.hidden && me) refreshEmergencies(); }, 20000);
 
-// Who the customer is and how to reach them: name, phone, address, parish and their chassis photo
+// Who the customer is and how to reach them: name, phone, address, parish and their vehicle photo
 function customerCell(account, fallbackOwner) {
   if (!account) return [el('small', { textContent: fallbackOwner || '' })];
   const out = [el('strong', { className: 'who', textContent: account.name })];
   if (account.phone) out.push(el('a', { className: 'who', href: 'tel:' + account.phone.replace(/[^\d+]/g, ''), textContent: account.phone }));
   if (account.address) out.push(el('small', { className: 'who', textContent: account.address }));
   if (account.parish) out.push(el('span', { className: 'badge', textContent: account.parish }));
-  const photo = el('button', { className: 'btn ghost small', textContent: 'Chassis photo', style: 'margin-top:4px' });
+  const photo = el('button', { className: 'btn ghost small', textContent: 'Vehicle photo', style: 'margin-top:4px' });
   photo.addEventListener('click', () => openPhoto(account.id));
   out.push(el('br'), photo);
   return out;
@@ -650,7 +650,7 @@ function renderPending() {
   if (!pending.length) return;
   $('pendingBox').replaceChildren(
     el('strong', { textContent: pending.length + ' service member application' + (pending.length > 1 ? 's' : '') + ' waiting for approval' }),
-    el('p', { className: 'empty', textContent: 'Approved members can see customer phone numbers, addresses and chassis photos. Check their details first.' }),
+    el('p', { className: 'empty', textContent: 'Approved members can see customer phone numbers, addresses and vehicle photos. Check their details first.' }),
     ...pending.map(u => {
       const ok = el('button', { className: 'btn safety small', textContent: 'Approve' });
       ok.addEventListener('click', () => patchUser(u.id, { approved: true }));
@@ -691,7 +691,7 @@ function renderUsers() {
     parish.addEventListener('change', () => patchUser(u.id, { parish: parish.value }));
     const jobsBtn = el('button', { className: 'btn ghost small', textContent: 'Jobs & photos', hidden: u.role !== 'staff' });
     jobsBtn.addEventListener('click', () => viewTechnician(u.id));
-    const photo = el('button', { className: 'btn ghost small', textContent: 'Chassis photo', hidden: !u.hasChassisPhoto });
+    const photo = el('button', { className: 'btn ghost small', textContent: 'Vehicle photo', hidden: !u.hasChassisPhoto });
     photo.addEventListener('click', () => openPhoto(u.id));
     return el('tr', {},
       el('td', {}, el('strong', { textContent: u.name + (isMe ? ' (you)' : '') }), el('br'), el('small', { textContent: 'Joined ' + fmtDate(u.createdAt) })),

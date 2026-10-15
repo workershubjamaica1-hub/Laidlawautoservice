@@ -103,12 +103,12 @@
         <select id="parish"><option value="">Choose your parish</option></select>
         <p class="hint">We use your parish to send the technician closest to you.</p>
         <div id="photoRow">
-          <label for="photo">Photo of your vehicle's chassis (VIN) number</label>
+          <label for="photo">Photo of your motor vehicle</label>
           <div class="photo">
             <input id="photo" type="file" accept="image/*">
             <img id="preview" alt="" hidden>
           </div>
-          <p class="hint">Usually on a plate at the base of the windscreen or inside the driver's door. It helps us get the right parts first time.</p>
+          <p class="hint">A clear photo of the whole vehicle, so the technician can recognise it and bring the right equipment.</p>
         </div>
       </div>
       <div id="techFields" hidden>
@@ -256,7 +256,7 @@ $('form').addEventListener('submit', async e => {
     }
     if (mode === 'register') {
       Object.assign(body, { name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value });
-      if (!$('photo').files[0]) throw new Error("Add a photo of your vehicle's chassis number.");
+      if (!$('photo').files[0]) throw new Error("Add a photo of your motor vehicle.");
       image = await prepareImage($('photo').files[0]); // check the photo first so we don't create an account that can't finish
     }
     const res = await fetch(mode === 'register' ? '/auth/register' : '/auth/login', {

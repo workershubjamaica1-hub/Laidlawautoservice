@@ -246,7 +246,7 @@
     <div id="sos-list" aria-live="polite"></div>
   </section>
 
-  <!-- Profile: shown until phone, address, parish and chassis photo are all on file -->
+  <!-- Profile: shown until phone, address, parish and vehicle photo are all on file -->
   <form class="panel" id="profile-box" style="grid-column: 1 / -1" hidden novalidate>
     <h2>Finish your profile</h2>
     <p class="empty">We need these so the nearest technician can reach you and get the right parts for your vehicle.</p>
@@ -256,7 +256,7 @@
     </div>
     <label for="p-address">Address</label>
     <input id="p-address" autocomplete="street-address" placeholder="Street, community or town">
-    <label for="p-photo">Photo of your vehicle's chassis (VIN) number</label>
+    <label for="p-photo">Photo of your motor vehicle</label>
     <input id="p-photo" type="file" accept="image/*">
     <p class="empty" id="p-photo-note" style="font-size:14px"></p>
     <button class="btn safety" id="p-save" type="submit">Save profile</button>
@@ -912,7 +912,7 @@ $('profile-box').addEventListener('submit', async (e) => {
   $('p-save').disabled = true;
   try {
     const file = $('p-photo').files[0];
-    if (!file && !profileUser.hasChassisPhoto) throw new Error("Add a photo of your vehicle's chassis number.");
+    if (!file && !profileUser.hasChassisPhoto) throw new Error("Add a photo of your motor vehicle.");
     const image = file ? await prepareImage(file) : null;
     let r = await api('/auth/profile', { method: 'PATCH', body: { phone: $('p-phone').value, address: $('p-address').value, parish: $('p-parish').value } });
     if (image) r = await api('/auth/chassis-photo', { method: 'POST', body: { image } });

@@ -182,7 +182,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     const { data, error } = await supabase.from('users').select('chassis_photo_path').eq('id', Number(req.params.id)).maybeSingle();
     if (error) throw error;
     const url = data && await auth.signedPhotoUrl(data.chassis_photo_path);
-    if (!url) return res.status(404).json({ error: 'This customer has not uploaded a chassis photo.' });
+    if (!url) return res.status(404).json({ error: 'This customer has not uploaded a vehicle photo.' });
     res.json({ url });
   }));
 
