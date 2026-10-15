@@ -98,6 +98,17 @@ function checkContact(body, required) {
   return { value };
 }
 
+// Reads { image: "<base64>" } from a request body. Returns { buf, type } or { error, status }.
+function readImage(body) {
+  const b64 = String((body && body.image) || '').replace(/^data:[^,]*,/, '');
+  const buf = Buffer.from(b64, 'base64');
+  if (!buf.length) return { error: 'Choose a photo first.', status: 400 };
+  if (buf.length > MAX_PHOTO_BYTES) return { error: 'That photo is too large. Try a smaller one (under 4 MB).', status: 413 };
+  const type = sniffImage(buf);
+  if (!type) return { error: 'The file must be a JPEG, PNG or WebP photo.', status: 400 };
+  return { buf, type };
+}
+
 // A money amount in JMD. Blank means "not given". Returns { value } (null if blank) or { error }.
 function parseAmount(v) {
   if (v === undefined || v === null || String(v).trim() === '') return { value: null };
@@ -205,6 +216,10 @@ module.exports = function createAuth({ supabase, handle }) {
     const { data, error } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(path, 300);
     if (error) throw error;
     return data.signedUrl;
+  }
+  async function storePhoto(path, buf, type) {
+    const up = await supabase.storage.from(PHOTO_BUCKET).upload(path, buf, { contentType: type, upsert: true });
+    if (up.error) throw up.error;
   }
   async function removePhoto(path) {
     if (path) await supabase.storage.from(PHOTO_BUCKET).remove([path]);
@@ -347,5 +362,5 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ url });
   }));
 
-  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES };
+  return { router, requireAuth, requireRole, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES };
 };

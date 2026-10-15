@@ -73,5 +73,11 @@ alter table emergency_requests add column if not exists rated_at timestamptz;
 create index if not exists service_requests_tech_idx on service_requests(technician_id);
 create index if not exists emergency_tech_idx on emergency_requests(technician_id);
 
+-- Proof of work: a technician's photo of a finished job (kept in the private storage bucket)
+alter table service_requests add column if not exists work_photo_path text;
+alter table service_requests add column if not exists work_photo_at timestamptz;
+alter table emergency_requests add column if not exists work_photo_path text;
+alter table emergency_requests add column if not exists work_photo_at timestamptz;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';

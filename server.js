@@ -15,7 +15,8 @@ app.use(cors(corsOrigins.length ? { origin: corsOrigins } : undefined));
 
 // The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
 const smallJson = express.json();
-app.use((req, res, next) => (req.path === '/auth/chassis-photo' || req.path === '/auth/avatar' ? next() : smallJson(req, res, next)));
+const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|admin\/jobs\/(service|emergency)\/\d+\/photo)$/;
+app.use((req, res, next) => (bigBodyPaths.test(req.path) ? next() : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Supabase ---
@@ -33,7 +34,8 @@ const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.ca
 const toRequest = r => ({
   id: r.id, vehicleId: r.vehicle_id, category: r.category, description: r.description, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
   technicianId: r.technician_id || null, amount: r.amount == null ? null : Number(r.amount),
-  rating: r.rating || null, review: r.review || '', completedAt: r.completed_at || null
+  rating: r.rating || null, review: r.review || '', completedAt: r.completed_at || null,
+  hasWorkPhoto: !!r.work_photo_path
 });
 
 // Wraps async routes so database errors return a clean 500 instead of crashing
@@ -217,7 +219,10 @@ app.get('/service-requests', requireAuth, handle(async (req, res) => {
       name: u.name, phone: u.phone || '', avatarUrl: await auth.signedPhotoUrl(u.avatar_path).catch(() => null)
     })));
   }
-  res.json(data.map(r => ({ ...toRequest(r), technician: techs.get(r.technician_id) || null })));
+  res.json(await Promise.all(data.map(async r => ({
+    ...toRequest(r), technician: techs.get(r.technician_id) || null,
+    workPhotoUrl: r.work_photo_path ? await auth.signedPhotoUrl(r.work_photo_path).catch(() => null) : null
+  }))));
 }));
 
 app.post('/service-request', requireAuth, handle(async (req, res) => {

@@ -151,6 +151,7 @@
 
   /* Technician, price and rating on a job */
   .tech-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 0; font-size: 15px; }
+  .workphoto { display: block; max-width: 240px; width: 100%; border-radius: 6px; border: 1px solid var(--line); margin-top: 4px; }
   .tavatar { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; border: 2px solid var(--safety); flex: none; }
   .rate { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
   .rate .rate-note { flex: 1 1 200px; min-width: 0; }
@@ -237,10 +238,11 @@
       <select id="sos-vehicle"></select>
       <label for="sos-note">What happened? (optional)</label>
       <textarea id="sos-note" maxlength="500" rows="2" placeholder="e.g. flat front tire, no spare"></textarea>
-      <button class="btn safety" id="sos-send" type="submit">Send request</button>
+      <button class="btn safety" id="sos-send" type="submit" style="font-size:18px;padding:12px 22px">Send help request</button>
       <button class="btn ghost" id="sos-cancel-form" type="button">Cancel</button>
       <p class="error" id="sos-error" role="alert"></p>
     </form>
+    <p class="sos-status ok" id="sos-sent" role="status" hidden style="font-size:16px;margin:12px 0 0"></p>
     <div id="sos-list" aria-live="polite"></div>
   </section>
 
@@ -493,6 +495,7 @@ function renderRequests() {
       </div>
       <p class="desc">${esc(r.description)}</p>
       ${techLine(r.technician)}
+      ${workPhoto(r.workPhotoUrl, 'desc')}
       ${r.status === 'completed' && r.amount ? `<p class="desc">Charged: <strong>${jmd(r.amount)}</strong></p>` : ''}
       ${rateBlock('job', r.id, r.status === 'completed', !!r.technicianId, r.rating, r.review)}
     </article>`).join('');
@@ -712,6 +715,12 @@ function addMsg(html, who) {
 const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 const stars = n => '\u2605'.repeat(n) + '\u2606'.repeat(5 - n);
 
+// The technician's photo of the finished work (proof). Opens full size in a new tab.
+function workPhoto(url, cls) {
+  if (!url) return '';
+  return '<p class="' + cls + '">Photo of the finished work:<br><a href="' + esc(url) + '" target="_blank" rel="noopener"><img class="workphoto" src="' + esc(url) + '" alt="Photo of the finished work" loading="lazy" onerror="this.closest(\'p\').remove()"></a></p>';
+}
+
 function techLine(t) {
   if (!t) return '';
   const call = t.phone ? ' <a href="tel:' + esc(t.phone.replace(/[^\d+]/g, '')) + '">' + esc(t.phone) + '</a>' : '';
@@ -768,7 +777,8 @@ async function openSos(kind) {
   $('sos-vehicle').innerHTML = '<option value="">Not sure / not listed</option>' +
     state.vehicles.map(v => '<option value="' + v.id + '">' + esc(v.year) + ' ' + esc(v.type) + '</option>').join('');
   $('sos-form').hidden = false;
-  $('sos-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  $('sos-sent').hidden = true;
+  $('sos-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
   $('sos-where').focus({ preventScroll: true });
 }
 document.querySelectorAll('.sos-btn').forEach(b => b.addEventListener('click', () => openSos(b.dataset.kind)));
@@ -800,7 +810,10 @@ $('sos-form').addEventListener('submit', async (e) => {
       vehicleId: Number($('sos-vehicle').value) || undefined, note: $('sos-note').value
     }});
     $('sos-form').hidden = true; $('sos-where').value = ''; $('sos-note').value = ''; sosCoords = null;
+    $('sos-sent').textContent = 'Request sent. Technicians have been alerted. Keep your phone on and stay somewhere safe.';
+    $('sos-sent').hidden = false;
     await loadSos();
+    $('sos-list').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (err) { $('sos-error').textContent = err.message; }
   finally { $('sos-send').disabled = false; }
 });
@@ -821,6 +834,7 @@ async function loadSos() {
     if (r.status === 'resolved') {
       if (r.technician) body += techLine(r.technician).replace('class="desc tech-line"', 'class="tech-line"');
       if (r.amount) body += '<p style="margin:4px 0 0">Charged: <strong>' + jmd(r.amount) + '</strong></p>';
+      body += workPhoto(r.workPhotoUrl, '').replace('<p class="">', '<p style="margin:6px 0 0">');
       body += rateBlock('emergency', r.id, true, !!r.technician, r.rating, r.review);
     } else if (r.status === 'dispatched' && r.technician && r.technician.avatarUrl) {
       body = '<p class="tech-line"><img class="tavatar" src="' + esc(r.technician.avatarUrl) + '" alt="" onerror="this.remove()">' + body.replace(/^<p[^>]*>/, '<span>').replace(/<\/p>$/, '</span>') + '</p>';

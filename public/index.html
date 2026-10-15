@@ -27,9 +27,15 @@
   h2 { font: 700 28px/1.1 var(--display); margin: 0 0 4px; }
   .sub { color: var(--ink-soft); margin: 0 0 8px; font-size: 15px; }
 
-  .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
   .tabs button { padding: 9px; background: #fff; border: 0; font-weight: 600; cursor: pointer; color: var(--ink-soft); }
   .tabs button[aria-selected="true"] { background: var(--ink); color: #fff; }
+  .choice { display: block; width: 100%; text-align: left; background: #fff; border: 2px solid var(--line); border-radius: 6px; padding: 14px 16px; margin-top: 12px; cursor: pointer; }
+  .choice:hover, .choice:focus-visible { border-color: var(--ink); }
+  .choice strong { display: block; font: 700 22px/1.1 var(--display); }
+  .choice small { display: block; margin-top: 4px; font-size: 14px; color: var(--ink-soft); line-height: 1.35; }
+  .choice .arrow { float: right; font-size: 22px; color: var(--ink-soft); }
+  .linkbtn { background: none; border: 0; padding: 0; color: var(--ink-soft); font-weight: 600; cursor: pointer; text-decoration: underline; margin-bottom: 4px; }
 
   label { display: block; font-size: 14px; font-weight: 600; color: var(--ink-soft); margin: 14px 0 4px; }
   input { width: 100%; padding: 10px; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
@@ -63,11 +69,25 @@
 
     <div class="tabs" role="tablist">
       <button role="tab" id="tab-login" aria-selected="true" aria-controls="form">Sign in</button>
-      <button role="tab" id="tab-register" aria-selected="false" aria-controls="form">Customer</button>
-      <button role="tab" id="tab-tech" aria-selected="false" aria-controls="form">Service member</button>
+      <button role="tab" id="tab-create" aria-selected="false" aria-controls="chooser form">Create account</button>
+    </div>
+
+    <!-- Create account: pick what you are first -->
+    <div id="chooser" hidden>
+      <button type="button" class="choice" id="choose-customer">
+        <span class="arrow" aria-hidden="true">&rsaquo;</span>
+        <strong>I'm a customer</strong>
+        <small>Add my vehicles, book services, and get roadside assistance or a wrecker when I need one.</small>
+      </button>
+      <button type="button" class="choice" id="choose-tech">
+        <span class="arrow" aria-hidden="true">&rsaquo;</span>
+        <strong>I'm a service provider</strong>
+        <small>Mechanic, tire, electrical, roadside or towing professional. Apply to take jobs in your parish.</small>
+      </button>
     </div>
 
     <form id="form" novalidate>
+      <button type="button" class="linkbtn" id="change-type" hidden>&larr; Change account type</button>
       <div id="nameRow" hidden>
         <label for="name">Full name</label>
         <input id="name" autocomplete="name">
@@ -173,30 +193,38 @@ $('photo').addEventListener('change', () => {
   if (f) $('preview').src = URL.createObjectURL(f);
 });
 
+// Modes: login | create (choose the kind of account) | register (customer form) | tech (service provider form)
 const COPY = {
-  login:    { title: 'Welcome back', sub: 'Customers and service members sign in here.', button: 'Sign in' },
-  register: { title: 'Create your account', sub: 'Customers: sign up so the nearest technician can reach you.', button: 'Create account' },
-  tech:     { title: 'Join as a service member', sub: 'Mechanics, tire, electrical, roadside and towing professionals: apply to take jobs in your parish.', button: 'Submit application' }
+  login:    { title: 'Welcome back', sub: 'Customers and service providers sign in here.', button: 'Sign in' },
+  create:   { title: 'Create an account', sub: 'What would you like to do?', button: '' },
+  register: { title: 'Create your customer account', sub: 'So the nearest technician can reach you.', button: 'Create account' },
+  tech:     { title: 'Join as a service provider', sub: 'Mechanics, tire, electrical, roadside and towing professionals: apply to take jobs in your parish.', button: 'Submit application' }
 };
 function setMode(m) {
   mode = m;
-  const creating = m !== 'login';
+  const creating = m === 'register' || m === 'tech';
+  $('chooser').hidden = m !== 'create';
+  $('form').hidden = m === 'create';
+  $('change-type').hidden = !creating;
   $('regFields').hidden = !creating;
   $('photoRow').hidden = m === 'tech';
   $('techFields').hidden = m !== 'tech';
   $('nameRow').hidden = !creating;
   $('pwHint').hidden = !creating;
   $('pw').autocomplete = creating ? 'new-password' : 'current-password';
-  ['login', 'register', 'tech'].forEach(k => $('tab-' + k).setAttribute('aria-selected', k === m));
+  $('tab-login').setAttribute('aria-selected', m === 'login');
+  $('tab-create').setAttribute('aria-selected', m !== 'login');
   $('title').textContent = COPY[m].title;
   $('sub').textContent = COPY[m].sub;
   $('submit').textContent = COPY[m].button;
   $('error').textContent = '';
-  $('form').hidden = false; $('applied').hidden = true;
+  $('applied').hidden = true;
 }
-$('tab-login').addEventListener('click', () => setMode('login'));
-$('tab-register').addEventListener('click', () => setMode('register'));
-$('tab-tech').addEventListener('click', () => setMode('tech'));
+$('tab-login').addEventListener('click', () => { setMode('login'); $('email').focus(); });
+$('tab-create').addEventListener('click', () => setMode('create'));
+$('choose-customer').addEventListener('click', () => { setMode('register'); $('name').focus(); });
+$('choose-tech').addEventListener('click', () => { setMode('tech'); $('name').focus(); });
+$('change-type').addEventListener('click', () => setMode('create'));
 
 $('show').addEventListener('click', () => {
   const hidden = $('pw').type === 'password';
@@ -222,7 +250,7 @@ $('form').addEventListener('submit', async e => {
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || 'Could not submit your application.');
-      $('form').hidden = true; $('applied').hidden = false;
+      $('form').hidden = true; $('applied').hidden = false; $('chooser').hidden = true;
       $('title').textContent = 'Thank you'; $('sub').textContent = '';
       return;
     }

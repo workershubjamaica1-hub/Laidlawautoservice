@@ -23,6 +23,7 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
     parish: r.parish, phone: r.phone, status: r.status, technicianId: r.technician_id,
     createdAt: r.created_at, updatedAt: r.updated_at,
     amount: r.amount == null ? null : Number(r.amount), rating: r.rating || null, review: r.review || '', completedAt: r.completed_at || null,
+    hasWorkPhoto: !!r.work_photo_path,
     ...extra
   });
   const num = v => (v === null || v === undefined || v === '' ? null : Number(v));
@@ -88,10 +89,13 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
       if (t.error) throw t.error;
       techs = new Map(await Promise.all(t.data.map(async x => [x.id, { ...x, avatarUrl: await auth.signedPhotoUrl(x.avatar_path).catch(() => null) }])));
     }
-    res.json(recent.map(r => {
+    res.json(await Promise.all(recent.map(async r => {
       const t = techs.get(r.technician_id);
-      return toEmergency(r, { technician: t ? { name: t.name, phone: t.phone || '', avatarUrl: t.avatarUrl } : null });
-    }));
+      return toEmergency(r, {
+        technician: t ? { name: t.name, phone: t.phone || '', avatarUrl: t.avatarUrl } : null,
+        workPhotoUrl: r.work_photo_path ? await auth.signedPhotoUrl(r.work_photo_path).catch(() => null) : null
+      });
+    })));
   }));
 
   router.post('/emergency/:id/cancel', customerOnly, handle(async (req, res) => {

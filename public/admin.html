@@ -51,6 +51,7 @@
 
   .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
   .tabs button { background: transparent; border: 1px solid var(--line); border-radius: 20px; padding: 5px 16px; cursor: pointer; }
+  .tabs button.alert { background: var(--red); color: #fff; border-color: var(--red); font-weight: 600; }
   .tabs button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
   .toolbar { display: grid; grid-template-columns: 1fr 200px; gap: 10px; margin-bottom: 12px; }
 
@@ -105,6 +106,11 @@
   .rrow .track i { display: block; height: 100%; background: var(--blue); border-radius: 0 4px 4px 0; }
   .review { border-top: 1px solid var(--line); padding: 8px 0; }
   .review:first-of-type { border-top: 0; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+  .gallery a { display: block; color: inherit; text-decoration: none; }
+  .gallery img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); display: block; }
+  .gallery small { display: block; margin-top: 4px; font-size: 13px; color: var(--ink-soft); }
+  .viewing { background: #EEF4FA; border: 1px solid var(--blue); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .photo-btn { position: relative; overflow: hidden; }
   .photo-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .amount-edit { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
@@ -264,6 +270,10 @@ async function load() {
     }
     data = await api('/admin/overview');
     await refreshEmergencies();
+    if (!window.__firstLoadDone) {
+      window.__firstLoadDone = true;
+      if (emergencies.some(e => e.status === 'open')) document.querySelector('.tabs button[data-tab="emergencies"]').click();
+    }
     await loadDashboard();
     if (me.role === 'admin') users = await api('/admin/users');
   } catch (err) {
@@ -314,9 +324,31 @@ function prepareImage(file, max = 1000) {
   });
 }
 
+let viewingTech = null; // admin looking at a technician's jobs and photos (read-only); null = my own dashboard
+
+// Choose a photo of a finished job and upload it (jobType is "service" or "emergency")
+function pickWorkPhoto(jobType, id) {
+  const input = el('input', { type: 'file', accept: 'image/*' });
+  input.addEventListener('change', async () => {
+    if (!input.files[0]) return;
+    $('appError').textContent = '';
+    try {
+      const image = await prepareImage(input.files[0], 1400);
+      await api('/admin/jobs/' + jobType + '/' + id + '/photo', { method: 'POST', body: JSON.stringify({ image }) });
+      await load();
+    } catch (err) { $('appError').textContent = err.message; }
+  });
+  input.click();
+}
+function viewTechnician(id) {
+  viewingTech = id;
+  document.querySelector('.tabs button[data-tab="dashboard"]').click();
+  loadDashboard();
+}
+
 async function loadDashboard() {
   let d;
-  try { d = await api('/admin/dashboard'); } catch (err) { $('dashPanel').replaceChildren(el('p', { className: 'error', textContent: err.message })); return; }
+  try { d = await api('/admin/dashboard' + (viewingTech ? '?technicianId=' + viewingTech : '')); } catch (err) { $('dashPanel').replaceChildren(el('p', { className: 'error', textContent: err.message })); return; }
   const t = d.technician, tot = d.totals, rt = d.rating;
 
   // photo (optional)
@@ -338,6 +370,7 @@ async function loadDashboard() {
   });
   const photoBtn = el('label', { className: 'btn ghost small photo-btn', style: 'display:inline-block;margin:0' },
     t.avatarUrl ? 'Change photo' : 'Add a photo (optional)', input);
+  photoBtn.hidden = !!viewingTech;
 
   const head = el('div', { className: 'dash-head' }, pic,
     el('div', {},
@@ -378,15 +411,30 @@ async function loadDashboard() {
       el('p', { textContent: '"' + r.review + '"', style: 'margin:4px 0 0' }))) : [el('p', { className: 'empty', textContent: 'No written reviews yet.' })]));
 
   const recentCard = el('div', { className: 'card' }, el('h3', { textContent: 'Recent jobs' }),
-    ...(d.recent.length ? d.recent.map(r => el('div', { className: 'review' }, el('strong', { textContent: r.title }), ' ',
-      el('small', { textContent: fmtDate(r.when) }), ' \u00b7 ', el('b', { textContent: r.amount ? money(r.amount) : 'amount not entered' }),
-      r.rating ? el('span', {}, ' ', starText(r.rating)) : null)) : [el('p', { className: 'empty', textContent: 'No finished jobs yet. Take a job from Service requests or Emergencies.' })]));
+    ...(d.recent.length ? d.recent.slice(0, 10).map(r => {
+      const add = viewingTech ? null : el('button', { className: 'btn ghost small', textContent: r.photoUrl ? 'Change photo' : 'Add photo of the work', style: 'margin-left:8px' });
+      if (add) add.addEventListener('click', () => pickWorkPhoto(r.jobType, r.id));
+      return el('div', { className: 'review' }, el('strong', { textContent: r.title }), ' ',
+        el('small', { textContent: fmtDate(r.when) }), ' \u00b7 ', el('b', { textContent: r.amount ? money(r.amount) : 'amount not entered' }),
+        r.rating ? el('span', {}, ' ', starText(r.rating)) : null, add);
+    }) : [el('p', { className: 'empty', textContent: 'No finished jobs yet. Take a job from Service requests or Emergencies.' })]));
 
-  $('dashPanel').replaceChildren(head, tiles, el('div', { className: 'dash-grid' }, earnCard, ratingCard), el('div', { className: 'dash-grid' }, reviewCard, recentCard));
+  // proof of completed work: the technician's own photos, newest first
+  const galleryCard = el('div', { className: 'card', style: 'margin-bottom:18px' }, el('h3', { textContent: 'Proof of completed work' }),
+    d.gallery.length
+      ? el('div', { className: 'gallery' }, ...d.gallery.map(g => el('a', { href: g.photoUrl, target: '_blank', rel: 'noopener', title: g.title + ' \u00b7 ' + fmtDate(g.when) },
+          el('img', { src: g.photoUrl, alt: g.title + ' work photo', loading: 'lazy' }), el('small', { textContent: g.title + ' \u00b7 ' + fmtDate(g.when) }))))
+      : el('p', { className: 'empty', textContent: viewingTech ? 'No work photos yet.' : 'After you finish a job, add a photo of the work. Customers and the shop can see it as proof of what you did.' }));
+
+  const banner = viewingTech ? el('div', { className: 'viewing' }, el('span', { textContent: 'You are viewing ' + t.name + "'s jobs and photos." }),
+    (() => { const back = el('button', { className: 'btn ghost small', textContent: 'Back to my dashboard' }); back.addEventListener('click', () => { viewingTech = null; loadDashboard(); }); return back; })()) : null;
+
+  $('dashPanel').replaceChildren(...[banner, head, tiles, el('div', { className: 'dash-grid' }, earnCard, ratingCard), galleryCard, el('div', { className: 'dash-grid' }, reviewCard, recentCard)].filter(Boolean));
 }
 
 // --- Emergencies: roadside assistance and wrecker requests ---
 let emergencies = [];
+let editingEmergency = null; // id of the request whose "amount charged" box is open: don't redraw the list under their fingers
 let knownOpen = null; // ids of open requests seen so far (null until the first load, so we don't beep for old ones)
 const KIND_LABEL = { roadside: 'Roadside', towing: 'Towing' };
 const ago = t => {
@@ -410,13 +458,14 @@ function beep() {
 async function refreshEmergencies() {
   try { emergencies = await api('/admin/emergencies'); } catch (err) { $('appError').textContent = err.message; return; }
   const open = emergencies.filter(e => e.status === 'open');
-  if (knownOpen && open.some(e => !knownOpen.has(e.id) && (!$('parishFilter').value || e.parish === $('parishFilter').value))) beep();
+  if (knownOpen && open.some(e => !knownOpen.has(e.id))) beep();
   knownOpen = new Set(open.map(e => e.id));
-  renderEmergencies();
+  if (editingEmergency === null) renderEmergencies();
 }
 
 async function emergencyAction(id, action, extra = {}) {
   $('appError').textContent = '';
+  editingEmergency = null;
   try { await api('/admin/emergencies/' + id, { method: 'PATCH', body: JSON.stringify({ action, ...extra }) }); }
   catch (err) { $('appError').textContent = err.message; }
   await refreshEmergencies();
@@ -424,16 +473,17 @@ async function emergencyAction(id, action, extra = {}) {
 }
 
 function renderEmergencies() {
-  const pf = $('parishFilter').value;
-  const inView = emergencies.filter(e => !pf || e.parish === pf);
-  const openAll = emergencies.filter(e => e.status === 'open' || e.status === 'dispatched').length;
-  const openHere = inView.filter(e => e.status === 'open').length;
-  $('emergTab').textContent = 'Emergencies' + (emergencies.some(e => e.status === 'open') ? ' (' + emergencies.filter(e => e.status === 'open').length + ' open)' : '');
-  const elsewhere = emergencies.filter(e => e.status === 'open').length - openHere;
-  $('emergNote').textContent = pf && elsewhere > 0 ? elsewhere + ' open in other parishes. Choose "All parishes" to see them.' : '';
+  // Emergencies are urgent, so they are NOT limited by the parish filter. The technician's own parish is listed first.
+  const inView = emergencies.slice();
+  const openCount = emergencies.filter(e => e.status === 'open').length;
+  $('emergTab').textContent = 'Emergencies' + (openCount ? ' (' + openCount + ' open)' : '');
+  $('emergTab').classList.toggle('alert', openCount > 0);
+  const nearMe = emergencies.filter(e => e.status === 'open' && me.parish && e.parish === me.parish).length;
+  $('emergNote').textContent = openCount ? openCount + ' open now' + (me.parish ? ', ' + nearMe + ' in ' + me.parish + '.' : '.') : '';
   $('emergEmpty').hidden = inView.length > 0;
   const order = { open: 0, dispatched: 1, resolved: 2, cancelled: 3 };
-  inView.sort((a, b) => order[a.status] - order[b.status] || b.id - a.id);
+  const near = e => (me.parish && e.parish === me.parish ? 0 : 1);
+  inView.sort((a, b) => order[a.status] - order[b.status] || near(a) - near(b) || b.id - a.id);
   $('emergList').replaceChildren(...inView.map(e => {
     const mine = e.technician && me && e.technician.id === me.id;
     const c = e.customer;
@@ -452,10 +502,16 @@ function renderEmergencies() {
         const save = el('button', { className: 'btn safety small', textContent: 'Save and finish' });
         const back = el('button', { className: 'btn ghost small', textContent: 'Back' });
         save.addEventListener('click', () => emergencyAction(e.id, 'resolve', { amount: box.value }));
-        back.addEventListener('click', () => renderEmergencies());
-        acts.replaceChildren(box, save, back); box.focus();
+        back.addEventListener('click', () => { editingEmergency = null; renderEmergencies(); });
+        editingEmergency = e.id;
+        acts.replaceChildren(el('small', { textContent: 'Amount charged (optional)' }), box, save, back); box.focus();
       });
       acts.append(done); acts.append(btn('Hand back', 'ghost', 'release'));
+    }
+    if (e.status === 'resolved' && (mine || me.role === 'admin')) {
+      const pb = el('button', { className: 'btn ghost small', textContent: e.hasWorkPhoto ? 'Change work photo' : 'Add work photo' });
+      pb.addEventListener('click', () => pickWorkPhoto('emergency', e.id));
+      acts.append(pb);
     }
     if (me.role === 'admin' && (e.status === 'open' || e.status === 'dispatched')) { const x = btn('Cancel', 'danger', 'cancel', true); x.textContent = 'Cancel'; acts.append(x); }
     const where = [];
@@ -469,6 +525,7 @@ function renderEmergencies() {
         el('span', { className: 'kind', textContent: KIND_LABEL[e.kind] || e.kind }), ' ',
         el('span', { className: 'badge', textContent: e.status === 'dispatched' ? 'On the way' : e.status }), ' ',
         el('small', { textContent: ago(e.createdAt) + ' \u00b7 ' + e.parish }),
+        me.parish && e.parish === me.parish ? el('span', { className: 'badge', textContent: 'In your parish', style: 'margin-left:6px;background:var(--green);color:#fff' }) : null,
         el('p', {}, el('strong', { textContent: c ? c.name : 'Customer' }), ' ',
           el('a', { href: 'tel:' + e.phone.replace(/[^\d+]/g, ''), textContent: e.phone, style: 'font-weight:600' })),
         c && c.address ? el('p', {}, el('small', { textContent: 'Home address: ' + c.address })) : null,
@@ -541,7 +598,7 @@ function renderRequests() {
         const back = el('button', { className: 'btn ghost small', textContent: 'Back' });
         save.addEventListener('click', () => sendStatus('completed', box.value));
         back.addEventListener('click', cancelEdit);
-        jobCell.replaceChildren(el('div', { className: 'amount-edit' }, box, save, back)); box.focus();
+        jobCell.replaceChildren(el('small', { textContent: 'Amount charged (optional)' }), el('div', { className: 'amount-edit' }, box, save, back)); box.focus();
       });
       jobCell.append(sel);
     } else {
@@ -550,6 +607,11 @@ function renderRequests() {
     if (r.technicianName) jobCell.append(el('br'), el('small', { textContent: 'Technician: ' + (mineJob ? 'you' : r.technicianName) }));
     if (r.status === 'completed' && r.amount) jobCell.append(el('br'), el('strong', { textContent: money(r.amount) }));
     if (r.rating) jobCell.append(el('br'), starText(r.rating));
+    if (r.status === 'completed' && (isAdmin || mineJob)) {
+      const pb = el('button', { className: 'btn ghost small', textContent: r.hasWorkPhoto ? 'Change work photo' : 'Add work photo', style: 'margin-top:4px' });
+      pb.addEventListener('click', () => pickWorkPhoto('service', r.id));
+      jobCell.append(el('br'), pb);
+    }
     const del = el('button', { className: 'btn danger small', textContent: 'Delete', hidden: me.role !== 'admin' });
     armDelete(del, async () => { await api('/admin/service-request/' + r.id, { method: 'DELETE' }); await load(); });
     return el('tr', {},
@@ -627,6 +689,8 @@ function renderUsers() {
     const parish = el('select', { ariaLabel: 'Parish' }, el('option', { value: '', textContent: u.role === 'staff' ? 'Not assigned' : '-' }),
       ...parishes.map(p => el('option', { value: p, textContent: p, selected: p === u.parish })));
     parish.addEventListener('change', () => patchUser(u.id, { parish: parish.value }));
+    const jobsBtn = el('button', { className: 'btn ghost small', textContent: 'Jobs & photos', hidden: u.role !== 'staff' });
+    jobsBtn.addEventListener('click', () => viewTechnician(u.id));
     const photo = el('button', { className: 'btn ghost small', textContent: 'Chassis photo', hidden: !u.hasChassisPhoto });
     photo.addEventListener('click', () => openPhoto(u.id));
     return el('tr', {},
@@ -635,7 +699,7 @@ function renderUsers() {
       el('td', {}, role),
       el('td', {}, parish),
       el('td', {}, el('span', { className: u.active ? 'badge' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' })),
-      el('td', { className: 'act' }, photo, ' ', toggle, ' ', reset, ' ', del));
+      el('td', { className: 'act' }, jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }
 async function patchUser(id, body) {

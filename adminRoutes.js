@@ -73,6 +73,39 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     res.json(toRequest(data));
   }));
 
+  // --- Proof of work: the technician who did a finished job (or an admin) can attach or remove a photo of it ---
+  const JOB_TABLES = { service: { table: 'service_requests', done: 'completed' }, emergency: { table: 'emergency_requests', done: 'resolved' } };
+  const bigJson = express.json({ limit: '6mb' });
+  async function loadJob(req, res) {
+    const def = JOB_TABLES[req.params.kind];
+    if (!def) { res.status(404).json({ error: 'Unknown job type.' }); return null; }
+    const cur = await supabase.from(def.table).select('*').eq('id', Number(req.params.id)).maybeSingle();
+    if (cur.error) throw cur.error;
+    if (!cur.data) { res.status(404).json({ error: 'Job not found.' }); return null; }
+    if (req.user.role !== 'admin' && cur.data.technician_id !== req.user.id) { res.status(403).json({ error: 'You can only add photos to jobs you did.' }); return null; }
+    return { def, row: cur.data };
+  }
+  router.post('/jobs/:kind/:id/photo', staffUp, bigJson, handle(async (req, res) => {
+    const job = await loadJob(req, res);
+    if (!job) return;
+    if (job.row.status !== job.def.done) return res.status(400).json({ error: 'Add the photo once the job is finished.' });
+    const img = auth.readImage(req.body);
+    if (img.error) return res.status(img.status).json({ error: img.error });
+    const path = `jobs/${req.params.kind}-${job.row.id}`;
+    await auth.storePhoto(path, img.buf, img.type);
+    const { error } = await supabase.from(job.def.table).update({ work_photo_path: path, work_photo_at: new Date().toISOString() }).eq('id', job.row.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  }));
+  router.delete('/jobs/:kind/:id/photo', staffUp, handle(async (req, res) => {
+    const job = await loadJob(req, res);
+    if (!job) return;
+    await auth.removePhoto(job.row.work_photo_path).catch(err => console.error('Could not remove photo:', err.message));
+    const { error } = await supabase.from(job.def.table).update({ work_photo_path: null, work_photo_at: null }).eq('id', job.row.id);
+    if (error) throw error;
+    res.json({ ok: true });
+  }));
+
   // --- Technician dashboard: jobs, earnings (JMD), ratings. Admins can view anyone with ?technicianId= ---
   router.get('/dashboard', staffUp, handle(async (req, res) => {
     const techId = req.user.role === 'admin' && req.query.technicianId ? Number(req.query.technicianId) : req.user.id;
@@ -86,9 +119,9 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
 
     const label = { diagnostics: 'Diagnostics', mechanical: 'Mechanical', tire: 'Tire', electrical: 'Electrical', maintenance: 'Maintenance', other: 'Other' };
     const jobs = [
-      ...sr.data.map(r => ({ kind: 'service', title: label[r.category] || r.category, done: r.status === 'completed', active: r.status === 'in-progress',
+      ...sr.data.map(r => ({ id: r.id, jobType: 'service', photoPath: r.work_photo_path, kind: 'service', title: label[r.category] || r.category, done: r.status === 'completed', active: r.status === 'in-progress',
         when: r.completed_at || r.updated_at || r.created_at, amount: Number(r.amount || 0), rating: r.rating, review: r.review })),
-      ...em.data.map(r => ({ kind: r.kind, title: r.kind === 'towing' ? 'Wrecker / towing' : 'Roadside assistance', done: r.status === 'resolved', active: r.status === 'dispatched',
+      ...em.data.map(r => ({ id: r.id, jobType: 'emergency', photoPath: r.work_photo_path, kind: r.kind, title: r.kind === 'towing' ? 'Wrecker / towing' : 'Roadside assistance', done: r.status === 'resolved', active: r.status === 'dispatched',
         when: r.completed_at || r.updated_at || r.created_at, amount: Number(r.amount || 0), rating: r.rating, review: r.review }))
     ];
     const done = jobs.filter(j => j.done).sort((x, y) => new Date(y.when) - new Date(x.when));
@@ -108,6 +141,11 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
     const rated = done.filter(j => j.rating);
     const breakdown = [1, 2, 3, 4, 5].map(n => rated.filter(j => j.rating === n).length);
     const avatarUrl = await auth.signedPhotoUrl(tu.data.avatar_path).catch(() => null);
+    // the 20 latest finished jobs, with a short-lived link to the technician's photo of the work (if any)
+    const recent = await Promise.all(done.slice(0, 20).map(async j => ({
+      id: j.id, jobType: j.jobType, title: j.title, kind: j.kind, when: j.when, amount: j.amount, rating: j.rating,
+      photoUrl: j.photoPath ? await auth.signedPhotoUrl(j.photoPath).catch(() => null) : null
+    })));
     res.json({
       technician: { name: tu.data.name, parish: tu.data.parish || '', specialties: tu.data.specialties ? tu.data.specialties.split(',') : [], avatarUrl },
       totals: {
@@ -118,7 +156,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, toVehicle, toReq
       rating: { average: rated.length ? Math.round(rated.reduce((t, j) => t + j.rating, 0) / rated.length * 10) / 10 : null, count: rated.length, breakdown },
       months,
       reviews: rated.filter(j => j.review).slice(0, 5).map(j => ({ rating: j.rating, review: j.review, title: j.title, when: j.when })),
-      recent: done.slice(0, 8).map(j => ({ title: j.title, kind: j.kind, when: j.when, amount: j.amount, rating: j.rating }))
+      recent, gallery: recent.filter(j => j.photoUrl)
     });
   }));
 
