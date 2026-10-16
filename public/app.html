@@ -15,23 +15,28 @@
 </head>
 <body class="dash-body">
 <header class="topbar">
-  <a class="brand" href="#top" aria-label="AutoAid 24/7 home"><img src="/logo.png" alt="AutoAid 24/7"></a>
+  <a class="brand" href="#overview" aria-label="AutoAid 24/7 home"><img src="/logo.png" alt="AutoAid 24/7"></a>
   <nav class="top-links" aria-label="Main">
-    <a href="#top" class="on">Overview</a>
-    <a href="#garage-h">My garage</a>
-    <a href="#jobs-h">Services</a>
-    <a href="#sos">Emergency</a>
+    <a href="#overview" data-view="overview">Overview</a>
+    <a href="#garage" data-view="garage">My garage</a>
+    <a href="#services" data-view="services">Services</a>
+    <a href="#premium" data-view="premium" id="nav-premium" hidden>Premium</a>
+    <a href="#emergency" data-view="emergency">Emergency</a>
   </nav>
   <div class="usermenu">
-    <span class="who-dot" id="who-dot" aria-hidden="true"></span>
-    <span class="who-text"><b id="who"></b><small id="who-sub">Customer</small></span>
+    <a class="who-link" href="#profile" data-view="profile" title="My profile">
+      <span class="who-dot" id="who-dot" aria-hidden="true"></span>
+      <span class="who-text"><b id="who"></b><small id="who-sub">Customer</small></span>
+    </a>
     <button class="btn small ghost" id="logout" type="button">Log out</button>
   </div>
 </header>
 
 <main id="top" class="dash">
-  <!-- Welcome -->
-  <section class="welcome" aria-labelledby="hero-name">
+
+  <!-- OVERVIEW -->
+  <div class="view" id="view-overview" data-view="overview">
+    <section class="welcome" aria-labelledby="hero-name">
     <div class="welcome-text">
       <p class="eyebrow" id="hero-hi">Welcome</p>
       <h1 id="hero-name">Welcome back</h1>
@@ -43,8 +48,9 @@
     </div>
   </section>
 
-  <!-- Summary -->
-  <section class="stats" aria-label="Your account at a glance">
+    <a class="nudge" id="profile-nudge" href="#profile" hidden><b>Finish your profile.</b> We need your phone, parish and a photo of your vehicle so a technician can reach you. <span>Open profile</span></a>
+
+    <section class="stats" aria-label="Your account at a glance">
     <div class="stat">
       <span class="tile blue"><span class="ic" style="--m: var(--d-car)"></span></span>
       <div class="stat-text"><b id="hs-vehicles">0</b><span>Vehicles</span></div>
@@ -55,42 +61,53 @@
       <div class="stat-text"><b id="hs-done">0</b><span>Services completed</span></div>
       <span class="chip" id="hs-month" hidden></span>
     </div>
-    <div class="stat">
+    <div class="stat" id="stat-member">
       <span class="tile violet"><span class="ic" style="--m: var(--d-shield)"></span></span>
       <div class="stat-text"><b id="member-title">Standard</b><span>Membership</span></div>
       <span class="chip" id="member-chip" hidden></span>
     </div>
   </section>
 
-  <!-- Emergency help -->
-  <section class="sos" id="sos" aria-labelledby="sos-h">
-    <div class="sos-row">
-      <span class="tile warm"><span class="ic" style="--m: var(--d-phone)"></span></span>
-      <div class="sos-copy">
-        <h2 id="sos-h">Need help right now?</h2>
-        <p class="safety-note">24/7 roadside support is available. If anyone is hurt or in danger, call <a href="tel:119">119</a> (police) or <a href="tel:110">110</a> (fire and ambulance) first.</p>
-      </div>
-      <div class="sos-buttons">
+    <section class="sos mini" aria-label="Emergency help">
+      <div class="sos-row">
+        <span class="tile warm"><span class="ic" style="--m: var(--d-phone)"></span></span>
+        <div class="sos-copy"><h2>Need help right now?</h2><p class="safety-note">24/7 roadside support is available.</p></div>
+        <div class="sos-buttons">
         <button class="sos-btn road" type="button" data-kind="roadside"><span class="ic" style="--m: var(--d-wrench)"></span><span class="sos-txt">Roadside assistance</span></button>
         <button class="sos-btn tow" type="button" data-kind="towing"><span class="ic" style="--m: var(--d-car)"></span><span class="sos-txt">Request a tow</span></button>
-        <a id="sos-call" class="call-link" href="#" hidden></a>
+        </div>
       </div>
-    </div>
-    <p class="sos-status ok" id="sos-sent" role="status" hidden style="font-size:16px;margin:12px 0 0"></p>
-    <div id="sos-list" aria-live="polite"></div>
-  </section>
+    </section>
 
-  <div class="cols">
-    <div class="col-main">
-      <!-- Current service (real request data) -->
-      <section aria-labelledby="current-h">
+    <div class="overview-body">
+    <section aria-labelledby="current-h">
         <p class="eyebrow">Service status</p>
-        <div class="sec-head"><h2 id="current-h">Your vehicle is in good hands</h2><a class="link" href="#jobs-h">View history <span class="ic" style="--m: var(--d-arrow)"></span></a></div>
+        <div class="sec-head"><h2 id="current-h">Your vehicle is in good hands</h2><a class="link" href="#services">View history <span class="ic" style="--m: var(--d-arrow)"></span></a></div>
         <div class="card flush" id="current-box"></div>
       </section>
+    </div>
+  </div>
 
-      <!-- History -->
-      <section aria-labelledby="jobs-h">
+  <!-- MY GARAGE -->
+  <div class="view" id="view-garage" data-view="garage" hidden>
+    <div class="page-head">
+      <div><p class="eyebrow">My garage</p><h1>Your vehicles</h1><p class="welcome-sub">The vehicles you can book services and emergency help for.</p></div>
+      <button class="btn" id="add-vehicle-toggle" type="button"><span class="ic" style="--m: var(--d-plus)"></span>Add vehicle</button>
+    </div>
+    <h2 id="garage-h" class="sr-only">Your vehicle</h2>
+    <div id="vehicle-list"><p class="empty">No vehicles yet. Add yours to start booking services.</p></div>
+  </div>
+
+  <!-- SERVICES -->
+  <div class="view" id="view-services" data-view="services" hidden>
+    <div class="page-head">
+      <div><p class="eyebrow">Services</p><h1>Service requests</h1><p class="welcome-sub">Book a service and follow it from request to done.</p></div>
+      <div class="welcome-actions">
+        <button class="btn ghost" type="button" data-go="assistant"><span class="ic" style="--m: var(--d-chat)"></span>Ask a mechanic</button>
+        <button class="btn" type="button" data-go="request-form"><span class="ic" style="--m: var(--d-cal)"></span>Book a service</button>
+      </div>
+    </div>
+    <section aria-labelledby="jobs-h">
         <p class="eyebrow">Activity</p>
         <div class="sec-head">
           <h2 id="jobs-h">Service requests</h2>
@@ -107,9 +124,37 @@
           <div id="request-list"></div>
         </div>
       </section>
-    </div>
+  </div>
 
-    <aside class="col-side">
+  <!-- PREMIUM -->
+  <div class="view" id="view-premium" data-view="premium" hidden>
+    <div class="page-head"><div><p class="eyebrow">Membership</p><h1>AutoAid Premium</h1><p class="welcome-sub">Free servicing all year for members.</p></div></div>
+    <div class="narrow"><section class="premium" id="premium-box" aria-labelledby="premium-h" hidden></section></div>
+  </div>
+
+  <!-- EMERGENCY -->
+  <div class="view" id="view-emergency" data-view="emergency" hidden>
+    <div class="page-head"><div><p class="eyebrow">Emergency</p><h1>Need help right now?</h1><p class="welcome-sub">If anyone is hurt or in danger, call <a href="tel:119">119</a> (police) or <a href="tel:110">110</a> (fire and ambulance) first.</p></div></div>
+    <section class="sos" id="sos" aria-labelledby="sos-h">
+      <div class="sos-row">
+        <span class="tile warm"><span class="ic" style="--m: var(--d-phone)"></span></span>
+        <div class="sos-copy"><h2 id="sos-h">24/7 roadside support</h2><p class="safety-note">Tell us where you are and a technician in your area is alerted straight away.</p></div>
+        <div class="sos-buttons">
+        <button class="sos-btn road" type="button" data-kind="roadside"><span class="ic" style="--m: var(--d-wrench)"></span><span class="sos-txt">Roadside assistance</span></button>
+        <button class="sos-btn tow" type="button" data-kind="towing"><span class="ic" style="--m: var(--d-car)"></span><span class="sos-txt">Request a tow</span></button>
+        <a id="sos-call" class="call-link" href="#" hidden></a>
+        </div>
+      </div>
+      <p class="sos-status ok" id="sos-sent" role="status" hidden style="font-size:16px;margin:12px 0 0"></p>
+      <div id="sos-list" aria-live="polite"></div>
+    </section>
+    <div class="card" id="area-box" hidden></div>
+  </div>
+
+  <!-- PROFILE -->
+  <div class="view" id="view-profile" data-view="profile" hidden>
+    <div class="page-head"><div><p class="eyebrow">Profile</p><h1>My profile</h1><p class="welcome-sub">How technicians reach you and recognise your vehicle.</p></div></div>
+    <div class="narrow">
       <form class="panel" id="profile-box" style="grid-column: 1 / -1" hidden novalidate>
     <h2>Finish your profile</h2>
     <p class="empty">We need these so the nearest technician can reach you and get the right parts for your vehicle.</p>
@@ -125,31 +170,17 @@
     <button class="btn safety" id="p-save" type="submit">Save profile</button>
     <p class="error" id="p-error" role="alert"></p>
   </form>
-
-      <!-- Garage -->
-      <section class="card" aria-labelledby="garage-h">
-        <div class="card-head">
-          <div><p class="eyebrow">My garage</p><h2 id="garage-h">Your vehicle</h2></div>
-          <button class="sq" id="add-vehicle-toggle" type="button" aria-label="Add a vehicle"><span class="ic" style="--m: var(--d-plus)"></span></button>
-        </div>
-        <div id="vehicle-list"><p class="empty">No vehicles yet. Add yours to start booking services.</p></div>
-      </section>
-
-      <!-- Premium membership -->
-      <section class="premium" id="premium-box" aria-labelledby="premium-h" hidden></section>
-
-      <!-- Technicians in the customer's parish -->
-      <div class="card" id="area-box" hidden></div>
-    </aside>
+      <div class="card" id="profile-done" hidden></div>
+    </div>
   </div>
 </main>
 <footer class="legal-foot"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a></footer>
 
 <nav class="bottom-nav" aria-label="Main">
-  <a href="#top" style="--i: var(--i-home)">Home</a>
-  <a href="#garage-h" style="--i: var(--i-car)">Garage</a>
-  <a href="#sos" class="sos-link" style="--i: var(--i-siren)">Help</a>
-  <a href="#jobs-h" style="--i: var(--i-clipboard)">Requests</a>
+  <a href="#overview" data-view="overview" style="--i: var(--i-home)">Home</a>
+  <a href="#garage" data-view="garage" style="--i: var(--i-car)">Garage</a>
+  <a href="#emergency" data-view="emergency" class="sos-link" style="--i: var(--i-siren)">Help</a>
+  <a href="#services" data-view="services" style="--i: var(--i-clipboard)">Requests</a>
   <a href="#" data-go="assistant" style="--i: var(--i-chat)">Mechanic</a>
 </nav>
 
@@ -252,6 +283,18 @@ const labelOf = (list, value) => (list.find(c => c.value === value) || {}).label
 const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'completed': 'Completed', 'cancelled': 'Cancelled' };
 const $ = (id) => document.getElementById(id);
 
+// Tabs: one page, several views switched by the link in the address (#garage, #services, ...)
+const VIEWS = ['overview', 'garage', 'services', 'premium', 'emergency', 'profile'];
+function showView(v) {
+  if (!VIEWS.includes(v) || (v === 'premium' && $('nav-premium').hidden)) v = 'overview';
+  document.querySelectorAll('.view').forEach(el => { el.hidden = el.dataset.view !== v; });
+  document.querySelectorAll('[data-view]').forEach(a => { if (a.tagName === 'A') { a.classList.toggle('on', a.dataset.view === v); if (a.dataset.view === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); } });
+  window.scrollTo(0, 0);
+}
+function goView(v) { if (location.hash === '#' + v) showView(v); else location.hash = v; }
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+showView(location.hash.slice(1));
+
 // Pop-up forms
 function openDlg(id) { const d = $(id); if (d && !d.open) d.showModal(); return d; }
 function closeDlg(id) { const d = $(id); if (d && d.open) d.close(); }
@@ -310,7 +353,9 @@ async function load() {
     ]);
     Object.assign(state, { vehicles, requests, categories, catalog });
     render();
+    showView(location.hash.slice(1));
   } catch (e) {
+    showView(location.hash.slice(1));
     $('request-list').innerHTML = `<p class="error">Can't reach the server. Start it with "npm start" and refresh.</p>`;
   }
 }
@@ -394,21 +439,18 @@ $('add-vehicle-cancel').addEventListener('click', () => {
 function renderVehicles() {
   const list = $('vehicle-list');
   syncGarageForm();
-  $('garage-h').textContent = state.vehicles.length > 1 ? 'Your vehicles' : 'Your vehicle';
   if (!state.vehicles.length) {
     list.innerHTML = '<p class="empty">No vehicles yet. Add yours to start booking services.</p>';
     return;
   }
-  list.innerHTML = state.vehicles.map((v, i) => {
+  list.innerHTML = '<div class="vgrid">' + state.vehicles.map((v) => {
     const brand = String(v.type).split(/\s+/)[0].toUpperCase();
     const rm = '<button class="remove" data-remove="' + v.id + '" aria-label="Remove ' + esc(v.type) + '" title="Remove vehicle">Remove</button>';
-    if (i === 0) return '<div class="vehicle feat"><div class="vtile"><span class="ic" style="--m: var(--d-car)"></span><em>' + esc(brand) + '</em></div>' +
+    return '<div class="vehicle feat"><div class="vtile"><span class="ic" style="--m: var(--d-car)"></span><em>' + esc(brand) + '</em></div>' +
       '<h3>' + esc(v.year) + ' ' + esc(v.type) + '</h3><small>' + esc(labelOf(state.categories.vehicle, v.category)) + '</small>' +
       '<div class="vmeta"><div>' + I('doc') + '<span><small>VIN</small><b>' + (v.vin ? esc(v.vin) : 'Not added') + '</b></span></div>' +
       '<div>' + I('user') + '<span><small>Owner</small><b>' + esc(v.owner) + '</b></span></div></div>' + rm + '</div>';
-    return '<div class="vehicle"><span class="tile blue sm">' + I('car') + '</span><div class="info"><strong>' + esc(v.year) + ' ' + esc(v.type) + '</strong>' +
-      '<small>' + esc(labelOf(state.categories.vehicle, v.category)) + (v.vin ? ' &middot; VIN ' + esc(v.vin) : '') + '</small></div>' + rm + '</div>';
-  }).join('');
+  }).join('') + '</div>';
 }
 
 function renderSelects() {
@@ -791,13 +833,17 @@ async function loadPremium() {
 }
 function updateMember(p) {
   const title = $('member-title'), chip = $('member-chip');
+  $('nav-premium').hidden = !(p && p.enabled);
+  $('stat-member').classList.toggle('clickable', !!(p && p.enabled));
+  $('stat-member').onclick = p && p.enabled ? () => goView('premium') : null;
+  if (location.hash === '#premium') showView('premium');
   chip.hidden = true; chip.onclick = null; chip.classList.remove('ok', 'warn', 'act');
   if (!p || !p.enabled) { title.textContent = 'Standard'; $('who-sub').textContent = 'Customer'; return; }
   if (p.status === 'active') { title.textContent = 'Premium'; chip.textContent = 'Active'; chip.classList.add('ok'); chip.hidden = false; $('who-sub').textContent = 'Premium member'; return; }
   $('who-sub').textContent = 'Customer';
   if (p.status === 'expired') { title.textContent = 'Premium'; chip.textContent = 'Expired'; chip.classList.add('warn'); }
   else { title.textContent = 'Standard'; chip.textContent = 'Join Premium'; chip.classList.add('act'); }
-  chip.hidden = false; chip.onclick = () => $('premium-box').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  chip.hidden = false;
 }
 
 function openPerkForm(perk) {
@@ -902,7 +948,7 @@ $('sos-form').addEventListener('submit', async (e) => {
       locationText: $('sos-where').value, phone: $('sos-phone').value, parish: $('sos-parish').value,
       vehicleId: Number($('sos-vehicle').value) || undefined, note: $('sos-note').value
     }});
-    closeDlg('dlg-sos'); $('sos-where').value = ''; $('sos-note').value = ''; sosCoords = null;
+    goView('emergency'); closeDlg('dlg-sos'); $('sos-where').value = ''; $('sos-note').value = ''; sosCoords = null;
     $('sos-sent').textContent = 'Request sent. Technicians have been alerted. Keep your phone on and stay somewhere safe.';
     $('sos-sent').hidden = false;
     await loadSos();
@@ -978,6 +1024,10 @@ async function setupProfile(user) {
   profileUser = user;
   const box = $('profile-box');
   box.hidden = user.profileComplete;
+  $('profile-nudge').hidden = user.profileComplete;
+  $('profile-done').hidden = !user.profileComplete;
+  $('profile-done').innerHTML = '<h3>Your profile is complete</h3><div class="vmeta one"><div>' + I('phone') + '<span><small>Phone</small><b>' + esc(user.phone || '') + '</b></span></div>' +
+    '<div>' + I('user') + '<span><small>Parish</small><b>' + esc(user.parish || '') + '</b></span></div></div><p class="empty">' + esc(user.address || '') + '</p>';
   if (!user.profileComplete) {
     if ($('p-parish').options.length < 2) {
       (await api('/auth/parishes')).forEach(p => $('p-parish').append(new Option(p, p)));
