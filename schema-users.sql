@@ -119,5 +119,49 @@ alter table users add column if not exists verify_expires_at timestamptz;
 alter table users add column if not exists verify_attempts integer not null default 0;
 alter table users add column if not exists verify_sent_at timestamptz;
 
+-- Parts marketplace: parts vendors are a new kind of account. They apply, an admin approves them, and customers order parts from them in a chat.
+alter table users drop constraint if exists users_role_check;
+alter table users add constraint users_role_check check (role in ('customer', 'staff', 'admin', 'vendor'));
+
+-- One row per customer + vendor conversation about a part. The current offer sits on the row; the chat is in part_messages.
+create table if not exists part_orders (
+  id                 bigint generated always as identity primary key,
+  customer_id        bigint references users(id) on delete set null,
+  vendor_id          bigint references users(id) on delete set null,
+  vehicle_id         bigint references vehicles(id) on delete set null,
+  part               text not null,
+  status             text not null default 'chatting' check (status in ('chatting', 'offered', 'accepted', 'completed', 'cancelled')),
+  offer_item         text,
+  offer_condition    text,
+  offer_quantity     integer,
+  offer_unit_price   numeric(12, 2),
+  offer_total        numeric(12, 2),
+  commission_percent numeric(5, 2),
+  commission_amount  numeric(12, 2),
+  accepted_at        timestamptz,
+  completed_at       timestamptz,
+  commission_settled_at timestamptz,
+  rating             integer check (rating between 1 and 5),
+  review             text,
+  customer_unread    boolean not null default false,
+  vendor_unread      boolean not null default true,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+create index if not exists part_orders_customer_idx on part_orders(customer_id);
+create index if not exists part_orders_vendor_idx on part_orders(vendor_id, status);
+alter table part_orders enable row level security;
+
+create table if not exists part_messages (
+  id         bigint generated always as identity primary key,
+  order_id   bigint not null references part_orders(id) on delete cascade,
+  sender_id  bigint references users(id) on delete set null,
+  kind       text not null default 'text' check (kind in ('text', 'system')),
+  body       text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists part_messages_order_idx on part_messages(order_id, id);
+alter table part_messages enable row level security;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';

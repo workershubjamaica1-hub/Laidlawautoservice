@@ -50,6 +50,20 @@ See **EMAIL.md**. A 6-digit code is emailed when customers and service providers
 | `EMAIL_FROM` | `no-reply@yourdomain.com` | a sender you have verified with the service |
 | `EMAIL_FROM_NAME` | `AutoAid 24/7` | the name people see (optional) |
 
+## Parts ordering (optional, off until you switch it on)
+
+Customers order parts from approved parts vendors in a chat. Customers collect the part from the vendor and pay the vendor in person; AutoAid's commission is
+counted when the vendor marks the order picked up and paid, and the admin marks it settled in the **Parts** tab after the vendor pays it.
+
+1. Run `schema-users.sql` in the Supabase SQL Editor (safe to run again). It adds the vendor account type and the order tables.
+2. In Render > Environment add `PARTS_ENABLED` = `true` and save.
+3. Vendors sign up from **Create account > I sell auto parts**. Approve them in the admin **Users** tab, like technicians.
+
+| Name | Default | What it is |
+|---|---|---|
+| `PARTS_ENABLED` | off | turns parts ordering on |
+| `PARTS_COMMISSION_PERCENT` | `3` | AutoAid's share of each completed parts order (0 to 50) |
+
 ## Payments
 
 See **PAYMENTS.md** for the service provider subscription (`SUBSCRIPTIONS_ENABLED`, `SUBSCRIPTION_PRICE`, `FYGARO_*`, ...)

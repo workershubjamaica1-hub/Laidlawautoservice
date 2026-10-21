@@ -10,7 +10,7 @@ const mailer = require('./mailer');
 const express = require('express');
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
-const ROLES = ['customer', 'staff', 'admin'];
+const ROLES = ['customer', 'staff', 'admin', 'vendor'];
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 // Random secret = everyone is signed out when the server restarts. Set ADMIN_SECRET to keep sessions.
 const SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
@@ -69,8 +69,9 @@ const VERIFY = {
   cooldownMs: (process.env.EMAIL_RESEND_SECONDS !== undefined && Number.isFinite(Number(process.env.EMAIL_RESEND_SECONDS)) ? Number(process.env.EMAIL_RESEND_SECONDS) : 60) * 1000,
   maxAttempts: 5
 };
+const PARTS = { enabled: String(process.env.PARTS_ENABLED || '').toLowerCase() === 'true' };
 const BUSINESS = process.env.BUSINESS_NAME || 'AutoAid 24/7';
-const TERMS_VERSION = '2026-10-15';   // bump when the Terms or Privacy Notice change in a way people should agree to again
+const TERMS_VERSION = '2026-10-21';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
@@ -363,6 +364,42 @@ module.exports = function createAuth({ supabase, handle }) {
     res.status(201).json({ pending: true });
   }));
 
+  // A parts vendor applies to sell parts. Like a technician, they cannot sign in until an admin approves them.
+  router.post('/register-vendor', handle(async (req, res) => {
+    if (!PARTS.enabled) return res.status(404).json({ error: 'Parts ordering is not switched on yet.' });
+    if (signupLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many sign-ups. Try again later.' });
+    const name = String(req.body.name || '').trim();
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const password = String(req.body.password || '');
+    if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Enter your name.' });
+    if (!validEmail(email)) return res.status(400).json({ error: 'Enter a valid email address.' });
+    if (password.length < 8 || password.length > 200) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    if (req.body.agreed !== true) return res.status(400).json({ error: 'Please agree to the Terms and the Privacy Notice to apply.' });
+    const contact = checkContact(req.body, true);
+    if (contact.error) return res.status(400).json({ error: contact.error });
+    const businessName = String(req.body.businessName || '').trim().slice(0, 100);
+    if (businessName.length < 2) return res.status(400).json({ error: 'Enter the name of your parts business.' });
+    const experience = String(req.body.experience || '').trim().slice(0, 600);
+    if (experience.length < 10) return res.status(400).json({ error: 'Tell us what parts you sell (makes, models, new or used).' });
+    if (VERIFY.enabled && !mailer.ready()) return notReady(res);
+    const existing = await findByEmail(email);
+    if (existing && !(VERIFY.enabled && existing.email_verified === false && existing.role === 'vendor')) {
+      signupLimit.fail(req.ip);
+      return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
+    }
+    const now = new Date().toISOString();
+    const user = existing
+      ? await replaceUnverified(existing, { name, password_hash: hashPassword(password), phone: contact.value.phone, address: contact.value.address, parish: contact.value.parish,
+          business_name: businessName, experience, terms_accepted_at: now, terms_version: TERMS_VERSION })
+      : await createUser({ name, email, password, role: 'vendor', approved: false, businessName, experience, termsAcceptedAt: now, emailVerified: !VERIFY.enabled, ...contact.value });
+    signupLimit.fail(req.ip);
+    if (VERIFY.enabled) {
+      const sent = await sendCode(user);
+      return res.status(201).json({ pending: true, verificationRequired: true, email, emailSent: !!sent.sent || !!sent.wait });
+    }
+    res.status(201).json({ pending: true });
+  }));
+
   // Enter the code from the email. A customer is signed in; a service provider's application moves on to admin approval.
   router.post('/verify', handle(async (req, res) => {
     const email = String((req.body && req.body.email) || '').trim().toLowerCase();
@@ -384,7 +421,7 @@ module.exports = function createAuth({ supabase, handle }) {
       .update({ email_verified: true, verify_code_hash: null, verify_expires_at: null, verify_attempts: 0 }).eq('id', user.id).select().single();
     if (error) throw error;
     verifyLimit.clear(req.ip);
-    if (data.role === 'staff' || data.approved === false) return res.json({ verified: true, pending: data.approved === false });   // providers wait for approval
+    if (data.role === 'staff' || data.role === 'vendor' || data.approved === false) return res.json({ verified: true, pending: data.approved === false });   // providers wait for approval
     if (!data.active) return res.status(403).json({ error: 'This account has been disabled. Contact the shop.' });
     res.json({ verified: true, token: makeToken(data.id), user: publicUser(data) });
   }));
@@ -494,5 +531,5 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ url });
   }));
 
-  return { router, requireAuth, requireRole, requireWorker, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES };
+  return { router, requireAuth, requireRole, requireWorker, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES, PARTS };
 };

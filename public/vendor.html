@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parts vendor | AutoAid 24/7</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/icons.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/dash.css">
+<style>
+.srow, .srow-head { display: grid; grid-template-columns: minmax(0, 2.4fr) 1.2fr 1fr 1fr 1fr; gap: 14px; align-items: center; padding: 14px 24px; }
+.srow-head { background: #F8FAFD; border-bottom: 1px solid var(--line); font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: #6B7C8C; }
+.srow { border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.srow:last-child { border-bottom: 0; }
+.srow b { font-size: 14px; }
+.note { margin: 0; padding: 14px 18px; border-radius: 14px; background: var(--brand-50); border: 1px solid var(--brand-100); font-size: 14px; color: var(--ink); }
+@media (max-width: 760px) { .srow-head { display: none; } .srow { grid-template-columns: 1fr 1fr; padding: 12px 16px; } }
+</style>
+</head>
+<body class="dash-body">
+<header class="topbar">
+  <a class="brand" href="#orders" aria-label="AutoAid 24/7"><img src="/logo.png" alt="AutoAid 24/7"></a>
+  <nav class="top-links" aria-label="Main">
+    <a href="#orders" data-view="orders">Orders<span class="nav-badge" id="orders-badge" hidden></span></a>
+    <a href="#sales" data-view="sales">Sales</a>
+  </nav>
+  <div class="usermenu">
+    <span class="who-link"><span class="who-dot" id="who-dot" aria-hidden="true"></span>
+      <span class="who-text"><b id="who"></b><small>Parts vendor</small></span></span>
+    <button class="btn small ghost" id="logout" type="button">Log out</button>
+  </div>
+</header>
+
+<main class="dash">
+  <div class="view" id="view-orders" data-view="orders">
+    <div class="page-head">
+      <div><p class="eyebrow">Orders</p><h1>Part requests</h1><p class="welcome-sub">Customers ask for a part, you chat, send an offer, and they collect it from you.</p></div>
+      <div class="filters seg" role="group" aria-label="Filter orders">
+        <button type="button" data-filter="open" aria-pressed="true">Open</button>
+        <button type="button" data-filter="completed" aria-pressed="false">Completed</button>
+        <button type="button" data-filter="cancelled" aria-pressed="false">Cancelled</button>
+        <button type="button" data-filter="all" aria-pressed="false">All</button>
+      </div>
+    </div>
+    <div class="card flush" id="orders-list"><p class="empty">Loading...</p></div>
+  </div>
+
+  <div class="view" id="view-sales" data-view="sales" hidden>
+    <div class="page-head"><div><p class="eyebrow">Sales</p><h1>Sales and commission</h1><p class="welcome-sub">Customers pay you directly when they collect. AutoAid's commission is counted when you mark an order picked up and paid.</p></div></div>
+    <section class="stats" aria-label="Totals">
+      <div class="stat"><span class="tile blue"><span class="ic" style="--m: var(--d-doc)"></span></span><div class="stat-text"><b id="s-orders">0</b><span>Orders completed</span></div></div>
+      <div class="stat"><span class="tile green"><span class="ic" style="--m: var(--d-check)"></span></span><div class="stat-text"><b id="s-sales">J$0</b><span>Total sales</span></div></div>
+      <div class="stat"><span class="tile warm"><span class="ic" style="--m: var(--d-wrench)"></span></span><div class="stat-text"><b id="s-owed">J$0</b><span id="s-owed-label">Commission due to AutoAid</span></div></div>
+    </section>
+    <p class="note" id="s-note"></p>
+    <div class="card flush">
+      <div class="srow-head" aria-hidden="true"><span>Part</span><span>Completed</span><span>Sale</span><span>Commission</span><span>Status</span></div>
+      <div id="sales-list"><p class="empty">No completed orders yet.</p></div>
+    </div>
+  </div>
+</main>
+
+<script src="/parts.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+let token = '';
+try { token = localStorage.getItem('authToken') || ''; } catch (_) {}
+if (!token) location.replace('/');
+const jmd = PartsChat.jmd, esc = PartsChat.esc;
+function leave() { try { localStorage.removeItem('authToken'); } catch (_) {} location.replace('/'); }
+$('logout').addEventListener('click', async () => {
+  $('logout').disabled = true;
+  try { await fetch('/auth/logout', { method: 'POST', headers: { Authorization: 'Bearer ' + token } }); } catch (_) {}
+  leave();
+});
+async function api(path, options = {}) {
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, ...options, body: options.body ? JSON.stringify(options.body) : undefined });
+  let data = {}; try { data = await res.json(); } catch (_) {}
+  if (res.status === 401) { leave(); throw new Error('Please sign in.'); }
+  if (!res.ok) throw new Error(data.error || 'Request failed (' + res.status + ').');
+  return data;
+}
+
+// tabs
+const VIEWS = ['orders', 'sales'];
+function showView(v) {
+  if (!VIEWS.includes(v)) v = 'orders';
+  document.querySelectorAll('.view').forEach(el => { el.hidden = el.dataset.view !== v; });
+  document.querySelectorAll('.top-links a').forEach(a => a.classList.toggle('on', a.dataset.view === v));
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+showView(location.hash.slice(1));
+
+let orders = [], filter = 'open', chat = null, commissionPercent = 3;
+const isOpen = o => o.status === 'chatting' || o.status === 'offered' || o.status === 'accepted';
+function drawOrders() {
+  const list = orders.filter(o => filter === 'all' || (filter === 'open' ? isOpen(o) : o.status === filter));
+  chat.renderList($('orders-list'), list, filter === 'open' ? 'No open part requests right now. New ones appear here.' : 'Nothing here.');
+  const unread = orders.filter(o => o.unread).length;
+  $('orders-badge').hidden = !unread; $('orders-badge').textContent = unread;
+}
+async function loadOrders() { try { orders = await api('/parts/orders'); drawOrders(); } catch (_) {} }
+async function loadSales() {
+  let d;
+  try { d = await api('/parts/ledger'); } catch (_) { return; }
+  const v = d.vendors[0] || { orders: 0, sales: 0, commission: 0, owed: 0 };
+  $('s-orders').textContent = v.orders; $('s-sales').textContent = jmd(v.sales); $('s-owed').textContent = jmd(v.owed);
+  $('s-note').textContent = 'AutoAid takes ' + d.commissionPercent + '% of each completed order. Pay AutoAid the amount due, and the admin will mark it settled.';
+  $('sales-list').innerHTML = d.orders.length ? d.orders.map(o => '<div class="srow"><b>' + esc(o.part) + '</b><span>' + esc(new Date(o.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) + '</span><span>' + jmd(o.total) + '</span><span>' + jmd(o.commission) + '</span><span><span class="pill st-' + (o.settled ? 'completed' : 'pending') + '">' + (o.settled ? 'Settled' : 'Due') + '</span></span></div>').join('')
+    : '<p class="empty">No completed orders yet.</p>';
+}
+
+document.querySelector('.filters').addEventListener('click', (e) => {
+  const f = e.target.dataset.filter; if (!f) return;
+  filter = f;
+  document.querySelectorAll('.filters button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === f)));
+  drawOrders();
+});
+$('orders-list').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b) chat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
+
+(async () => {
+  try {
+    const { user } = await api('/auth/me');
+    if (user.role === 'customer') return location.replace('/app.html');
+    if (user.role !== 'vendor') return location.replace('/admin.html');
+    $('who').textContent = user.businessName || user.name;
+    $('who-dot').textContent = (user.businessName || user.name || '?').trim().split(/\s+/).slice(0, 2).map(w => w.charAt(0)).join('').toUpperCase();
+    try { commissionPercent = (await (await fetch('/config')).json()).parts.commissionPercent; } catch (_) {}
+    chat = PartsChat.create({ api, role: 'vendor', commissionPercent, onChange: () => { loadOrders(); loadSales(); } });
+    await Promise.all([loadOrders(), loadSales()]);
+    setInterval(() => { if (!document.hidden) loadOrders(); }, 15000);
+  } catch (e) { $('orders-list').innerHTML = '<p class="error">Could not load your orders. Refresh the page.</p>'; }
+})();
+</script>
+</body>
+</html>

@@ -20,6 +20,7 @@
     <a href="#overview" data-view="overview">Overview</a>
     <a href="#garage" data-view="garage">My garage</a>
     <a href="#services" data-view="services">Services</a>
+    <a href="#parts" data-view="parts" id="nav-parts" hidden>Parts<span class="nav-badge" id="parts-badge" hidden></span></a>
     <a href="#premium" data-view="premium" id="nav-premium" hidden>Premium</a>
     <a href="#emergency" data-view="emergency">Emergency</a>
   </nav>
@@ -126,6 +127,15 @@
       </section>
   </div>
 
+  <!-- PARTS -->
+  <div class="view" id="view-parts" data-view="parts" hidden>
+    <div class="page-head">
+      <div><p class="eyebrow">Parts</p><h1>Order a part</h1><p class="welcome-sub">Ask an auto parts vendor for the part your car or truck needs, agree the price in a chat, then collect it from them.</p></div>
+      <button class="btn" id="parts-new" type="button"><span class="ic" style="--m: var(--d-plus)"></span>Order a part</button>
+    </div>
+    <div class="card flush" id="parts-list"><p class="empty">No part orders yet.</p></div>
+  </div>
+
   <!-- PREMIUM -->
   <div class="view" id="view-premium" data-view="premium" hidden>
     <div class="page-head"><div><p class="eyebrow">Membership</p><h1>AutoAid Premium</h1><p class="welcome-sub">Free servicing all year for members.</p></div></div>
@@ -206,6 +216,24 @@
     </form>
 </dialog>
 
+<dialog class="modal wide" id="dlg-part" aria-label="Order a part">
+  <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
+  <form class="panel" id="part-form" novalidate>
+    <h3>Order a part</h3>
+    <div class="row">
+      <div><label for="part-vehicle">Vehicle</label><select id="part-vehicle"></select></div>
+      <div><label for="part-name">Part you need</label><input id="part-name" maxlength="150" placeholder="e.g. front brake pads"></div>
+    </div>
+    <label for="part-note">Anything the vendor should know? (optional)</label>
+    <textarea id="part-note" maxlength="500" rows="2" placeholder="e.g. genuine only, or the part number if you have it"></textarea>
+    <label>Choose a vendor</label>
+    <div class="vendor-pick" id="part-vendors" role="radiogroup" aria-label="Parts vendors"></div>
+    <p class="hint-line">You collect the part from the vendor and pay them there once you agree the price.</p>
+    <button class="btn" id="part-send" type="submit">Start chat with vendor</button>
+    <p class="error" id="part-error" role="alert"></p>
+  </form>
+</dialog>
+
 <dialog class="modal" id="dlg-vehicle" aria-label="Add a vehicle">
   <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
   <form class="panel" id="vehicle-form" novalidate>
@@ -277,6 +305,7 @@
 </dialog>
 
 
+<script src="/parts.js"></script>
 <script>
 const state = { vehicles: [], requests: [], categories: { vehicle: [], service: [] }, catalog: {}, filter: 'all' };
 const labelOf = (list, value) => (list.find(c => c.value === value) || {}).label || value;
@@ -284,9 +313,9 @@ const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'com
 const $ = (id) => document.getElementById(id);
 
 // Tabs: one page, several views switched by the link in the address (#garage, #services, ...)
-const VIEWS = ['overview', 'garage', 'services', 'premium', 'emergency', 'profile'];
+const VIEWS = ['overview', 'garage', 'services', 'parts', 'premium', 'emergency', 'profile'];
 function showView(v) {
-  if (!VIEWS.includes(v) || (v === 'premium' && $('nav-premium').hidden)) v = 'overview';
+  if (!VIEWS.includes(v) || (v === 'premium' && $('nav-premium').hidden) || (v === 'parts' && $('nav-parts').hidden)) v = 'overview';
   document.querySelectorAll('.view').forEach(el => { el.hidden = el.dataset.view !== v; });
   document.querySelectorAll('[data-view]').forEach(a => { if (a.tagName === 'A') { a.classList.toggle('on', a.dataset.view === v); if (a.dataset.view === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); } });
   window.scrollTo(0, 0);
@@ -759,6 +788,7 @@ function rateBlock(kind, id, done, hasTech, rating, review) {
 
 document.addEventListener('click', async (e) => {
   const star = e.target.closest('.star');
+  if (star && star.closest('#dlg-thread')) return;   // the parts chat handles its own stars
   if (star) {
     const box = star.closest('.rate'), n = Number(star.dataset.star);
     box.dataset.value = n;
@@ -991,9 +1021,55 @@ $('sos-list').addEventListener('click', async (e) => {
 });
 setInterval(() => { if (!document.hidden) loadSos(); }, 20000);
 api('/config').then(c => {
+  if (c.parts && c.parts.enabled) startParts();
   shopPhone = c.shopPhone || '';
   if (shopPhone) { const a = $('sos-call'); a.href = 'tel:' + shopPhone.replace(/[^\d+]/g, ''); a.textContent = 'Or call the shop: ' + shopPhone; a.hidden = false; }
 }).catch(() => {});
+
+// --- Parts: order from vendors in a chat ---
+let chat = null, partsStarted = false;
+async function loadParts() {
+  let orders = [];
+  try { orders = await api('/parts/orders'); } catch (_) { return; }
+  chat.renderList($('parts-list'), orders, 'No part orders yet. Tap "Order a part" to ask a vendor.');
+  const unread = orders.filter(o => o.unread).length;
+  $('parts-badge').hidden = !unread; $('parts-badge').textContent = unread;
+}
+function startParts() {
+  if (partsStarted) return; partsStarted = true;
+  $('nav-parts').hidden = false;
+  chat = PartsChat.create({ api, role: 'customer', onChange: loadParts });
+  loadParts();
+  setInterval(() => { if (!document.hidden) loadParts(); }, 20000);
+  if (location.hash === '#parts') showView('parts');
+  $('parts-list').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b) chat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
+  $('parts-new').addEventListener('click', openPartForm);
+  $('part-form').addEventListener('submit', sendPartRequest);
+}
+async function openPartForm() {
+  $('part-error').textContent = '';
+  $('part-vehicle').innerHTML = state.vehicles.length ? state.vehicles.map(v => '<option value="' + v.id + '">' + esc(v.year) + ' ' + esc(v.type) + '</option>').join('') : '<option value="">Add a vehicle first</option>';
+  let data = { vendors: [] };
+  try { data = await api('/parts/vendors'); } catch (err) { $('part-error').textContent = err.message; }
+  $('part-vendors').innerHTML = data.vendors.length ? data.vendors.map((v, i) => '<label class="vpick"><input type="radio" name="vendor" value="' + v.id + '"' + (i === 0 ? ' checked' : '') + '><span><b>' + esc(v.name) + (v.nearYou ? '<em class="near">Near you</em>' : '') + '</b><small>' + esc(v.parish) + (v.about ? ' &middot; ' + esc(v.about.slice(0, 110)) : '') + '</small></span></label>').join('') : '<p class="empty">No parts vendors have joined yet. Please check back soon.</p>';
+  openDlg('dlg-part');
+}
+async function sendPartRequest(e) {
+  e.preventDefault();
+  $('part-error').textContent = '';
+  const pick = document.querySelector('#part-vendors input:checked');
+  if (!pick) { $('part-error').textContent = 'Choose a vendor.'; return; }
+  $('part-send').disabled = true;
+  try {
+    const o = await api('/parts/orders', { method: 'POST', body: { vendorId: Number(pick.value), vehicleId: Number($('part-vehicle').value), part: $('part-name').value, message: $('part-note').value } });
+    $('part-name').value = ''; $('part-note').value = '';
+    closeDlg('dlg-part');
+    goView('parts');
+    await loadParts();
+    chat.open(o.id).catch(() => {});
+  } catch (err) { $('part-error').textContent = err.message; }
+  finally { $('part-send').disabled = false; }
+}
 
 // --- Profile and area ---
 function prepareImage(file) {

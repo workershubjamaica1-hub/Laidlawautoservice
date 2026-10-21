@@ -79,6 +79,8 @@ const handle = fn => (req, res) => fn(req, res).catch(err => {
 // --- Accounts (see auth.js). Customers only ever see their own data; staff and admins see everything. ---
 const auth = require('./auth')({ supabase, handle });
 const { requireAuth } = auth;
+// Parts vendors have their own pages and API. They must never reach the customer/staff routes below (which treat anyone who is not a customer as staff).
+const noVendor = [requireAuth, (req, res, next) => (req.user.role === 'vendor' ? res.status(403).json({ error: 'You do not have access to this.' }) : next())];
 app.use('/auth', auth.router);
 
 // Monthly subscription for service providers (subscriptions.js). Off until SUBSCRIPTIONS_ENABLED=true.
@@ -177,7 +179,7 @@ app.get('/vehicle-catalog/search', (req, res) => {
 });
 
 // --- Vehicle Profiles ---
-app.get('/vehicles', requireAuth, handle(async (req, res) => {
+app.get('/vehicles', ...noVendor, handle(async (req, res) => {
   let query = supabase.from('vehicles').select('*').order('id');
   if (isCustomer(req)) query = query.eq('user_id', req.user.id);
   const { data, error } = await query;
@@ -185,7 +187,7 @@ app.get('/vehicles', requireAuth, handle(async (req, res) => {
   res.json(data.map(toVehicle));
 }));
 
-app.post('/vehicle', requireAuth, handle(async (req, res) => {
+app.post('/vehicle', ...noVendor, handle(async (req, res) => {
   const { year, vin } = req.body;
   const owner = String(req.body.owner || req.user.name || '').trim();
   if (!owner || !req.body.type || !year) {
@@ -223,7 +225,7 @@ app.post('/vehicle', requireAuth, handle(async (req, res) => {
   res.status(201).json(toVehicle(data));
 }));
 
-app.delete('/vehicle/:id', requireAuth, handle(async (req, res) => {
+app.delete('/vehicle/:id', ...noVendor, handle(async (req, res) => {
   if (req.user.role === 'staff') return res.status(403).json({ error: 'Only admins can remove vehicles.' });
   const id = Number(req.params.id);
   // Its service requests are removed automatically (ON DELETE CASCADE)
@@ -236,7 +238,7 @@ app.delete('/vehicle/:id', requireAuth, handle(async (req, res) => {
 }));
 
 // --- Service Requests ---
-app.get('/service-requests', requireAuth, handle(async (req, res) => {
+app.get('/service-requests', ...noVendor, handle(async (req, res) => {
   let query = supabase.from('service_requests').select('*').order('id');
   if (isCustomer(req)) {
     const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
@@ -261,7 +263,7 @@ app.get('/service-requests', requireAuth, handle(async (req, res) => {
   }))));
 }));
 
-app.post('/service-request', requireAuth, handle(async (req, res) => {
+app.post('/service-request', ...noVendor, handle(async (req, res) => {
   const { vehicleId, category, description } = req.body;
   const vid = Number(vehicleId);
   let vehicleQuery = supabase.from('vehicles').select('id').eq('id', vid);
@@ -287,7 +289,7 @@ app.post('/service-request', requireAuth, handle(async (req, res) => {
   res.status(201).json(toRequest(data));
 }));
 
-app.patch('/service-request/:id', requireAuth, handle(async (req, res) => {
+app.patch('/service-request/:id', ...noVendor, handle(async (req, res) => {
   const { status } = req.body;
   if (!STATUSES.includes(status)) {
     return res.status(400).json({ error: `Status must be one of: ${STATUSES.join(', ')}.` });
@@ -312,7 +314,7 @@ app.patch('/service-request/:id', requireAuth, handle(async (req, res) => {
 }));
 
 // Customer rates a finished job (once). 1 to 5 stars and an optional comment.
-app.post('/service-request/:id/rating', requireAuth, handle(async (req, res) => {
+app.post('/service-request/:id/rating', ...noVendor, handle(async (req, res) => {
   if (!isCustomer(req)) return res.status(403).json({ error: 'Only customers can rate a job.' });
   const rating = Number(req.body.rating);
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: 'Choose 1 to 5 stars.' });
@@ -391,7 +393,7 @@ function diagnose(question, vehicleCategory) {
   return { answer, tip, category: best.service, urgency: best.urgency };
 }
 
-app.post('/ai-assist', requireAuth, handle(async (req, res) => {
+app.post('/ai-assist', ...noVendor, handle(async (req, res) => {
   const { question, vehicleId } = req.body;
   let { vehicleCategory } = req.body;
   if (!question || !question.trim()) {
@@ -411,12 +413,17 @@ app.post('/ai-assist', requireAuth, handle(async (req, res) => {
 // --- Emergency requests: roadside assistance and wrecker (emergencyRoutes.js) ---
 app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
 
+// --- Parts marketplace: order parts from approved vendors in a chat (partsRoutes.js). Off until PARTS_ENABLED=true. ---
+const parts = require('./partsRoutes')({ supabase, handle, auth });
+app.use(parts.router);
+
 // Public settings the pages need (the shop's phone number for the call buttons)
 const subCfg = require('./subscriptionConfig');
 app.get('/config', (req, res) => res.json({
   businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '',
   legalName: process.env.LEGAL_NAME || '', contactEmail: process.env.CONTACT_EMAIL || '',   // shown on the privacy notice and terms
   subscription: { enabled: subs.config.enabled, priceLabel: subCfg.priceLabel(), days: subs.config.days },
+  parts: { enabled: auth.PARTS.enabled, commissionPercent: parts.commissionPercent },
   premium: { enabled: subCfg.premium.enabled, oilPerYear: subCfg.premium.oilPerYear, oilGapDays: subCfg.premium.oilGapDays,
     plans: subCfg.premiumPlans().map(p => ({ id: p.id, label: p.label, priceLabel: p.priceLabel, days: p.days })) }
 }));
@@ -425,7 +432,7 @@ app.get('/config', (req, res) => res.json({
 app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, subs, toVehicle, toRequest, STATUSES }));
 
 // Streaming chat with the mechanic assistant (ai.js). The older /ai-assist above is kept for simple one-shot use.
-app.post('/ai-chat', requireAuth, handle(require('./ai')({ supabase, diagnose, isCustomer })));
+app.post('/ai-chat', ...noVendor, handle(require('./ai')({ supabase, diagnose, isCustomer })));
 
 const PORT = process.env.PORT || 3000;
 const BUSINESS_NAME = process.env.BUSINESS_NAME || 'AutoAid 24/7';

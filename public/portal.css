@@ -22,6 +22,7 @@ body.hdr-right header .sp { margin-left: auto; }
 .tabs button[data-tab="requests"] { --i: var(--i-clipboard); }
 .tabs button[data-tab="vehicles"] { --i: var(--i-car); }
 .tabs button[data-tab="users"] { --i: var(--i-users); }
+.tabs button[data-tab="parts"] { --i: var(--i-wrench); }
 .tabs button:hover { background: var(--brand-50); color: var(--brand-700); }
 .tabs button[aria-pressed="true"] { background: linear-gradient(135deg, #2186F5, #0B5CC0); color: #fff; box-shadow: 0 10px 20px -10px rgba(15, 111, 222, .8); }
 .tabs button.alert { background: var(--red-50); color: var(--red); }

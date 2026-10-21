@@ -43,6 +43,12 @@
         <small>Mechanic, tire, electrical, roadside or towing professional. Apply to take jobs in your parish.</small></span>
         <span class="arrow" aria-hidden="true">&rsaquo;</span>
       </button>
+      <button type="button" class="choice" id="choose-vendor" hidden>
+        <span class="cico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l1.5-4h13L20 8M4 8v12h16V8M4 8h16M9 20v-6h6v6"/></svg></span>
+        <span class="ctext"><strong>I sell auto parts</strong>
+        <small>Parts vendor. Apply to receive part requests from customers and sell to them.</small></span>
+        <span class="arrow" aria-hidden="true">&rsaquo;</span>
+      </button>
     </div>
 
     <form id="form" novalidate>
@@ -80,6 +86,13 @@
         <p class="hint" id="feeHint" hidden></p>
         <p class="hint">An admin reviews every application. You can sign in once you are approved.</p>
       </div>
+      <div id="vendorFields" hidden>
+        <label for="vbusiness">Business name</label>
+        <input id="vbusiness" autocomplete="organization">
+        <label for="vstock">What parts do you sell?</label>
+        <textarea id="vstock" placeholder="Makes and models you stock, new or used, e.g. Toyota and Nissan engine and brake parts"></textarea>
+        <p class="hint">Customers collect parts from your address. An admin reviews every application, and you can sign in once you are approved.</p>
+      </div>
       <label for="pw">Password</label>
       <div class="pw">
         <input id="pw" type="password" autocomplete="current-password" required>
@@ -114,7 +127,7 @@ const $ = id => document.getElementById(id);
 let mode = 'login';
 
 // Where each kind of user lands after signing in
-const home = role => role === 'customer' ? '/app.html' : '/admin.html';
+const home = role => role === 'customer' ? '/app.html' : role === 'vendor' ? '/vendor.html' : '/admin.html';
 
 // Already signed in? Check the saved session, then skip this page
 (async () => {
@@ -130,6 +143,7 @@ const home = role => role === 'customer' ? '/app.html' : '/admin.html';
 
 // If monthly subscriptions are on, tell applicants up front what it costs
 fetch('/config').then(r => r.json()).then(c => {
+  if (c.parts && c.parts.enabled) $('choose-vendor').hidden = false;
   if (c.subscription && c.subscription.enabled && c.subscription.priceLabel) {
     $('feeHint').textContent = 'After you are approved, service providers pay a monthly subscription of ' + c.subscription.priceLabel + ' to start taking jobs.';
     $('feeHint').hidden = false;
@@ -180,16 +194,18 @@ const COPY = {
   login:    { title: 'Welcome back', sub: 'Customers and service providers sign in here.', button: 'Sign in' },
   create:   { title: 'Create an account', sub: 'What would you like to do?', button: '' },
   register: { title: 'Create your customer account', sub: 'So the nearest technician can reach you.', button: 'Create account' },
+  vendor:   { title: 'Join as a parts vendor', sub: 'Receive part requests from customers and sell to them. Customers collect the parts from you.', button: 'Submit application' },
   tech:     { title: 'Join as a service provider', sub: 'Mechanics, tire, electrical, roadside and towing professionals: apply to take jobs in your parish.', button: 'Submit application' }
 };
 function setMode(m) {
   mode = m;
-  const creating = m === 'register' || m === 'tech';
+  const creating = m === 'register' || m === 'tech' || m === 'vendor';
   $('chooser').hidden = m !== 'create';
   $('form').hidden = m === 'create';
   $('change-type').hidden = !creating;
   $('regFields').hidden = !creating;
-  $('photoRow').hidden = m === 'tech';
+  $('photoRow').hidden = m === 'tech' || m === 'vendor';
+  $('vendorFields').hidden = m !== 'vendor';
   $('techFields').hidden = m !== 'tech';
   $('nameRow').hidden = !creating;
   $('pwHint').hidden = !creating;
@@ -208,6 +224,7 @@ $('tab-login').addEventListener('click', () => { setMode('login'); $('email').fo
 $('tab-create').addEventListener('click', () => setMode('create'));
 $('choose-customer').addEventListener('click', () => { setMode('register'); $('name').focus(); });
 $('choose-tech').addEventListener('click', () => { setMode('tech'); $('name').focus(); });
+$('choose-vendor').addEventListener('click', () => { setMode('vendor'); $('name').focus(); });
 $('change-type').addEventListener('click', () => setMode('create'));
 
 $('show').addEventListener('click', () => {
@@ -313,6 +330,15 @@ $('form').addEventListener('submit', async e => {
   $('submit').disabled = true;
   try {
     if (mode !== 'login' && !$('agree').checked) throw new Error('Please agree to the Terms of Use and the Privacy Notice.');
+    if (mode === 'vendor') {
+      Object.assign(body, { agreed: true, name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value,
+        businessName: $('vbusiness').value, experience: $('vstock').value });
+      const res = await fetch('/auth/register-vendor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || 'Could not submit your application.');
+      if (out.verificationRequired) return showVerify(body.email, out.emailSent, null);
+      return showApplied();
+    }
     if (mode === 'tech') {
       Object.assign(body, { agreed: true,
         name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value,
