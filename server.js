@@ -44,7 +44,7 @@ if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 
 // The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
 const smallJson = express.json();
-const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
+const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|rentals\/(licence|my-vehicles\/\d+\/photo)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
 app.use((req, res, next) => (bigBodyPaths.test(req.path) ? next() : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
@@ -417,6 +417,10 @@ app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
 const parts = require('./partsRoutes')({ supabase, handle, auth });
 app.use(parts.router);
 
+// --- Vehicle rentals: rental companies list vehicles, customers book them (rentalRoutes.js). Off until RENTALS_ENABLED=true. ---
+const rentals = require('./rentalRoutes')({ supabase, handle, auth });
+app.use(rentals.router);
+
 // Public settings the pages need (the shop's phone number for the call buttons)
 const subCfg = require('./subscriptionConfig');
 app.get('/config', (req, res) => res.json({
@@ -424,6 +428,7 @@ app.get('/config', (req, res) => res.json({
   legalName: process.env.LEGAL_NAME || '', contactEmail: process.env.CONTACT_EMAIL || '',   // shown on the privacy notice and terms
   subscription: { enabled: subs.config.enabled, priceLabel: subCfg.priceLabel(), days: subs.config.days },
   parts: { enabled: auth.PARTS.enabled, commissionPercent: parts.commissionPercent },
+  rentals: { enabled: auth.RENTALS.enabled, commissionPercent: rentals.commissionPercent },
   premium: { enabled: subCfg.premium.enabled, oilPerYear: subCfg.premium.oilPerYear, oilGapDays: subCfg.premium.oilGapDays,
     plans: subCfg.premiumPlans().map(p => ({ id: p.id, label: p.label, priceLabel: p.priceLabel, days: p.days })) }
 }));

@@ -64,6 +64,23 @@ counted when the vendor marks the order picked up and paid, and the admin marks 
 | `PARTS_ENABLED` | off | turns parts ordering on |
 | `PARTS_COMMISSION_PERCENT` | `3` | AutoAid's share of each completed parts order (0 to 50) |
 
+## Vehicle rentals (optional, off until you switch it on)
+
+Rental companies join as vendors ("I run a business", then tick **Vehicle rentals**), list vehicles with a daily rate (at least 3 days), and customers
+request dates. Customers pay the company in person. AutoAid's commission is worked out on the rent (not the deposit) when the company accepts, counted when the
+vehicle is returned, and settled by the admin in the **Parts & rentals** tab.
+
+1. Run `schema-users.sql` in the Supabase SQL Editor (safe to run again).
+2. In Render > Environment add `RENTALS_ENABLED` = `true` and save.
+
+| Name | Default | What it is |
+|---|---|---|
+| `RENTALS_ENABLED` | off | turns vehicle rentals on |
+| `RENTALS_COMMISSION_PERCENT` | `5` | AutoAid's share of each completed rental (0 to 50) |
+
+Card on file is not built yet: it needs a payment provider that can save cards (see PAYMENTS.md). For now the customer agrees the company may charge for damage up to the deposit,
+and the company takes the card or deposit at pick-up. Cars 10 years or older get a deposit of one day's rent if the company leaves the deposit blank.
+
 ## Payments
 
 See **PAYMENTS.md** for the service provider subscription (`SUBSCRIPTIONS_ENABLED`, `SUBSCRIPTION_PRICE`, `FYGARO_*`, ...)

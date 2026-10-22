@@ -21,6 +21,7 @@
     <a href="#garage" data-view="garage">My garage</a>
     <a href="#services" data-view="services">Services</a>
     <a href="#parts" data-view="parts" id="nav-parts" hidden>Parts<span class="nav-badge" id="parts-badge" hidden></span></a>
+    <a href="#rentals" data-view="rentals" id="nav-rentals" hidden>Rentals<span class="nav-badge" id="rentals-badge" hidden></span></a>
     <a href="#premium" data-view="premium" id="nav-premium" hidden>Premium</a>
     <a href="#emergency" data-view="emergency">Emergency</a>
   </nav>
@@ -136,6 +137,29 @@
     <div class="card flush" id="parts-list"><p class="empty">No part orders yet.</p></div>
   </div>
 
+  <!-- RENTALS -->
+  <div class="view" id="view-rentals" data-view="rentals" hidden>
+    <div class="page-head">
+      <div><p class="eyebrow">Rentals</p><h1>Rent a vehicle</h1><p class="welcome-sub">Pick a car, SUV or truck from a rental company near you. Daily rates, at least 3 days. You pay the company in person.</p></div>
+      <div class="filters seg" role="group" aria-label="Rentals">
+        <button type="button" data-rtab="browse" aria-pressed="true">Find a vehicle</button>
+        <button type="button" data-rtab="mine" aria-pressed="false">My rentals<span class="nav-badge" id="rentals-badge2" hidden></span></button>
+      </div>
+    </div>
+    <div id="rtab-browse">
+      <form class="rfilters" id="rental-filters" novalidate>
+        <div><label for="rf-start">Pick-up</label><input id="rf-start" type="date"></div>
+        <div><label for="rf-end">Return</label><input id="rf-end" type="date"></div>
+        <div><label for="rf-parish">Parish</label><select id="rf-parish"><option value="">Anywhere</option></select></div>
+        <div><label for="rf-cat">Type</label><select id="rf-cat"><option value="">Any</option><option value="car">Car</option><option value="suv">SUV</option><option value="truck">Truck</option><option value="van">Van</option><option value="minibus">Minibus</option><option value="other">Other</option></select></div>
+        <button class="btn" type="submit">Search</button>
+      </form>
+      <p class="error" id="rf-error" role="alert"></p>
+      <div class="rgrid" id="rental-grid"><p class="empty">Loading...</p></div>
+    </div>
+    <div id="rtab-mine" hidden><div class="card flush" id="rentals-list"><p class="empty">No rentals yet.</p></div></div>
+  </div>
+
   <!-- PREMIUM -->
   <div class="view" id="view-premium" data-view="premium" hidden>
     <div class="page-head"><div><p class="eyebrow">Membership</p><h1>AutoAid Premium</h1><p class="welcome-sub">Free servicing all year for members.</p></div></div>
@@ -234,6 +258,31 @@
   </form>
 </dialog>
 
+<dialog class="modal wide" id="dlg-rent" aria-label="Rent a vehicle">
+  <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
+  <form class="panel" id="rent-form" novalidate>
+    <h3 id="rent-title">Rent a vehicle</h3>
+    <p class="hint-line" id="rent-info"></p>
+    <div class="row">
+      <div><label for="rent-start">Pick-up date</label><input id="rent-start" type="date"></div>
+      <div><label for="rent-end">Return date</label><input id="rent-end" type="date"></div>
+    </div>
+    <p class="th-hint" id="rent-total"></p>
+    <div class="rreq-box" id="rent-reqs" hidden></div>
+    <label for="rent-note">Anything the vendor should know? (optional)</label>
+    <textarea id="rent-note" rows="2" maxlength="500" placeholder="e.g. airport pick-up, or the time you plan to collect"></textarea>
+    <div id="rent-licence-row">
+      <label for="rent-licence">Photo of your driver's licence</label>
+      <input id="rent-licence" type="file" accept="image/*">
+      <p class="hint-line">Needed once. Only the rental company whose booking is accepted can see it.</p>
+    </div>
+    <label class="agree"><input type="checkbox" id="rent-confirm"> <span>I hold a valid driver's licence and meet the requirements shown.</span></label>
+    <label class="agree"><input type="checkbox" id="rent-damage"> <span>I agree the vendor may charge me for any damage or loss to the vehicle, up to the deposit, using the card or deposit I give at pick-up.</span></label>
+    <button class="btn" id="rent-send" type="submit">Send rental request</button>
+    <p class="error" id="rent-error" role="alert"></p>
+  </form>
+</dialog>
+
 <dialog class="modal" id="dlg-vehicle" aria-label="Add a vehicle">
   <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
   <form class="panel" id="vehicle-form" novalidate>
@@ -306,6 +355,7 @@
 
 
 <script src="/parts.js"></script>
+<script src="/rentals.js"></script>
 <script>
 const state = { vehicles: [], requests: [], categories: { vehicle: [], service: [] }, catalog: {}, filter: 'all' };
 const labelOf = (list, value) => (list.find(c => c.value === value) || {}).label || value;
@@ -313,9 +363,9 @@ const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'com
 const $ = (id) => document.getElementById(id);
 
 // Tabs: one page, several views switched by the link in the address (#garage, #services, ...)
-const VIEWS = ['overview', 'garage', 'services', 'parts', 'premium', 'emergency', 'profile'];
+const VIEWS = ['overview', 'garage', 'services', 'parts', 'rentals', 'premium', 'emergency', 'profile'];
 function showView(v) {
-  if (!VIEWS.includes(v) || (v === 'premium' && $('nav-premium').hidden) || (v === 'parts' && $('nav-parts').hidden)) v = 'overview';
+  if (!VIEWS.includes(v) || (v === 'premium' && $('nav-premium').hidden) || (v === 'parts' && $('nav-parts').hidden) || (v === 'rentals' && $('nav-rentals').hidden)) v = 'overview';
   document.querySelectorAll('.view').forEach(el => { el.hidden = el.dataset.view !== v; });
   document.querySelectorAll('[data-view]').forEach(a => { if (a.tagName === 'A') { a.classList.toggle('on', a.dataset.view === v); if (a.dataset.view === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); } });
   window.scrollTo(0, 0);
@@ -788,7 +838,7 @@ function rateBlock(kind, id, done, hasTech, rating, review) {
 
 document.addEventListener('click', async (e) => {
   const star = e.target.closest('.star');
-  if (star && star.closest('#dlg-thread')) return;   // the parts chat handles its own stars
+  if (star && star.closest('dialog.thread')) return;   // the parts and rental chats handle their own stars
   if (star) {
     const box = star.closest('.rate'), n = Number(star.dataset.star);
     box.dataset.value = n;
@@ -1022,6 +1072,7 @@ $('sos-list').addEventListener('click', async (e) => {
 setInterval(() => { if (!document.hidden) loadSos(); }, 20000);
 api('/config').then(c => {
   if (c.parts && c.parts.enabled) startParts();
+  if (c.rentals && c.rentals.enabled) startRentals();
   shopPhone = c.shopPhone || '';
   if (shopPhone) { const a = $('sos-call'); a.href = 'tel:' + shopPhone.replace(/[^\d+]/g, ''); a.textContent = 'Or call the shop: ' + shopPhone; a.hidden = false; }
 }).catch(() => {});
@@ -1069,6 +1120,101 @@ async function sendPartRequest(e) {
     chat.open(o.id).catch(() => {});
   } catch (err) { $('part-error').textContent = err.message; }
   finally { $('part-send').disabled = false; }
+}
+
+// --- Rentals: find a vehicle from a rental company and book it ---
+let rchat = null, rentalsStarted = false, rentalVehicle = null, hasLicence = false;
+const day = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const todayStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Jamaica' });
+async function loadRentals() {
+  let list = [];
+  try { list = await api('/rentals/bookings'); } catch (_) { return; }
+  rchat.renderList($('rentals-list'), list, 'No rentals yet. Find a vehicle and send a request.');
+  const unread = list.filter(b => b.unread).length;
+  for (const id of ['rentals-badge', 'rentals-badge2']) { $(id).hidden = !unread; $(id).textContent = unread; }
+}
+function startRentals() {
+  if (rentalsStarted) return; rentalsStarted = true;
+  $('nav-rentals').hidden = false;
+  rchat = RentalChat.create({ api, role: 'customer', onChange: loadRentals });
+  loadRentals();
+  setInterval(() => { if (!document.hidden) loadRentals(); }, 20000);
+  if (location.hash === '#rentals') showView('rentals');
+  api('/auth/parishes').then(ps => ps.forEach(p => $('rf-parish').append(new Option(p, p)))).catch(() => {});
+  $('rf-start').min = todayStr(); $('rf-end').min = todayStr();
+  $('rental-filters').addEventListener('submit', (e) => { e.preventDefault(); searchRentals(); });
+  $('rf-start').addEventListener('change', () => { if ($('rf-start').value) { $('rf-end').min = $('rf-start').value; if ($('rf-end').value && $('rf-end').value < $('rf-start').value) $('rf-end').value = ''; } });
+  searchRentals();
+  document.querySelectorAll('[data-rtab]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-rtab]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    $('rtab-browse').hidden = b.dataset.rtab !== 'browse'; $('rtab-mine').hidden = b.dataset.rtab !== 'mine';
+  }));
+  $('rentals-list').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b) rchat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
+  $('rental-grid').addEventListener('click', (e) => { const b = e.target.closest('[data-rent]'); if (b) openRent(Number(b.dataset.rent)); });
+  $('rent-form').addEventListener('submit', sendRentRequest);
+  $('rent-start').addEventListener('change', rentTotal); $('rent-end').addEventListener('change', rentTotal);
+}
+const CAT_LABEL = { car: 'Car', suv: 'SUV', truck: 'Truck', van: 'Van', minibus: 'Minibus', other: 'Other' };
+let rentalList = [];
+async function searchRentals() {
+  $('rf-error').textContent = '';
+  const qs = new URLSearchParams();
+  if ($('rf-start').value || $('rf-end').value) { qs.set('start', $('rf-start').value); qs.set('end', $('rf-end').value); }
+  if ($('rf-parish').value) qs.set('parish', $('rf-parish').value);
+  if ($('rf-cat').value) qs.set('category', $('rf-cat').value);
+  try { rentalList = (await api('/rentals/vehicles?' + qs)).vehicles; } catch (err) { $('rf-error').textContent = err.message; return; }
+  $('rental-grid').innerHTML = rentalList.length ? rentalList.map(v => '<article class="rcard">' +
+    '<div class="rphoto">' + (v.photoUrl ? '<img src="' + esc(v.photoUrl) + '" alt="' + esc(v.title) + '" loading="lazy" onerror="this.remove()">' : '') + '<span class="ic" style="--m: var(--d-car)"></span></div>' +
+    '<div class="rbody"><h3>' + esc(v.title) + (v.year ? ' <small>' + esc(v.year) + '</small>' : '') + '</h3>' +
+    '<p class="rmeta">' + esc(CAT_LABEL[v.category] || v.category) + (v.seats ? ' &middot; ' + v.seats + ' seats' : '') + (v.transmission ? ' &middot; ' + esc(v.transmission) : '') + '</p>' +
+    '<p class="rmeta">' + esc(v.vendorName) + ' &middot; ' + esc(v.parish) + '</p>' +
+    ((v.vendorRequirements || v.requirements) ? '<p class="rmeta rreq"><b>Requirements:</b> ' + esc([v.vendorRequirements, v.requirements].filter(Boolean).join(' \u00b7 ')) + '</p>' : '') +
+    '<div class="rprice"><b>' + jmd(v.dailyRate) + '</b><span>a day</span>' + (v.deposit ? '<small>Deposit ' + jmd(v.deposit) + '</small>' : '') + '<small>Min. ' + v.minDays + ' days</small></div>' +
+    (v.available === false ? '<span class="pill st-cancelled">Not free on those dates</span>' : '') +
+    '<button class="btn" type="button" data-rent="' + v.id + '"' + (v.available === false ? ' disabled' : '') + '>Request this vehicle</button></div></article>').join('')
+    : '<p class="empty">No vehicles match. Try other dates or a different parish.</p>';
+}
+async function openRent(id) {
+  rentalVehicle = rentalList.find(v => v.id === id); if (!rentalVehicle) return;
+  $('rent-error').textContent = '';
+  $('rent-title').textContent = rentalVehicle.title;
+  $('rent-info').innerHTML = esc(rentalVehicle.vendorName) + ' &middot; ' + esc(rentalVehicle.parish) + ' &middot; <strong>' + jmd(rentalVehicle.dailyRate) + '</strong> a day, minimum ' + rentalVehicle.minDays + ' days' + (rentalVehicle.deposit ? ', deposit ' + jmd(rentalVehicle.deposit) : '');
+  const reqs = [rentalVehicle.vendorRequirements && ('<b>' + esc(rentalVehicle.vendorName) + ' asks of every renter:</b> ' + esc(rentalVehicle.vendorRequirements)), rentalVehicle.requirements && ('<b>For this vehicle:</b> ' + esc(rentalVehicle.requirements))].filter(Boolean);
+  $('rent-reqs').innerHTML = reqs.join('<br>'); $('rent-reqs').hidden = !reqs.length;
+  $('rent-start').min = todayStr(); $('rent-end').min = todayStr();
+  $('rent-start').value = $('rf-start').value; $('rent-end').value = $('rf-end').value;
+  $('rent-confirm').checked = false; $('rent-damage').checked = false; $('rent-licence').value = '';
+  try { hasLicence = (await api('/rentals/licence')).hasLicence; } catch (_) { hasLicence = false; }
+  $('rent-licence-row').hidden = hasLicence;
+  rentTotal();
+  openDlg('dlg-rent');
+}
+function rentTotal() {
+  const s = $('rent-start').value, e = $('rent-end').value;
+  if (!s || !e || e < s || !rentalVehicle) { $('rent-total').textContent = ''; return; }
+  const days = Math.round((Date.parse(e + 'T00:00:00Z') - Date.parse(s + 'T00:00:00Z')) / 86400000) + 1;
+  $('rent-total').textContent = days + ' day' + (days > 1 ? 's' : '') + ' \u00d7 ' + jmd(rentalVehicle.dailyRate) + ' = ' + jmd(days * rentalVehicle.dailyRate) + (days < rentalVehicle.minDays ? '. This vehicle needs at least ' + rentalVehicle.minDays + ' days.' : '');
+}
+async function sendRentRequest(e) {
+  e.preventDefault();
+  $('rent-error').textContent = '';
+  $('rent-send').disabled = true;
+  try {
+    if (!hasLicence) {
+      const f = $('rent-licence').files[0];
+      if (!f) throw new Error("Add a photo of your driver's licence.");
+      await api('/rentals/licence', { method: 'POST', body: { image: await RentalChat.prepareImage(f) } });
+      hasLicence = true;
+    }
+    const b = await api('/rentals/bookings', { method: 'POST', body: { vehicleId: rentalVehicle.id, start: $('rent-start').value, end: $('rent-end').value, note: $('rent-note').value, hasLicenceConfirmed: $('rent-confirm').checked, damageAuthorized: $('rent-damage').checked } });
+    $('rent-note').value = '';
+    closeDlg('dlg-rent');
+    goView('rentals');
+    document.querySelector('[data-rtab="mine"]').click();
+    await loadRentals();
+    rchat.open(b.id).catch(() => {});
+  } catch (err) { $('rent-error').textContent = err.message; }
+  finally { $('rent-send').disabled = false; }
 }
 
 // --- Profile and area ---

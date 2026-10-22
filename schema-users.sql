@@ -163,5 +163,89 @@ create table if not exists part_messages (
 create index if not exists part_messages_order_idx on part_messages(order_id, id);
 alter table part_messages enable row level security;
 
+-- Vehicle rentals: rental companies are vendors too. A vendor says what they offer (parts, rentals or both).
+-- Drivers licence photos are kept in the private photo bucket; only the vendor of an accepted booking can open one.
+alter table users add column if not exists vendor_offers text not null default 'parts';
+alter table users add column if not exists licence_photo_path text;
+-- What a rental company asks of every renter (age, licence held for, documents, ...). Shown to customers before they request.
+alter table users add column if not exists rental_requirements text;
+
+create table if not exists rental_vehicles (
+  id            bigint generated always as identity primary key,
+  vendor_id     bigint references users(id) on delete cascade,
+  title         text not null,
+  year          integer,
+  category      text not null default 'car',
+  seats         integer,
+  transmission  text,
+  daily_rate    numeric(12, 2) not null,
+  deposit       numeric(12, 2) not null default 0,
+  min_days      integer not null default 3,
+  requirements  text,
+  description   text,
+  parish        text,
+  photo_path    text,
+  active        boolean not null default true,
+  created_at    timestamptz not null default now()
+);
+create index if not exists rental_vehicles_vendor_idx on rental_vehicles(vendor_id);
+alter table rental_vehicles enable row level security;
+
+-- Days a vehicle cannot be rented (in the workshop, with the owner, ...)
+create table if not exists rental_blocks (
+  id          bigint generated always as identity primary key,
+  vehicle_id  bigint not null references rental_vehicles(id) on delete cascade,
+  start_date  date not null,
+  end_date    date not null,
+  note        text,
+  created_at  timestamptz not null default now()
+);
+alter table rental_blocks enable row level security;
+
+create table if not exists rental_bookings (
+  id                 bigint generated always as identity primary key,
+  vehicle_id         bigint references rental_vehicles(id) on delete set null,
+  vehicle_title      text not null,
+  customer_id        bigint references users(id) on delete set null,
+  vendor_id          bigint references users(id) on delete set null,
+  start_date         date not null,
+  end_date           date not null,
+  days               integer not null,
+  daily_rate         numeric(12, 2) not null,
+  total              numeric(12, 2) not null,
+  deposit            numeric(12, 2) not null default 0,
+  note               text,
+  damage_authorized_at timestamptz,
+  status             text not null default 'requested' check (status in ('requested', 'accepted', 'declined', 'cancelled', 'picked_up', 'returned')),
+  commission_percent numeric(5, 2),
+  commission_amount  numeric(12, 2),
+  accepted_at        timestamptz,
+  picked_up_at       timestamptz,
+  returned_at        timestamptz,
+  commission_settled_at timestamptz,
+  rating             integer check (rating between 1 and 5),
+  review             text,
+  customer_unread    boolean not null default false,
+  vendor_unread      boolean not null default true,
+  created_at         timestamptz not null default now(),
+  updated_at         timestamptz not null default now()
+);
+create index if not exists rental_bookings_customer_idx on rental_bookings(customer_id);
+create index if not exists rental_bookings_vendor_idx on rental_bookings(vendor_id, status);
+create index if not exists rental_bookings_vehicle_idx on rental_bookings(vehicle_id, status);
+alter table rental_bookings enable row level security;
+
+create table if not exists rental_messages (
+  id          bigint generated always as identity primary key,
+  booking_id  bigint not null references rental_bookings(id) on delete cascade,
+  sender_id   bigint references users(id) on delete set null,
+  kind        text not null default 'text' check (kind in ('text', 'system')),
+  body        text not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists rental_messages_booking_idx on rental_messages(booking_id, id);
+alter table rental_messages enable row level security;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
+schema-users

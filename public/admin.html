@@ -36,7 +36,7 @@
       <button data-tab="emergencies" id="emergTab" aria-pressed="false">Emergencies</button>
       <button data-tab="requests" aria-pressed="false">Service requests</button>
       <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
-      <button data-tab="parts" id="partsTab" aria-pressed="false" hidden>Parts</button>
+      <button data-tab="parts" id="partsTab" aria-pressed="false" hidden>Parts & rentals</button>
       <button data-tab="users" id="usersTab" aria-pressed="false" hidden>Users</button>
     </nav>
     <div class="content">
@@ -86,8 +86,10 @@
         <thead><tr><th>Vendor</th><th>Orders</th><th>Sales</th><th>Commission</th><th>Settled</th><th>Owed to AutoAid</th><th></th></tr></thead>
         <tbody id="ledgerBody"></tbody>
       </table></div>
-      <h3 style="margin:22px 0 8px">All part orders</h3>
+      <h3 style="margin:22px 0 8px" id="partsHead">All part orders</h3>
       <div id="partsOrders" class="card flush"></div>
+      <h3 style="margin:22px 0 8px" id="rentHead" hidden>All rental bookings</h3>
+      <div id="rentBookings" class="card flush" hidden></div>
     </div>
 
     <div class="panel" id="usersPanel" hidden>
@@ -125,6 +127,7 @@
 </div>
 
 <script src="/parts.js"></script>
+<script src="/rentals.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'completed': 'Completed', 'cancelled': 'Cancelled' };
@@ -267,28 +270,38 @@ async function load() {
   renderUsers();
 }
 
-// --- Parts marketplace (admin): commission each vendor owes, and every order ---
-let partsChat = null;
+// --- Parts and rentals (admin): the commission each vendor owes, and every order / booking ---
+let partsChat = null, rentChat = null, marketStarted = false;
 async function setupParts() {
-  if (partsChat !== null) return;
-  partsChat = false;
-  try { await api('/parts/ledger'); } catch (_) { return; }   // 404 = parts ordering is switched off
-  partsChat = PartsChat.create({ api, role: 'admin' });
+  if (marketStarted) return;
+  marketStarted = true;
+  try { await api('/parts/ledger'); partsChat = PartsChat.create({ api, role: 'admin' }); } catch (_) {}   // 404 = switched off
+  try { await api('/rentals/ledger'); rentChat = RentalChat.create({ api, role: 'admin' }); } catch (_) {}
+  if (!partsChat && !rentChat) return;
   $('partsTab').hidden = false;
-  $('partsOrders').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b) partsChat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
+  $('partsHead').hidden = !partsChat; $('partsOrders').hidden = !partsChat;
+  $('rentHead').hidden = !rentChat; $('rentBookings').hidden = !rentChat;
+  $('partsOrders').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b && partsChat) partsChat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
+  $('rentBookings').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b && rentChat) rentChat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
 }
 async function loadParts() {
-  if (!partsChat) return;
+  if (!partsChat && !rentChat) return;
   try {
-    const [ledger, orders] = await Promise.all([api('/parts/ledger'), api('/parts/orders')]);
-    $('partsNote').textContent = 'Commission rate: ' + ledger.commissionPercent + '% of each completed order. Vendors collect the money from customers; they owe AutoAid the commission. Press "Mark settled" after they pay you.';
-    $('ledgerBody').replaceChildren(...(ledger.vendors.length ? ledger.vendors.map(v => {
-      const btn = el('button', { className: 'btn safety small', textContent: 'Mark settled', hidden: !(v.owed > 0) });
-      btn.addEventListener('click', async () => { if (!confirm('Mark ' + v.name + "'s commission of " + PartsChat.jmd(v.owed) + ' as paid?')) return; try { await api('/parts/vendors/' + v.vendorId + '/settle', { method: 'POST' }); loadParts(); } catch (err) { $('appError').textContent = err.message; } });
-      return el('tr', {}, el('td', { textContent: v.name }), el('td', { textContent: v.orders }), el('td', { textContent: PartsChat.jmd(v.sales) }), el('td', { textContent: PartsChat.jmd(v.commission) }),
-        el('td', { textContent: PartsChat.jmd(v.settled) }), el('td', {}, el('strong', { textContent: PartsChat.jmd(v.owed) })), el('td', { className: 'act' }, btn));
-    }) : [el('tr', {}, el('td', { colSpan: 7, textContent: 'No completed part orders yet.' }))]));
-    partsChat.renderList($('partsOrders'), orders, 'No part orders yet.');
+    const pl = partsChat ? await api('/parts/ledger') : null, rl = rentChat ? await api('/rentals/ledger') : null;
+    $('partsNote').textContent = 'Commission rates: ' + [pl && 'parts ' + pl.commissionPercent + '%', rl && 'rentals ' + rl.commissionPercent + '% (of the rent, not the deposit)'].filter(Boolean).join(', ') + '. Vendors collect the money from customers; they owe AutoAid the commission. Press "Mark settled" after they pay you.';
+    const rows = [];
+    for (const [kind, l, base] of [['Parts', pl, '/parts'], ['Rentals', rl, '/rentals']]) {
+      if (!l) continue;
+      for (const v of l.vendors) {
+        const btn = el('button', { className: 'btn safety small', textContent: 'Mark settled', hidden: !(v.owed > 0) });
+        btn.addEventListener('click', async () => { if (!confirm('Mark ' + v.name + "'s " + kind.toLowerCase() + ' commission of ' + PartsChat.jmd(v.owed) + ' as paid?')) return; try { await api(base + '/vendors/' + v.vendorId + '/settle', { method: 'POST' }); loadParts(); } catch (err) { $('appError').textContent = err.message; } });
+        rows.push(el('tr', {}, el('td', { textContent: v.name + ' (' + kind.toLowerCase() + ')' }), el('td', { textContent: v.orders }), el('td', { textContent: PartsChat.jmd(v.sales) }), el('td', { textContent: PartsChat.jmd(v.commission) }),
+          el('td', { textContent: PartsChat.jmd(v.settled) }), el('td', {}, el('strong', { textContent: PartsChat.jmd(v.owed) })), el('td', { className: 'act' }, btn)));
+      }
+    }
+    $('ledgerBody').replaceChildren(...(rows.length ? rows : [el('tr', {}, el('td', { colSpan: 7, textContent: 'Nothing completed yet.' }))]));
+    if (partsChat) partsChat.renderList($('partsOrders'), await api('/parts/orders'), 'No part orders yet.');
+    if (rentChat) rentChat.renderList($('rentBookings'), await api('/rentals/bookings'), 'No rental bookings yet.');
   } catch (err) { $('appError').textContent = err.message; }
 }
 

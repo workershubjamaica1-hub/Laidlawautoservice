@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Parts vendor | AutoAid 24/7</title>
+<title>Vendor | AutoAid 24/7</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -18,28 +18,38 @@
 .srow:last-child { border-bottom: 0; }
 .srow b { font-size: 14px; }
 .note { margin: 0; padding: 14px 18px; border-radius: 14px; background: var(--brand-50); border: 1px solid var(--brand-100); font-size: 14px; color: var(--ink); }
+.vact { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.vact .btn { margin: 0; padding: 8px 12px; font-size: 13px; }
+.blocks { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 0; }
+.blocks span { font-size: 12px; background: #FDEFD9; color: #8A4B06; border-radius: 999px; padding: 3px 10px; }
+.blocks button { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 0 0 4px; }
+.subtabs { margin: 0 0 16px; }
+.hdr-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.hdr-row h2 { margin: 0; }
 @media (max-width: 760px) { .srow-head { display: none; } .srow { grid-template-columns: 1fr 1fr; padding: 12px 16px; } }
 </style>
 </head>
 <body class="dash-body">
 <header class="topbar">
-  <a class="brand" href="#orders" aria-label="AutoAid 24/7"><img src="/logo.png" alt="AutoAid 24/7"></a>
+  <a class="brand" href="#" aria-label="AutoAid 24/7"><img src="/logo.png" alt="AutoAid 24/7"></a>
   <nav class="top-links" aria-label="Main">
-    <a href="#orders" data-view="orders">Orders<span class="nav-badge" id="orders-badge" hidden></span></a>
+    <a href="#orders" data-view="orders" id="tab-orders" hidden>Part orders<span class="nav-badge" id="orders-badge" hidden></span></a>
+    <a href="#rentals" data-view="rentals" id="tab-rentals" hidden>Rentals<span class="nav-badge" id="rentals-badge" hidden></span></a>
     <a href="#sales" data-view="sales">Sales</a>
   </nav>
   <div class="usermenu">
     <span class="who-link"><span class="who-dot" id="who-dot" aria-hidden="true"></span>
-      <span class="who-text"><b id="who"></b><small>Parts vendor</small></span></span>
+      <span class="who-text"><b id="who"></b><small id="who-sub">Vendor</small></span></span>
     <button class="btn small ghost" id="logout" type="button">Log out</button>
   </div>
 </header>
 
 <main class="dash">
-  <div class="view" id="view-orders" data-view="orders">
+  <!-- PART ORDERS -->
+  <div class="view" id="view-orders" data-view="orders" hidden>
     <div class="page-head">
-      <div><p class="eyebrow">Orders</p><h1>Part requests</h1><p class="welcome-sub">Customers ask for a part, you chat, send an offer, and they collect it from you.</p></div>
-      <div class="filters seg" role="group" aria-label="Filter orders">
+      <div><p class="eyebrow">Parts</p><h1>Part requests</h1><p class="welcome-sub">Customers ask for a part, you chat, send an offer, and they collect it from you.</p></div>
+      <div class="filters seg" role="group" aria-label="Filter orders" id="order-filters">
         <button type="button" data-filter="open" aria-pressed="true">Open</button>
         <button type="button" data-filter="completed" aria-pressed="false">Completed</button>
         <button type="button" data-filter="cancelled" aria-pressed="false">Cancelled</button>
@@ -49,22 +59,102 @@
     <div class="card flush" id="orders-list"><p class="empty">Loading...</p></div>
   </div>
 
-  <div class="view" id="view-sales" data-view="sales" hidden>
-    <div class="page-head"><div><p class="eyebrow">Sales</p><h1>Sales and commission</h1><p class="welcome-sub">Customers pay you directly when they collect. AutoAid's commission is counted when you mark an order picked up and paid.</p></div></div>
+  <!-- RENTALS -->
+  <div class="view" id="view-rentals" data-view="rentals" hidden>
+    <div class="page-head">
+      <div><p class="eyebrow">Rentals</p><h1>Vehicle rentals</h1><p class="welcome-sub">List your vehicles with a daily rate (minimum 3 days). Customers send requests, you accept, hand over and take the vehicle back.</p></div>
+      <div class="filters seg subtabs" role="group" aria-label="Rentals">
+        <button type="button" data-rtab="bookings" aria-pressed="true">Bookings</button>
+        <button type="button" data-rtab="vehicles" aria-pressed="false">My vehicles</button>
+      </div>
+    </div>
+    <div id="rtab-bookings">
+      <div class="filters seg subtabs" role="group" aria-label="Filter bookings" id="booking-filters">
+        <button type="button" data-bfilter="open" aria-pressed="true">Open</button>
+        <button type="button" data-bfilter="done" aria-pressed="false">Finished</button>
+        <button type="button" data-bfilter="all" aria-pressed="false">All</button>
+      </div>
+      <div class="card flush" id="rbookings-list"><p class="empty">Loading...</p></div>
+    </div>
+    <div id="rtab-vehicles" hidden>
+      <form class="card" id="req-form" novalidate style="margin-bottom:20px">
+        <h3 style="margin:0 0 4px">Your rental requirements</h3>
+        <p class="hint-line" style="margin:0 0 10px">What you ask of every renter. Customers read this on each of your vehicles before they request, and must say they meet it.</p>
+        <textarea id="req-text" rows="3" maxlength="600" placeholder="e.g. Age 25 or older. Driver's licence held for 2 years. Valid ID. Card or cash deposit at pick-up. No off-road driving. Return with the same fuel level."></textarea>
+        <button class="btn small" type="submit" id="req-save">Save requirements</button> <span class="th-hint" id="req-status"></span>
+      </form>
+      <div class="hdr-row"><h2>My vehicles</h2><button class="btn" id="veh-add" type="button"><span class="ic" style="--m: var(--d-plus)"></span>Add a vehicle</button></div>
+      <div class="rgrid" id="veh-grid"><p class="empty">Loading...</p></div>
+    </div>
+  </div>
+
+  <!-- SALES -->
+  <div class="view" id="view-sales" data-view="sales">
+    <div class="page-head"><div><p class="eyebrow">Sales</p><h1>Sales and commission</h1><p class="welcome-sub">Customers pay you directly. AutoAid's commission is counted when a part order is marked picked up and paid, and when a rental vehicle is returned.</p></div></div>
     <section class="stats" aria-label="Totals">
-      <div class="stat"><span class="tile blue"><span class="ic" style="--m: var(--d-doc)"></span></span><div class="stat-text"><b id="s-orders">0</b><span>Orders completed</span></div></div>
+      <div class="stat"><span class="tile blue"><span class="ic" style="--m: var(--d-doc)"></span></span><div class="stat-text"><b id="s-orders">0</b><span>Orders and rentals completed</span></div></div>
       <div class="stat"><span class="tile green"><span class="ic" style="--m: var(--d-check)"></span></span><div class="stat-text"><b id="s-sales">J$0</b><span>Total sales</span></div></div>
-      <div class="stat"><span class="tile warm"><span class="ic" style="--m: var(--d-wrench)"></span></span><div class="stat-text"><b id="s-owed">J$0</b><span id="s-owed-label">Commission due to AutoAid</span></div></div>
+      <div class="stat"><span class="tile warm"><span class="ic" style="--m: var(--d-wrench)"></span></span><div class="stat-text"><b id="s-owed">J$0</b><span>Commission due to AutoAid</span></div></div>
     </section>
     <p class="note" id="s-note"></p>
     <div class="card flush">
-      <div class="srow-head" aria-hidden="true"><span>Part</span><span>Completed</span><span>Sale</span><span>Commission</span><span>Status</span></div>
-      <div id="sales-list"><p class="empty">No completed orders yet.</p></div>
+      <div class="srow-head" aria-hidden="true"><span>Item</span><span>Completed</span><span>Sale</span><span>Commission</span><span>Status</span></div>
+      <div id="sales-list"><p class="empty">Nothing completed yet.</p></div>
     </div>
   </div>
 </main>
 
+<!-- Add / edit a rental vehicle -->
+<dialog class="modal wide" id="dlg-veh" aria-label="Rental vehicle">
+  <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
+  <form class="panel" id="veh-form" novalidate>
+    <h3 id="veh-title">Add a vehicle</h3>
+    <div class="row">
+      <div><label for="v-title">Make and model</label><input id="v-title" maxlength="80" placeholder="e.g. Toyota Axio"></div>
+      <div><label for="v-year">Year</label><input id="v-year" type="number" inputmode="numeric" placeholder="2018"></div>
+    </div>
+    <div class="row">
+      <div><label for="v-cat">Type</label><select id="v-cat"><option value="car">Car</option><option value="suv">SUV</option><option value="truck">Truck</option><option value="van">Van</option><option value="minibus">Minibus</option><option value="other">Other</option></select></div>
+      <div><label for="v-seats">Seats</label><input id="v-seats" type="number" inputmode="numeric" min="1" max="60" placeholder="5"></div>
+    </div>
+    <div class="row">
+      <div><label for="v-trans">Transmission</label><select id="v-trans"><option value="automatic">Automatic</option><option value="manual">Manual</option></select></div>
+      <div><label for="v-parish">Collected in (parish)</label><select id="v-parish"></select></div>
+    </div>
+    <div class="row">
+      <div><label for="v-rate">Price per day (J$)</label><input id="v-rate" inputmode="decimal" placeholder="9500"></div>
+      <div><label for="v-min">Minimum days (3 or more)</label><input id="v-min" type="number" inputmode="numeric" min="3" max="30" value="3"></div>
+    </div>
+    <label for="v-dep">Deposit for damage (J$)</label>
+    <input id="v-dep" inputmode="decimal" placeholder="Leave blank: one day's rate for cars 10 years or older, otherwise none">
+    <button class="linkbtn" type="button" id="v-dep-day">Use one day's rate as the deposit</button>
+    <label for="v-req">Renter requirements (optional)</label>
+    <input id="v-req" maxlength="300" placeholder="e.g. Age 25+, licence held for 2 years">
+    <label for="v-desc">Description (optional)</label>
+    <textarea id="v-desc" rows="2" maxlength="600" placeholder="Condition, fuel, air conditioning, insurance included..."></textarea>
+    <label for="v-photo">Photo of the vehicle</label>
+    <input id="v-photo" type="file" accept="image/*">
+    <p class="hint-line">Customers also give you a card or the deposit at pick-up, and agree you may charge them for damage up to the deposit.</p>
+    <button class="btn" id="veh-save" type="submit">Save vehicle</button>
+    <p class="error" id="veh-error" role="alert"></p>
+  </form>
+</dialog>
+
+<!-- Block days -->
+<dialog class="modal" id="dlg-block" aria-label="Block days">
+  <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
+  <form class="panel" id="block-form" novalidate>
+    <h3 id="block-title">Block days</h3>
+    <p class="hint-line">Days you cannot rent this vehicle out (workshop, family use...). Customers will not be able to book them.</p>
+    <div class="row"><div><label for="b-start">From</label><input id="b-start" type="date"></div><div><label for="b-end">To</label><input id="b-end" type="date"></div></div>
+    <label for="b-note">Note (optional)</label><input id="b-note" maxlength="100" placeholder="e.g. Workshop">
+    <button class="btn" type="submit">Block these days</button>
+    <p class="error" id="block-error" role="alert"></p>
+  </form>
+</dialog>
+
 <script src="/parts.js"></script>
+<script src="/rentals.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let token = '';
@@ -84,57 +174,169 @@ async function api(path, options = {}) {
   if (!res.ok) throw new Error(data.error || 'Request failed (' + res.status + ').');
   return data;
 }
+// close buttons and clicks on the dimmed backdrop for the dialogs on this page
+document.addEventListener('click', (e) => {
+  const x = e.target.closest('[data-close]');
+  if (x) { const d = x.closest('dialog'); if (d) d.close(); return; }
+  if (e.target.tagName === 'DIALOG' && e.target.open) e.target.close();
+});
 
 // tabs
-const VIEWS = ['orders', 'sales'];
+let VIEWS = ['sales'];
 function showView(v) {
-  if (!VIEWS.includes(v)) v = 'orders';
+  if (!VIEWS.includes(v)) v = VIEWS[0];
   document.querySelectorAll('.view').forEach(el => { el.hidden = el.dataset.view !== v; });
   document.querySelectorAll('.top-links a').forEach(a => a.classList.toggle('on', a.dataset.view === v));
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
-showView(location.hash.slice(1));
 
-let orders = [], filter = 'open', chat = null, commissionPercent = 3;
-const isOpen = o => o.status === 'chatting' || o.status === 'offered' || o.status === 'accepted';
+let me = null, cfg = {}, offersParts = false, offersRentals = false, pchat = null, rchat = null;
+let orders = [], ofilter = 'open', bookings = [], bfilter = 'open', vehicles = [], parishes = [];
+
+// ---------- parts orders ----------
+const isOpenOrder = o => o.status === 'chatting' || o.status === 'offered' || o.status === 'accepted';
 function drawOrders() {
-  const list = orders.filter(o => filter === 'all' || (filter === 'open' ? isOpen(o) : o.status === filter));
-  chat.renderList($('orders-list'), list, filter === 'open' ? 'No open part requests right now. New ones appear here.' : 'Nothing here.');
+  const list = orders.filter(o => ofilter === 'all' || (ofilter === 'open' ? isOpenOrder(o) : o.status === ofilter));
+  pchat.renderList($('orders-list'), list, ofilter === 'open' ? 'No open part requests right now. New ones appear here.' : 'Nothing here.');
   const unread = orders.filter(o => o.unread).length;
   $('orders-badge').hidden = !unread; $('orders-badge').textContent = unread;
 }
-async function loadOrders() { try { orders = await api('/parts/orders'); drawOrders(); } catch (_) {} }
+async function loadOrders() { if (!offersParts) return; try { orders = await api('/parts/orders'); drawOrders(); } catch (_) {} }
+
+// ---------- rental bookings ----------
+const isOpenBooking = b => ['requested', 'accepted', 'picked_up'].includes(b.status);
+function drawBookings() {
+  const list = bookings.filter(b => bfilter === 'all' || (bfilter === 'open' ? isOpenBooking(b) : !isOpenBooking(b)));
+  rchat.renderList($('rbookings-list'), list, bfilter === 'open' ? 'No open rental requests right now. New ones appear here.' : 'Nothing here.');
+  const unread = bookings.filter(b => b.unread).length;
+  $('rentals-badge').hidden = !unread; $('rentals-badge').textContent = unread;
+}
+async function loadBookings() { if (!offersRentals) return; try { bookings = await api('/rentals/bookings'); drawBookings(); } catch (_) {} }
+
+// ---------- my rental vehicles ----------
+const CAT = { car: 'Car', suv: 'SUV', truck: 'Truck', van: 'Van', minibus: 'Minibus', other: 'Other' };
+const shortDay = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+$('req-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('req-status').textContent = '';
+  try { await api('/rentals/my-requirements', { method: 'PUT', body: { requirements: $('req-text').value } }); $('req-status').textContent = 'Saved.'; }
+  catch (err) { $('req-status').textContent = err.message; }
+});
+async function loadVehicles() {
+  if (!offersRentals) return;
+  try { $('req-text').value = (await api('/rentals/my-requirements')).requirements; } catch (_) {}
+  try { vehicles = (await api('/rentals/my-vehicles')).vehicles; } catch (err) { $('veh-grid').innerHTML = '<p class="error">' + esc(err.message) + '</p>'; return; }
+  $('veh-grid').innerHTML = vehicles.length ? vehicles.map(v => '<article class="rcard">' +
+    '<div class="rphoto">' + (v.photoUrl ? '<img src="' + esc(v.photoUrl) + '" alt="' + esc(v.title) + '" loading="lazy" onerror="this.remove()">' : '') + '<span class="ic" style="--m: var(--d-car)"></span></div>' +
+    '<div class="rbody"><h3>' + esc(v.title) + (v.year ? ' <small>' + esc(v.year) + '</small>' : '') + ' <span class="pill st-' + (v.active ? 'completed' : 'cancelled') + '">' + (v.active ? 'Listed' : 'Paused') + '</span></h3>' +
+    '<p class="rmeta">' + esc(CAT[v.category] || v.category) + (v.seats ? ' &middot; ' + v.seats + ' seats' : '') + (v.transmission ? ' &middot; ' + esc(v.transmission) : '') + ' &middot; ' + esc(v.parish) + '</p>' +
+    '<div class="rprice"><b>' + jmd(v.dailyRate) + '</b><span>a day</span><small>Min. ' + v.minDays + ' days' + (v.deposit ? ' &middot; deposit ' + jmd(v.deposit) : ' &middot; no deposit') + '</small></div>' +
+    (v.blocks.length ? '<div class="blocks">' + v.blocks.map(b => '<span>' + esc(shortDay(b.start)) + (b.end !== b.start ? ' to ' + esc(shortDay(b.end)) : '') + (b.note ? ' (' + esc(b.note) + ')' : '') + '<button type="button" data-unblock="' + b.id + '" aria-label="Remove block">&times;</button></span>').join('') + '</div>' : '') +
+    '<div class="vact"><button class="btn ghost" type="button" data-edit="' + v.id + '">Edit</button><button class="btn ghost" type="button" data-block="' + v.id + '">Block days</button>' +
+    '<button class="btn ghost" type="button" data-toggle="' + v.id + '">' + (v.active ? 'Pause' : 'List again') + '</button><button class="btn ghost" type="button" data-del="' + v.id + '">Delete</button></div></div></article>').join('')
+    : '<p class="empty">No vehicles yet. Add your first vehicle to start receiving rental requests.</p>';
+}
+let editing = null, blocking = null;
+function fillParishes() { $('v-parish').innerHTML = parishes.map(p => '<option>' + esc(p) + '</option>').join(''); }
+function openVehicleForm(v) {
+  editing = v || null;
+  $('veh-error').textContent = '';
+  $('veh-title').textContent = v ? 'Edit ' + v.title : 'Add a vehicle';
+  $('v-title').value = v ? v.title : ''; $('v-year').value = v ? v.year || '' : '';
+  $('v-cat').value = v ? v.category : 'car'; $('v-seats').value = v ? v.seats || '' : '';
+  $('v-trans').value = v ? v.transmission || 'automatic' : 'automatic'; $('v-parish').value = v ? v.parish : (me.parish || parishes[0]);
+  $('v-rate').value = v ? v.dailyRate : ''; $('v-min').value = v ? v.minDays : 3;
+  $('v-dep').value = v ? (v.deposit || '') : ''; $('v-req').value = v ? v.requirements : ''; $('v-desc').value = v ? v.description : ''; $('v-photo').value = '';
+  $('dlg-veh').showModal();
+}
+$('veh-add').addEventListener('click', () => openVehicleForm(null));
+$('v-dep-day').addEventListener('click', () => { const r = Number(String($('v-rate').value).replace(/[,\sJ$]/g, '')); if (r > 0) $('v-dep').value = r; else $('veh-error').textContent = 'Enter the price per day first.'; });
+$('veh-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('veh-error').textContent = '';
+  $('veh-save').disabled = true;
+  try {
+    const body = { title: $('v-title').value, year: Number($('v-year').value), category: $('v-cat').value, seats: Number($('v-seats').value), transmission: $('v-trans').value,
+      parish: $('v-parish').value, dailyRate: $('v-rate').value, minDays: Number($('v-min').value), deposit: $('v-dep').value, requirements: $('v-req').value, description: $('v-desc').value };
+    const photo = $('v-photo').files[0];
+    const image = photo ? await RentalChat.prepareImage(photo) : null;
+    const v = editing ? await api('/rentals/my-vehicles/' + editing.id, { method: 'PATCH', body }) : await api('/rentals/my-vehicles', { method: 'POST', body });
+    if (image) await api('/rentals/my-vehicles/' + v.id + '/photo', { method: 'POST', body: { image } });
+    $('dlg-veh').close();
+    await loadVehicles();
+  } catch (err) { $('veh-error').textContent = err.message; }
+  finally { $('veh-save').disabled = false; }
+});
+$('veh-grid').addEventListener('click', async (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  try {
+    if (t.dataset.edit) openVehicleForm(vehicles.find(v => v.id === Number(t.dataset.edit)));
+    else if (t.dataset.block) { blocking = vehicles.find(v => v.id === Number(t.dataset.block)); $('block-title').textContent = 'Block days: ' + blocking.title; $('block-error').textContent = ''; $('b-start').value = ''; $('b-end').value = ''; $('b-note').value = ''; $('dlg-block').showModal(); }
+    else if (t.dataset.toggle) { const v = vehicles.find(v => v.id === Number(t.dataset.toggle)); await api('/rentals/my-vehicles/' + v.id, { method: 'PATCH', body: { active: !v.active } }); await loadVehicles(); }
+    else if (t.dataset.del) { const v = vehicles.find(v => v.id === Number(t.dataset.del)); if (confirm('Delete ' + v.title + '?')) { await api('/rentals/my-vehicles/' + v.id, { method: 'DELETE' }); await loadVehicles(); } }
+    else if (t.dataset.unblock) { await api('/rentals/blocks/' + t.dataset.unblock, { method: 'DELETE' }); await loadVehicles(); }
+  } catch (err) { alert(err.message); }
+});
+$('block-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('block-error').textContent = '';
+  try {
+    await api('/rentals/my-vehicles/' + blocking.id + '/blocks', { method: 'POST', body: { start: $('b-start').value, end: $('b-end').value || $('b-start').value, note: $('b-note').value } });
+    $('dlg-block').close(); await loadVehicles();
+  } catch (err) { $('block-error').textContent = err.message; }
+});
+
+// ---------- sales ----------
 async function loadSales() {
-  let d;
-  try { d = await api('/parts/ledger'); } catch (_) { return; }
-  const v = d.vendors[0] || { orders: 0, sales: 0, commission: 0, owed: 0 };
-  $('s-orders').textContent = v.orders; $('s-sales').textContent = jmd(v.sales); $('s-owed').textContent = jmd(v.owed);
-  $('s-note').textContent = 'AutoAid takes ' + d.commissionPercent + '% of each completed order. Pay AutoAid the amount due, and the admin will mark it settled.';
-  $('sales-list').innerHTML = d.orders.length ? d.orders.map(o => '<div class="srow"><b>' + esc(o.part) + '</b><span>' + esc(new Date(o.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) + '</span><span>' + jmd(o.total) + '</span><span>' + jmd(o.commission) + '</span><span><span class="pill st-' + (o.settled ? 'completed' : 'pending') + '">' + (o.settled ? 'Settled' : 'Due') + '</span></span></div>').join('')
-    : '<p class="empty">No completed orders yet.</p>';
+  const sources = [];
+  if (offersParts) sources.push(api('/parts/ledger').then(d => ({ kind: 'Part', d })).catch(() => null));
+  if (offersRentals) sources.push(api('/rentals/ledger').then(d => ({ kind: 'Rental', d })).catch(() => null));
+  const got = (await Promise.all(sources)).filter(Boolean);
+  let orders = 0, sales = 0, owed = 0; const rows = []; const notes = [];
+  for (const { kind, d } of got) {
+    const v = d.vendors[0];
+    if (v) { orders += v.orders; sales += v.sales; owed += v.owed; }
+    notes.push((kind === 'Part' ? 'parts ' : 'rentals ') + d.commissionPercent + '%');
+    (d.orders || []).forEach(o => rows.push({ kind, ...o }));
+  }
+  rows.sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
+  $('s-orders').textContent = orders; $('s-sales').textContent = jmd(sales); $('s-owed').textContent = jmd(owed);
+  $('s-note').textContent = 'AutoAid commission: ' + (notes.join(', ') || 'none yet') + '. Rental commission is on the rent, not the deposit. Pay AutoAid the amount due, and the admin will mark it settled.';
+  $('sales-list').innerHTML = rows.length ? rows.map(o => '<div class="srow"><b>' + esc(o.kind) + ': ' + esc(o.part) + '</b><span>' + esc(new Date(o.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) + '</span><span>' + jmd(o.total) + '</span><span>' + jmd(o.commission) + '</span><span><span class="pill st-' + (o.settled ? 'completed' : 'pending') + '">' + (o.settled ? 'Settled' : 'Due') + '</span></span></div>').join('')
+    : '<p class="empty">Nothing completed yet.</p>';
 }
 
-document.querySelector('.filters').addEventListener('click', (e) => {
-  const f = e.target.dataset.filter; if (!f) return;
-  filter = f;
-  document.querySelectorAll('.filters button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === f)));
-  drawOrders();
-});
-$('orders-list').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b) chat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
+// ---------- filters ----------
+$('order-filters').addEventListener('click', (e) => { const f = e.target.dataset.filter; if (!f) return; ofilter = f; document.querySelectorAll('#order-filters button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === f))); drawOrders(); });
+$('booking-filters').addEventListener('click', (e) => { const f = e.target.dataset.bfilter; if (!f) return; bfilter = f; document.querySelectorAll('#booking-filters button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.bfilter === f))); drawBookings(); });
+document.querySelectorAll('[data-rtab]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-rtab]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  $('rtab-bookings').hidden = b.dataset.rtab !== 'bookings'; $('rtab-vehicles').hidden = b.dataset.rtab !== 'vehicles';
+}));
+$('orders-list').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b) pchat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
+$('rbookings-list').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b) rchat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
 
 (async () => {
   try {
     const { user } = await api('/auth/me');
     if (user.role === 'customer') return location.replace('/app.html');
     if (user.role !== 'vendor') return location.replace('/admin.html');
+    me = user;
+    cfg = await (await fetch('/config')).json().catch(() => ({}));
+    offersParts = user.offers.includes('parts') && !!(cfg.parts && cfg.parts.enabled);
+    offersRentals = user.offers.includes('rentals') && !!(cfg.rentals && cfg.rentals.enabled);
     $('who').textContent = user.businessName || user.name;
+    $('who-sub').textContent = offersParts && offersRentals ? 'Parts and rentals' : offersRentals ? 'Rentals' : 'Parts vendor';
     $('who-dot').textContent = (user.businessName || user.name || '?').trim().split(/\s+/).slice(0, 2).map(w => w.charAt(0)).join('').toUpperCase();
-    try { commissionPercent = (await (await fetch('/config')).json()).parts.commissionPercent; } catch (_) {}
-    chat = PartsChat.create({ api, role: 'vendor', commissionPercent, onChange: () => { loadOrders(); loadSales(); } });
-    await Promise.all([loadOrders(), loadSales()]);
-    setInterval(() => { if (!document.hidden) loadOrders(); }, 15000);
-  } catch (e) { $('orders-list').innerHTML = '<p class="error">Could not load your orders. Refresh the page.</p>'; }
+    VIEWS = [offersParts && 'orders', offersRentals && 'rentals', 'sales'].filter(Boolean);
+    $('tab-orders').hidden = !offersParts; $('tab-rentals').hidden = !offersRentals;
+    showView(location.hash.slice(1));
+    if (offersParts) pchat = PartsChat.create({ api, role: 'vendor', commissionPercent: cfg.parts.commissionPercent, onChange: () => { loadOrders(); loadSales(); } });
+    if (offersRentals) { rchat = RentalChat.create({ api, role: 'vendor', onChange: () => { loadBookings(); loadSales(); } }); parishes = await api('/auth/parishes'); fillParishes(); }
+    await Promise.all([loadOrders(), loadBookings(), loadVehicles(), loadSales()]);
+    setInterval(() => { if (!document.hidden) { loadOrders(); loadBookings(); } }, 15000);
+  } catch (e) { $('orders-list').innerHTML = '<p class="error">Could not load your page. Refresh.</p>'; }
 })();
 </script>
 </body>

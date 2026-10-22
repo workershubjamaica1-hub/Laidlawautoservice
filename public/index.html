@@ -45,8 +45,8 @@
       </button>
       <button type="button" class="choice" id="choose-vendor" hidden>
         <span class="cico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l1.5-4h13L20 8M4 8v12h16V8M4 8h16M9 20v-6h6v6"/></svg></span>
-        <span class="ctext"><strong>I sell auto parts</strong>
-        <small>Parts vendor. Apply to receive part requests from customers and sell to them.</small></span>
+        <span class="ctext"><strong>I run a business (parts or rentals)</strong>
+        <small>Sell auto parts, rent out vehicles, or both. Apply to receive customers.</small></span>
         <span class="arrow" aria-hidden="true">&rsaquo;</span>
       </button>
     </div>
@@ -87,10 +87,15 @@
         <p class="hint">An admin reviews every application. You can sign in once you are approved.</p>
       </div>
       <div id="vendorFields" hidden>
+        <label>What do you offer?</label>
+        <div class="checks" id="offers">
+          <label id="offer-parts-row"><input type="checkbox" value="parts" checked> Auto parts</label>
+          <label id="offer-rentals-row"><input type="checkbox" value="rentals"> Vehicle rentals (daily, 3 days minimum)</label>
+        </div>
         <label for="vbusiness">Business name</label>
         <input id="vbusiness" autocomplete="organization">
-        <label for="vstock">What parts do you sell?</label>
-        <textarea id="vstock" placeholder="Makes and models you stock, new or used, e.g. Toyota and Nissan engine and brake parts"></textarea>
+        <label for="vstock">Tell us about your business</label>
+        <textarea id="vstock" placeholder="Parts: makes and models you stock, new or used. Rentals: the kinds of vehicles you rent out."></textarea>
         <p class="hint">Customers collect parts from your address. An admin reviews every application, and you can sign in once you are approved.</p>
       </div>
       <label for="pw">Password</label>
@@ -143,7 +148,11 @@ const home = role => role === 'customer' ? '/app.html' : role === 'vendor' ? '/v
 
 // If monthly subscriptions are on, tell applicants up front what it costs
 fetch('/config').then(r => r.json()).then(c => {
-  if (c.parts && c.parts.enabled) $('choose-vendor').hidden = false;
+  const pOn = !!(c.parts && c.parts.enabled), rOn = !!(c.rentals && c.rentals.enabled);
+  if (pOn || rOn) $('choose-vendor').hidden = false;
+  $('offer-parts-row').hidden = !pOn; $('offer-rentals-row').hidden = !rOn;
+  if (!pOn) document.querySelector('#offers input[value="parts"]').checked = false;
+  if (!pOn && rOn) document.querySelector('#offers input[value="rentals"]').checked = true;
   if (c.subscription && c.subscription.enabled && c.subscription.priceLabel) {
     $('feeHint').textContent = 'After you are approved, service providers pay a monthly subscription of ' + c.subscription.priceLabel + ' to start taking jobs.';
     $('feeHint').hidden = false;
@@ -194,7 +203,7 @@ const COPY = {
   login:    { title: 'Welcome back', sub: 'Customers and service providers sign in here.', button: 'Sign in' },
   create:   { title: 'Create an account', sub: 'What would you like to do?', button: '' },
   register: { title: 'Create your customer account', sub: 'So the nearest technician can reach you.', button: 'Create account' },
-  vendor:   { title: 'Join as a parts vendor', sub: 'Receive part requests from customers and sell to them. Customers collect the parts from you.', button: 'Submit application' },
+  vendor:   { title: 'Join as a business', sub: 'Sell auto parts, rent out vehicles, or both. Customers collect from you and pay you directly.', button: 'Submit application' },
   tech:     { title: 'Join as a service provider', sub: 'Mechanics, tire, electrical, roadside and towing professionals: apply to take jobs in your parish.', button: 'Submit application' }
 };
 function setMode(m) {
@@ -332,7 +341,8 @@ $('form').addEventListener('submit', async e => {
     if (mode !== 'login' && !$('agree').checked) throw new Error('Please agree to the Terms of Use and the Privacy Notice.');
     if (mode === 'vendor') {
       Object.assign(body, { agreed: true, name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value,
-        businessName: $('vbusiness').value, experience: $('vstock').value });
+        businessName: $('vbusiness').value, experience: $('vstock').value,
+        offers: [...document.querySelectorAll('#offers input:checked')].map(c => c.value) });
       const res = await fetch('/auth/register-vendor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || 'Could not submit your application.');

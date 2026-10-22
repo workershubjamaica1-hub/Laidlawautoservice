@@ -70,8 +70,9 @@ const VERIFY = {
   maxAttempts: 5
 };
 const PARTS = { enabled: String(process.env.PARTS_ENABLED || '').toLowerCase() === 'true' };
+const RENTALS = { enabled: String(process.env.RENTALS_ENABLED || '').toLowerCase() === 'true' };
 const BUSINESS = process.env.BUSINESS_NAME || 'AutoAid 24/7';
-const TERMS_VERSION = '2026-10-21';   // bump when the Terms or Privacy Notice change in a way people should agree to again
+const TERMS_VERSION = '2026-10-22';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
@@ -88,6 +89,8 @@ const publicUser = u => ({
   premium: u.role === 'customer' ? premiumStatusOf(u) : null, premiumPaidUntil: u.premium_paid_until || null,   // only customers can be Premium members
   specialties: u.specialties ? u.specialties.split(',') : [],
   businessName: u.business_name || '', experience: u.experience || '',
+  offers: u.role === 'vendor' ? String(u.vendor_offers || 'parts').split(',').filter(Boolean) : [],
+  hasLicence: !!u.licence_photo_path,
   // Customers must have all four before the shop can send someone out
   profileComplete: u.role !== 'customer' || profileComplete(u)
 });
@@ -170,13 +173,14 @@ module.exports = function createAuth({ supabase, handle }) {
     if (error) throw error;
     return data;
   };
-  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience, termsAcceptedAt, emailVerified }) {
+  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience, termsAcceptedAt, emailVerified, vendorOffers }) {
     const { data, error } = await supabase.from('users')
       .insert({
         name, email, password_hash: hashPassword(password), role,
         phone: phone || null, address: address || null, parish: parish || null,
         approved: approved !== false, specialties: specialties || null,
         business_name: businessName || null, experience: experience || null,
+        ...(vendorOffers ? { vendor_offers: vendorOffers } : {}),
         email_verified: emailVerified !== false,
         terms_accepted_at: termsAcceptedAt || null, terms_version: termsAcceptedAt ? TERMS_VERSION : null
       })
@@ -366,7 +370,7 @@ module.exports = function createAuth({ supabase, handle }) {
 
   // A parts vendor applies to sell parts. Like a technician, they cannot sign in until an admin approves them.
   router.post('/register-vendor', handle(async (req, res) => {
-    if (!PARTS.enabled) return res.status(404).json({ error: 'Parts ordering is not switched on yet.' });
+    if (!PARTS.enabled && !RENTALS.enabled) return res.status(404).json({ error: 'Vendor sign-up is not switched on yet.' });
     if (signupLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many sign-ups. Try again later.' });
     const name = String(req.body.name || '').trim();
     const email = String(req.body.email || '').trim().toLowerCase();
@@ -378,9 +382,12 @@ module.exports = function createAuth({ supabase, handle }) {
     const contact = checkContact(req.body, true);
     if (contact.error) return res.status(400).json({ error: contact.error });
     const businessName = String(req.body.businessName || '').trim().slice(0, 100);
-    if (businessName.length < 2) return res.status(400).json({ error: 'Enter the name of your parts business.' });
+    if (businessName.length < 2) return res.status(400).json({ error: 'Enter the name of your business.' });
+    const allowedOffers = [PARTS.enabled && 'parts', RENTALS.enabled && 'rentals'].filter(Boolean);
+    const offers = [...new Set((Array.isArray(req.body.offers) ? req.body.offers : ['parts']).filter(o => allowedOffers.includes(o)))];
+    if (!offers.length) return res.status(400).json({ error: 'Choose what you offer: auto parts, vehicle rentals, or both.' });
     const experience = String(req.body.experience || '').trim().slice(0, 600);
-    if (experience.length < 10) return res.status(400).json({ error: 'Tell us what parts you sell (makes, models, new or used).' });
+    if (experience.length < 10) return res.status(400).json({ error: 'Tell us what you offer (parts you stock, or the vehicles you rent out).' });
     if (VERIFY.enabled && !mailer.ready()) return notReady(res);
     const existing = await findByEmail(email);
     if (existing && !(VERIFY.enabled && existing.email_verified === false && existing.role === 'vendor')) {
@@ -390,8 +397,8 @@ module.exports = function createAuth({ supabase, handle }) {
     const now = new Date().toISOString();
     const user = existing
       ? await replaceUnverified(existing, { name, password_hash: hashPassword(password), phone: contact.value.phone, address: contact.value.address, parish: contact.value.parish,
-          business_name: businessName, experience, terms_accepted_at: now, terms_version: TERMS_VERSION })
-      : await createUser({ name, email, password, role: 'vendor', approved: false, businessName, experience, termsAcceptedAt: now, emailVerified: !VERIFY.enabled, ...contact.value });
+          business_name: businessName, experience, vendor_offers: offers.join(','), terms_accepted_at: now, terms_version: TERMS_VERSION })
+      : await createUser({ name, email, password, role: 'vendor', approved: false, businessName, experience, vendorOffers: offers.join(','), termsAcceptedAt: now, emailVerified: !VERIFY.enabled, ...contact.value });
     signupLimit.fail(req.ip);
     if (VERIFY.enabled) {
       const sent = await sendCode(user);
@@ -531,5 +538,5 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ url });
   }));
 
-  return { router, requireAuth, requireRole, requireWorker, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES, PARTS };
+  return { router, requireAuth, requireRole, requireWorker, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES, PARTS, RENTALS };
 };

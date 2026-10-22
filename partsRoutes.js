@@ -44,6 +44,7 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     if (error) throw error;
     return new Map(data.map(v => [v.id, v]));
   }
+  const offersParts = u => String(u.vendor_offers || 'parts').split(',').includes('parts');   // rental-only companies are not parts vendors
   const vendorName = u => (u ? (u.business_name || u.name) : 'Removed vendor');
 
   // What each person may see. Contact details are shared only once the customer accepts an offer.
@@ -95,9 +96,9 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
 
   // --- Customer: who can I order from? Vendors in my parish come first. ---
   router.get('/parts/vendors', ...customerOnly, handle(async (req, res) => {
-    const { data, error } = await supabase.from('users').select('id, name, business_name, parish, experience, approved, active, email_verified, role').eq('role', 'vendor');
+    const { data, error } = await supabase.from('users').select('id, name, business_name, parish, experience, approved, active, email_verified, role, vendor_offers').eq('role', 'vendor');
     if (error) throw error;
-    const list = data.filter(u => u.approved !== false && u.active !== false && u.email_verified !== false)
+    const list = data.filter(u => u.approved !== false && u.active !== false && u.email_verified !== false && offersParts(u))
       .map(u => ({ id: u.id, name: vendorName(u), parish: u.parish || '', about: u.experience || '', nearYou: !!req.user.parish && u.parish === req.user.parish }))
       .sort((a, b) => (b.nearYou - a.nearYou) || a.name.localeCompare(b.name));
     res.json({ commissionPercent, vendors: list });
@@ -109,9 +110,9 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     const part = String(b.part || '').trim();
     if (part.length < 3 || part.length > 150) return res.status(400).json({ error: 'Say which part you need (3 to 150 characters), e.g. "front brake pads".' });
     const note = String(b.message || '').trim().slice(0, 1000);
-    const vendor = await supabase.from('users').select('id, name, business_name, approved, active, email_verified').eq('id', Number(b.vendorId)).eq('role', 'vendor').maybeSingle();
+    const vendor = await supabase.from('users').select('id, name, business_name, approved, active, email_verified, vendor_offers').eq('id', Number(b.vendorId)).eq('role', 'vendor').maybeSingle();
     if (vendor.error) throw vendor.error;
-    if (!vendor.data || vendor.data.approved === false || vendor.data.active === false || vendor.data.email_verified === false) return res.status(400).json({ error: 'Choose a vendor from the list.' });
+    if (!vendor.data || vendor.data.approved === false || vendor.data.active === false || vendor.data.email_verified === false || !offersParts(vendor.data)) return res.status(400).json({ error: 'Choose a vendor from the list.' });
     const veh = await supabase.from('vehicles').select('id, type, year, vin').eq('id', Number(b.vehicleId)).eq('user_id', req.user.id).maybeSingle();
     if (veh.error) throw veh.error;
     if (!veh.data) return res.status(400).json({ error: 'Choose one of your vehicles, so the vendor gets the right part.' });
