@@ -61,6 +61,12 @@ sender such as `no-reply@autoaidja.com`.
 * **Someone cannot get their code:** in the admin **Users** tab, press **Verify email** next to them (or open
   "waiting for email verification" for applicants and press **Mark email verified**).
 
+## Forgot password
+
+The sign-in page has **Forgot your password?** It uses the same email setup: the person enters their email, we send a 6-digit code (valid for the same 10 minutes), and the
+code plus a new password sets it. Resetting or changing a password signs the person out of every other device. This works as soon as the email settings above are filled in
+(`VERIFY_EMAIL` does not need to be on). If email is not set up, the page says so and the admin can still set a new password for someone in the **Users** tab.
+
 ## How it protects people
 
 * Codes are 6 digits, last 10 minutes, and **only a scrambled copy is stored**.

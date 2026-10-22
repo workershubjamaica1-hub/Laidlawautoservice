@@ -296,6 +296,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     if (req.body.password !== undefined) {
       if (String(req.body.password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
       update.password_hash = auth.hashPassword(String(req.body.password));
+      update.pw_changed_at = new Date().toISOString();   // signs them out everywhere
     }
     const contact = auth.checkContact(req.body, false);
     if (contact.error) return res.status(400).json({ error: contact.error });

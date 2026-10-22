@@ -80,3 +80,16 @@
 .pmsg.me small { opacity: 1; color: rgba(255, 255, 255, .8); }
 .porder .tile { padding: 0; border: 0; box-shadow: none; overflow: visible; border-radius: 10px; }
 .porder .tile::before { display: none; }
+.acct-block { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.acct-block:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.acct-block h3 { margin: 0 0 8px; }
+.acct-note { margin: 0 0 12px; color: var(--ink-soft); font-size: 13.5px; }
+.acct-status { color: var(--green); font-weight: 700; font-size: 13.5px; }
+.acct-block .btn { margin-top: 12px; }
+.acct-checks { margin-bottom: 6px; }
+.dash .btn.danger, .acct-block .btn.danger { background: #fff; color: #C93B2B; border: 1.5px solid #F2B8B8; box-shadow: none; }
+.dash .btn.danger:hover, .acct-block .btn.danger:hover { background: #C93B2B; color: #fff; border-color: #C93B2B; }
+.acct-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.acct-checks label { display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px 12px; border: 1.5px solid var(--line-2); border-radius: 12px; font-weight: 600; font-size: 13.5px; cursor: pointer; background: #fff; }
+.acct-checks label:has(input:checked) { border-color: var(--brand); background: var(--brand-50); }
+.acct-checks input { width: auto; min-height: 0; }

@@ -189,9 +189,11 @@
   <div class="view" id="view-profile" data-view="profile" hidden>
     <div class="page-head"><div><p class="eyebrow">Profile</p><h1>My profile</h1><p class="welcome-sub">How technicians reach you and recognise your vehicle.</p></div></div>
     <div class="narrow">
-      <form class="panel" id="profile-box" style="grid-column: 1 / -1" hidden novalidate>
-    <h2>Finish your profile</h2>
-    <p class="empty">We need these so the nearest technician can reach you and get the right parts for your vehicle.</p>
+      <form class="panel" id="profile-box" style="grid-column: 1 / -1" novalidate>
+    <h2 id="p-title">My details</h2>
+    <p class="empty" id="p-sub">We need these so the nearest technician can reach you and get the right parts for your vehicle.</p>
+    <label for="p-name">Name</label>
+    <input id="p-name" autocomplete="name" maxlength="80">
     <div class="row">
       <div><label for="p-phone">Phone number</label><input id="p-phone" type="tel" autocomplete="tel" placeholder="876-555-0123"></div>
       <div><label for="p-parish">Parish</label><select id="p-parish"><option value="">Choose your parish</option></select></div>
@@ -201,10 +203,10 @@
     <label for="p-photo">Photo of your motor vehicle</label>
     <input id="p-photo" type="file" accept="image/*">
     <p class="empty" id="p-photo-note" style="font-size:14px"></p>
-    <button class="btn safety" id="p-save" type="submit">Save profile</button>
+    <button class="btn safety" id="p-save" type="submit">Save changes</button> <span class="acct-status" id="p-ok" role="status"></span>
     <p class="error" id="p-error" role="alert"></p>
   </form>
-      <div class="card" id="profile-done" hidden></div>
+      <div class="card" id="acct-security"></div>
     </div>
   </div>
 </main>
@@ -356,6 +358,7 @@
 
 <script src="/parts.js"></script>
 <script src="/rentals.js"></script>
+<script src="/account.js"></script>
 <script>
 const state = { vehicles: [], requests: [], categories: { vehicle: [], service: [] }, catalog: {}, filter: 'all' };
 const labelOf = (list, value) => (list.find(c => c.value === value) || {}).label || value;
@@ -425,6 +428,7 @@ async function load() {
     $('hero-name').textContent = greeting() + ', ' + (user.name || '').trim().split(/\s+/)[0];
     $('owner').value = user.name;
     setupProfile(user);
+    AccountUI.mountSecurity($('acct-security'), { api, onTokenChange: t => { token = t; } });
     loadSos();
     loadPremium();
     const [vehicles, requests, categories, catalog] = await Promise.all([
@@ -1245,18 +1249,16 @@ let profileUser = null;
 async function setupProfile(user) {
   profileUser = user;
   const box = $('profile-box');
-  box.hidden = user.profileComplete;
+  box.classList.toggle('incomplete', !user.profileComplete);
+  box.hidden = false;   // always editable: customers can update their phone, address, parish and photo any time
   $('profile-nudge').hidden = user.profileComplete;
-  $('profile-done').hidden = !user.profileComplete;
-  $('profile-done').innerHTML = '<h3>Your profile is complete</h3><div class="vmeta one"><div>' + I('phone') + '<span><small>Phone</small><b>' + esc(user.phone || '') + '</b></span></div>' +
-    '<div>' + I('user') + '<span><small>Parish</small><b>' + esc(user.parish || '') + '</b></span></div></div><p class="empty">' + esc(user.address || '') + '</p>';
-  if (!user.profileComplete) {
-    if ($('p-parish').options.length < 2) {
-      (await api('/auth/parishes')).forEach(p => $('p-parish').append(new Option(p, p)));
-    }
-    $('p-phone').value = user.phone; $('p-address').value = user.address; $('p-parish').value = user.parish;
-    $('p-photo-note').textContent = user.hasChassisPhoto ? 'A photo is already on file. Choose another only to replace it.' : 'Required.';
+  $('p-title').textContent = user.profileComplete ? 'My details' : 'Finish your profile';
+  $('who').textContent = user.name;
+  if ($('p-parish').options.length < 2) {
+    (await api('/auth/parishes')).forEach(p => $('p-parish').append(new Option(p, p)));
   }
+  $('p-name').value = user.name; $('p-phone').value = user.phone; $('p-address').value = user.address; $('p-parish').value = user.parish;
+  $('p-photo-note').textContent = user.hasChassisPhoto ? 'A photo is already on file. Choose another only to replace it.' : 'Required.';
   renderArea(user);
 }
 
@@ -1273,16 +1275,17 @@ async function renderArea(user) {
 
 $('profile-box').addEventListener('submit', async (e) => {
   e.preventDefault();
-  $('p-error').textContent = '';
+  $('p-error').textContent = ''; $('p-ok').textContent = '';
   $('p-save').disabled = true;
   try {
     const file = $('p-photo').files[0];
     if (!file && !profileUser.hasChassisPhoto) throw new Error("Add a photo of your motor vehicle.");
     const image = file ? await prepareImage(file) : null;
-    let r = await api('/auth/profile', { method: 'PATCH', body: { phone: $('p-phone').value, address: $('p-address').value, parish: $('p-parish').value } });
+    let r = await api('/auth/profile', { method: 'PATCH', body: { name: $('p-name').value, phone: $('p-phone').value, address: $('p-address').value, parish: $('p-parish').value } });
     if (image) r = await api('/auth/chassis-photo', { method: 'POST', body: { image } });
     $('p-photo').value = '';
     await setupProfile(r.user);
+    $('p-ok').textContent = 'Saved.';
   } catch (err) { $('p-error').textContent = err.message; }
   finally { $('p-save').disabled = false; }
 });

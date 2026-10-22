@@ -213,7 +213,8 @@ main.dash { display: block; max-width: 1312px; margin: 0 auto; padding: 44px 48p
 #area-box h3 { font: 800 14px/1.3 var(--display); margin: 0 0 4px; }
 #area-box h3::before { margin-right: 6px; background: var(--brand-600); }
 #area-box .empty { font-size: 13.5px; }
-#profile-box { border-left: 0; border-top: 4px solid var(--gold); }
+#profile-box { border-left: 0; }
+#profile-box.incomplete { border-top: 4px solid var(--gold); }
 
 .premium { position: relative; overflow: hidden; border-radius: 20px; padding: 24px; color: #fff; box-shadow: var(--card-shadow);
   background: linear-gradient(135deg, #07405F 0%, #0A5C86 55%, #0B76AA 100%); }
@@ -394,3 +395,16 @@ main.dash { display: block; max-width: 1312px; margin: 0 auto; padding: 44px 48p
 .rreq-box { margin: 10px 0; padding: 12px 14px; border-radius: 12px; background: #FFF6EC; border: 1px solid #F8DEC4; font-size: 13.5px; line-height: 1.5; }
 .rfilters > div { min-width: 0; }
 .rfilters input, .rfilters select { width: 100%; min-width: 0; }
+.acct-block { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.acct-block:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.acct-block h3 { margin: 0 0 8px; }
+.acct-note { margin: 0 0 12px; color: var(--ink-soft); font-size: 13.5px; }
+.acct-status { color: var(--green); font-weight: 700; font-size: 13.5px; }
+.acct-block .btn { margin-top: 12px; }
+.acct-checks { margin-bottom: 6px; }
+.dash .btn.danger, .acct-block .btn.danger { background: #fff; color: #C93B2B; border: 1.5px solid #F2B8B8; box-shadow: none; }
+.dash .btn.danger:hover, .acct-block .btn.danger:hover { background: #C93B2B; color: #fff; border-color: #C93B2B; }
+.acct-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+.acct-checks label { display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px 12px; border: 1.5px solid var(--line-2); border-radius: 12px; font-weight: 600; font-size: 13.5px; cursor: pointer; background: #fff; }
+.acct-checks label:has(input:checked) { border-color: var(--brand); background: var(--brand-50); }
+.acct-checks input { width: auto; min-height: 0; }

@@ -38,6 +38,7 @@
       <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
       <button data-tab="parts" id="partsTab" aria-pressed="false" hidden>Parts & rentals</button>
       <button data-tab="users" id="usersTab" aria-pressed="false" hidden>Users</button>
+      <button data-tab="account" id="accountTab" aria-pressed="false">My account</button>
     </nav>
     <div class="content">
     <p class="error" id="appError" role="alert"></p>
@@ -78,6 +79,11 @@
         <tbody id="reqBody"></tbody>
       </table></div>
       <p class="empty" id="reqEmpty" hidden>No matching requests.</p>
+    </div>
+
+    <div class="panel" id="accountPanel" hidden>
+      <div id="acctDetails"></div>
+      <div id="acctSecurity"></div>
     </div>
 
     <div class="panel" id="partsPanel" hidden>
@@ -128,6 +134,7 @@
 
 <script src="/parts.js"></script>
 <script src="/rentals.js"></script>
+<script src="/account.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'completed': 'Completed', 'cancelled': 'Cancelled' };
@@ -243,6 +250,8 @@ async function load() {
       me = (await api('/auth/me')).user;
       if (me.role === 'customer') return location.replace('/app.html');
       if (me.role === 'vendor') return location.replace('/vendor.html');
+      AccountUI.mountDetails($('acctDetails'), { api, user: me, onSaved: u => { me = u; $('who').textContent = u.name + ' (' + u.role + ')'; } }).catch(() => {});
+      AccountUI.mountSecurity($('acctSecurity'), { api, canDelete: me.role !== 'admin', onTokenChange: t => { token = t; } });
       $('who').textContent = me.name + ' (' + me.role + ')';
       $('who-dot').textContent = (me.name || '?').trim().charAt(0).toUpperCase();
       $('usersTab').hidden = me.role !== 'admin';
@@ -886,6 +895,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';
   $('usersPanel').hidden = b.dataset.tab !== 'users';
   $('partsPanel').hidden = b.dataset.tab !== 'parts';
+  $('accountPanel').hidden = b.dataset.tab !== 'account';
   if (b.dataset.tab === 'parts') loadParts();
 }));
 $('parishFilter').addEventListener('change', () => { renderRequests(); renderVehicles(); renderEmergencies(); });

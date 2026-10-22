@@ -40,15 +40,15 @@ const safeEqual = (a, b) => {
 };
 const revoked = new Map(); // token -> expiry
 function makeToken(userId) {
-  const payload = Buffer.from(JSON.stringify({ uid: userId, exp: Date.now() + TOKEN_TTL_MS })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ uid: userId, iat: Date.now(), exp: Date.now() + TOKEN_TTL_MS })).toString('base64url');
   return `${payload}.${sign(payload)}`;
 }
 function readToken(token) {
   const [payload, sig] = String(token || '').split('.');
   if (!payload || !sig || !safeEqual(sig, sign(payload)) || revoked.has(token)) return null;
   try {
-    const { uid, exp } = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    return exp > Date.now() ? { uid, exp } : null;
+    const { uid, exp, iat } = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    return exp > Date.now() ? { uid, exp, iat: iat || 0 } : null;
   } catch (_) { return null; }
 }
 const tokenFrom = req => (req.get('authorization') || '').replace(/^Bearer /i, '');
@@ -196,6 +196,8 @@ module.exports = function createAuth({ supabase, handle }) {
       const t = readToken(tokenFrom(req));
       const user = t && await findById(t.uid);
       if (!user || !user.active || user.approved === false || user.email_verified === false) return res.status(401).json({ error: 'Please sign in.' });
+      // A password change or reset signs out every older session
+      if (user.pw_changed_at && t.iat < Date.parse(user.pw_changed_at)) return res.status(401).json({ error: 'Please sign in.' });
       req.user = user;
       next();
     } catch (err) {
@@ -499,6 +501,24 @@ module.exports = function createAuth({ supabase, handle }) {
     const contact = checkContact(req.body, false);
     if (contact.error) return res.status(400).json({ error: contact.error });
     Object.assign(update, contact.value);
+    if (req.user.role === 'vendor' || req.user.role === 'staff') {
+      if (req.body.businessName !== undefined) {
+        const bn = String(req.body.businessName).trim().slice(0, 100);
+        if (req.user.role === 'vendor' && bn.length < 2) return res.status(400).json({ error: 'Enter the name of your business.' });
+        update.business_name = bn || null;
+      }
+      if (req.body.experience !== undefined) {
+        const ex = String(req.body.experience).trim().slice(0, 600);
+        if (ex.length < 10) return res.status(400).json({ error: 'Tell us a little more about what you do (at least 10 characters).' });
+        update.experience = ex;
+      }
+    }
+    if (req.user.role === 'staff' && req.body.specialties !== undefined) {
+      const allowed = SPECIALTIES.map(s => s.value);
+      const list = [...new Set((Array.isArray(req.body.specialties) ? req.body.specialties : []).filter(v => allowed.includes(v)))];
+      if (!list.length) return res.status(400).json({ error: 'Choose at least one kind of work you do.' });
+      update.specialties = list.join(',');
+    }
     if (!Object.keys(update).length) return res.status(400).json({ error: 'Nothing to change.' });
     const { data, error } = await supabase.from('users').update(update).eq('id', req.user.id).select().single();
     if (error) throw error;
@@ -536,6 +556,145 @@ module.exports = function createAuth({ supabase, handle }) {
     const url = await signedPhotoUrl(req.user.chassis_photo_path);
     if (!url) return res.status(404).json({ error: 'No photo uploaded yet.' });
     res.json({ url });
+  }));
+
+  // ---------- Forgot password: a 6-digit code is emailed, then the code plus a new password sets it ----------
+  const forgotLimit = makeLimiter(8, 60 * 60 * 1000);    // reset emails per IP
+  const resetLimit = makeLimiter(10, 15 * 60 * 1000);    // wrong reset codes per IP
+  const changeLimit = makeLimiter(6, 15 * 60 * 1000);    // wrong current passwords per signed-in user
+  const resetHash = (userId, code) => crypto.createHmac('sha256', SECRET).update(`reset:${userId}:${code}`).digest('hex');
+  const strongEnough = p => typeof p === 'string' && p.length >= 8 && p.length <= 200;
+
+  router.post('/forgot', handle(async (req, res) => {
+    if (forgotLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many requests. Try again in an hour.' });
+    forgotLimit.fail(req.ip);
+    if (!mailer.ready()) return res.status(503).json({ error: 'Password reset by email is not set up yet. Please contact AutoAid 24/7.' });
+    const email = String((req.body && req.body.email) || '').trim().toLowerCase();
+    const user = validEmail(email) ? await findByEmail(email) : null;
+    // The answer is the same whether or not the account exists, so this cannot be used to find out who has one.
+    if (user && user.active && user.email_verified !== false && !user.deleted_at) {
+      const since = user.reset_sent_at ? Date.now() - Date.parse(user.reset_sent_at) : Infinity;
+      if (since >= VERIFY.cooldownMs) {
+        const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+        const save = await supabase.from('users').update({ reset_code_hash: resetHash(user.id, code), reset_expires_at: new Date(Date.now() + VERIFY.ttlMs).toISOString(), reset_attempts: 0, reset_sent_at: new Date().toISOString() }).eq('id', user.id);
+        if (save.error) throw save.error;
+        const minutes = Math.max(1, Math.round(VERIFY.ttlMs / 60000));
+        const text = `Your ${BUSINESS} password reset code is ${code}.\n\nIt expires in ${minutes} minutes. If you did not ask to reset your password, you can ignore this email and your password stays the same.`;
+        const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:auto;padding:24px;color:#0F1B2D"><h2 style="margin:0 0 12px;color:#0B2545">${BUSINESS}</h2><p style="margin:0 0 16px">Use this code to reset your password:</p><p style="font-size:34px;font-weight:800;letter-spacing:8px;margin:0 0 16px;color:#0F6FDE">${code}</p><p style="margin:0;color:#55657B;font-size:14px">It expires in ${minutes} minutes. If you did not ask for this, ignore this email and your password stays the same.</p></div>`;
+        try { await mailer.sendMail({ to: user.email, subject: `Your ${BUSINESS} password reset code: ${code}`, text, html }); }
+        catch (err) { console.error('Could not send the password reset email:', err.message); await supabase.from('users').update({ reset_sent_at: null }).eq('id', user.id); }
+      }
+    }
+    res.json({ ok: true });
+  }));
+
+  router.post('/reset', handle(async (req, res) => {
+    if (resetLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many wrong codes. Ask for a new code in a few minutes.' });
+    const b = req.body || {};
+    const email = String(b.email || '').trim().toLowerCase();
+    const code = String(b.code || '').replace(/\s+/g, '');
+    if (!strongEnough(b.password)) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    const user = validEmail(email) ? await findByEmail(email) : null;
+    const wrong = () => { resetLimit.fail(req.ip); return res.status(400).json({ error: 'That code is not right. Check the newest email and try again.' }); };
+    if (!user || !user.active || user.deleted_at || !/^\d{6}$/.test(code) || !user.reset_code_hash) return wrong();
+    if (!user.reset_expires_at || Date.parse(user.reset_expires_at) < Date.now()) return res.status(400).json({ error: 'That code has expired. Ask for a new one.', code: 'expired' });
+    const used = user.reset_attempts || 0;
+    if (used >= VERIFY.maxAttempts) return res.status(429).json({ error: 'Too many wrong tries for that code. Ask for a new one.', code: 'locked' });
+    if (!safeEqual(resetHash(user.id, code), user.reset_code_hash)) {
+      await supabase.from('users').update({ reset_attempts: used + 1 }).eq('id', user.id);
+      return wrong();
+    }
+    const { error } = await supabase.from('users').update({ password_hash: hashPassword(b.password), pw_changed_at: new Date().toISOString(), reset_code_hash: null, reset_expires_at: null, reset_attempts: 0 }).eq('id', user.id);
+    if (error) throw error;
+    resetLimit.clear(req.ip); loginLimit.clear(req.ip);
+    res.json({ ok: true });
+  }));
+
+  // ---------- Change password (signed in). Every other session is signed out; this one gets a fresh token. ----------
+  router.post('/change-password', requireAuth, handle(async (req, res) => {
+    if (changeLimit.locked(req.user.id)) return res.status(429).json({ error: 'Too many wrong attempts. Try again in 15 minutes.' });
+    const b = req.body || {};
+    if (!checkPassword(String(b.current || ''), req.user.password_hash)) { changeLimit.fail(req.user.id); return res.status(400).json({ error: 'Your current password is not right.' }); }
+    if (!strongEnough(b.password)) return res.status(400).json({ error: 'The new password must be at least 8 characters.' });
+    if (b.password === b.current) return res.status(400).json({ error: 'Choose a password you have not used just now.' });
+    const { error } = await supabase.from('users').update({ password_hash: hashPassword(b.password), pw_changed_at: new Date().toISOString() }).eq('id', req.user.id);
+    if (error) throw error;
+    changeLimit.clear(req.user.id);
+    const old = tokenFrom(req); const t = readToken(old); if (t) revoked.set(old, t.exp);
+    res.json({ ok: true, token: makeToken(req.user.id) });
+  }));
+
+  // ---------- Delete my account ----------
+  // The row is kept but emptied (name, contact details, photos), so other people's records (a technician's earnings, a vendor's
+  // sales) stay in order without holding this person's details. Anything still in progress must be finished or cancelled first.
+  const deleteLimit = makeLimiter(5, 15 * 60 * 1000);
+  async function rows(q) { const { data, error } = await q; if (error) throw error; return data; }
+  router.post('/delete-account', requireAuth, handle(async (req, res) => {
+    const u = req.user;
+    if (deleteLimit.locked(u.id)) return res.status(429).json({ error: 'Too many wrong attempts. Try again in 15 minutes.' });
+    if (!checkPassword(String((req.body && req.body.password) || ''), u.password_hash)) { deleteLimit.fail(u.id); return res.status(400).json({ error: 'Your password is not right.' }); }
+    if (u.role === 'admin') return res.status(403).json({ error: 'Administrator accounts are removed by another administrator.' });
+    const now = new Date().toISOString();
+    const blocked = [];
+    const cancelOpenParts = [], cancelBookings = [];
+
+    if (u.role === 'customer') {
+      const vids = (await rows(supabase.from('vehicles').select('id').eq('user_id', u.id))).map(v => v.id);
+      const busyJobs = vids.length ? (await rows(supabase.from('service_requests').select('id, status').in('vehicle_id', vids))).filter(r => r.status === 'in-progress') : [];
+      if (busyJobs.length) blocked.push('a service request that a technician is working on');
+      if ((await rows(supabase.from('emergency_requests').select('id, status').eq('user_id', u.id))).some(e => e.status === 'dispatched')) blocked.push('an emergency a technician is on the way to');
+    }
+    if (u.role === 'staff') {
+      if ((await rows(supabase.from('service_requests').select('id, status').eq('technician_id', u.id))).some(r => r.status === 'in-progress')) blocked.push('a service job you are working on');
+      if ((await rows(supabase.from('emergency_requests').select('id, status').eq('technician_id', u.id))).some(e => e.status === 'dispatched')) blocked.push('an emergency you accepted');
+    }
+    const side = u.role === 'vendor' ? 'vendor_id' : 'customer_id';
+    if (u.role === 'customer' || u.role === 'vendor') {
+      const parts = await rows(supabase.from('part_orders').select('id, status, commission_amount, commission_settled_at').eq(side, u.id)).catch(() => []);
+      const rents = await rows(supabase.from('rental_bookings').select('id, status, commission_amount, commission_settled_at').eq(side, u.id)).catch(() => []);
+      if (parts.some(o => o.status === 'accepted')) blocked.push('a parts order that is accepted and waiting to be collected');
+      if (rents.some(b => b.status === 'accepted' || b.status === 'picked_up')) blocked.push('a rental that is confirmed or out on the road');
+      if (u.role === 'vendor') {
+        const owedParts = parts.filter(o => o.status === 'completed' && o.commission_amount && !o.commission_settled_at).length;
+        const owedRents = rents.filter(b => b.status === 'returned' && b.commission_amount && !b.commission_settled_at).length;
+        if (owedParts + owedRents) blocked.push('commission you still owe AutoAid 24/7 (settle it with the shop first)');
+      }
+      parts.filter(o => o.status === 'chatting' || o.status === 'offered').forEach(o => cancelOpenParts.push(o.id));
+      rents.filter(b => b.status === 'requested').forEach(b => cancelBookings.push(b.id));
+    }
+    if (blocked.length) return res.status(409).json({ error: 'Finish or cancel these first: ' + blocked.join('; ') + '.' });
+
+    // close what can safely be closed
+    if (cancelOpenParts.length) await supabase.from('part_orders').update({ status: 'cancelled', commission_percent: null, commission_amount: null, updated_at: now }).in('id', cancelOpenParts);
+    if (cancelBookings.length) await supabase.from('rental_bookings').update({ status: 'cancelled', updated_at: now }).in('id', cancelBookings);
+    if (u.role === 'customer') {
+      const mine = await rows(supabase.from('vehicles').select('id').eq('user_id', u.id));
+      if (mine.length) {
+        await supabase.from('vehicles').update({ owner: 'Deleted user', vin: null }).eq('user_id', u.id);
+        await supabase.from('service_requests').update({ status: 'cancelled' }).in('vehicle_id', mine.map(v => v.id)).eq('status', 'pending');
+      }
+      await supabase.from('emergency_requests').update({ status: 'cancelled' }).eq('user_id', u.id).eq('status', 'open');
+      await supabase.from('emergency_requests').update({ phone: '', location_text: null, note: null, latitude: null, longitude: null }).eq('user_id', u.id);
+    }
+    if (u.role === 'vendor') {
+      const vs = await rows(supabase.from('rental_vehicles').select('id, photo_path').eq('vendor_id', u.id)).catch(() => []);
+      for (const v of vs) await removePhoto(v.photo_path).catch(() => {});
+      if (vs.length) await supabase.from('rental_vehicles').delete().eq('vendor_id', u.id);
+    }
+    // what they wrote in chats
+    await supabase.from('part_messages').update({ body: '[message removed]' }).eq('sender_id', u.id).eq('kind', 'text').then(() => {}, () => {});
+    await supabase.from('rental_messages').update({ body: '[message removed]' }).eq('sender_id', u.id).eq('kind', 'text').then(() => {}, () => {});
+    for (const p of [u.chassis_photo_path, u.avatar_path, u.licence_photo_path]) await removePhoto(p).catch(() => {});
+
+    const { error } = await supabase.from('users').update({
+      name: 'Deleted user', email: `deleted-${u.id}-${Date.now()}@deleted.invalid`, password_hash: hashPassword(crypto.randomBytes(24).toString('hex')),
+      phone: null, address: null, parish: null, business_name: null, experience: null, specialties: null, rental_requirements: null,
+      chassis_photo_path: null, avatar_path: null, licence_photo_path: null, active: false, deleted_at: now,
+      verify_code_hash: null, reset_code_hash: null
+    }).eq('id', u.id);
+    if (error) throw error;
+    const tk = tokenFrom(req); const t = readToken(tk); if (t) revoked.set(tk, t.exp);
+    res.json({ ok: true });
   }));
 
   return { router, requireAuth, requireRole, requireWorker, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES, PARTS, RENTALS };

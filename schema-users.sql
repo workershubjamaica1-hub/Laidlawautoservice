@@ -246,6 +246,14 @@ create table if not exists rental_messages (
 create index if not exists rental_messages_booking_idx on rental_messages(booking_id, id);
 alter table rental_messages enable row level security;
 
+-- Accounts: password reset codes, sign everyone out of old sessions when the password changes, and account deletion (the row is kept but emptied).
+alter table users add column if not exists pw_changed_at timestamptz;
+alter table users add column if not exists reset_code_hash text;
+alter table users add column if not exists reset_expires_at timestamptz;
+alter table users add column if not exists reset_attempts integer not null default 0;
+alter table users add column if not exists reset_sent_at timestamptz;
+alter table users add column if not exists deleted_at timestamptz;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

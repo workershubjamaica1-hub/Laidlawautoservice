@@ -103,7 +103,7 @@ main > section[id], main > form[id] { scroll-margin-top: 96px; }
 .pbadge { margin-left: 8px; background: linear-gradient(135deg, var(--gold-2), var(--gold)); color: var(--navy); font-weight: 800; letter-spacing: .04em; text-transform: uppercase; font-size: 10.5px; vertical-align: middle; }
 
 /* ------------------------------------------------------------------ profile + area */
-#profile-box { border-left: 5px solid var(--gold); }
+#profile-box.incomplete { border-left: 5px solid var(--gold); }
 #area-box { padding: 16px 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
 #area-box h3 { margin: 0; font-size: 15px; }
 #area-box h3::before { content: ''; display: inline-block; width: 16px; height: 16px; margin: -2px 8px 0 0; vertical-align: middle; background: var(--brand); -webkit-mask: var(--i-pin) center / contain no-repeat; mask: var(--i-pin) center / contain no-repeat; }
