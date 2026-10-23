@@ -62,3 +62,7 @@ main { flex: 1; display: grid; place-items: center; padding: 32px 16px 40px; }
 #verifyForm .linkbtn { display: block; margin: 8px auto 0; }
 .linkbtn:disabled { opacity: .45; cursor: not-allowed; }
 #resendNote { color: var(--muted); font-size: 12.5px; margin-left: 6px; }
+
+/* easier to tap on a phone */
+.linkbtn { min-height: 36px; padding-top: 8px; padding-bottom: 8px; }
+.legal-links a, .agree a { display: inline-block; padding: 8px 3px; }

@@ -123,3 +123,6 @@ select { appearance: none; padding-right: 38px; cursor: pointer;
   .brand img { height: 34px; }
   .row { grid-template-columns: 1fr; }
 }
+
+/* easier to tap on a phone */
+.legal-foot a { display: inline-block; padding: 8px 4px; }
