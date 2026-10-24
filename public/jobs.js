@@ -122,23 +122,31 @@
         }
         if (o.stage === 'matched') { out.push(summary(o, dept)); out.push('<p class="th-hint"><strong>' + esc(o.technician.name) + '</strong> accepted your request. Chat below and describe the problem. They will send you a price and an arrival time.</p><div class="th-actions"><button class="btn ghost small" type="button" data-act="change">Ask for a different technician</button></div>'); }
         if (o.stage === 'quoted') {
-          out.push(quoteCard(o) + '<p class="th-hint">You pay <strong>' + esc(o.technician.name) + '</strong> in person when the job is done. Nothing is charged online.</p>' +
-            '<div class="th-actions"><button class="btn" type="button" data-act="agree">Agree and book</button><button class="btn ghost" type="button" data-act="decline">Not this price</button><button class="btn ghost small" type="button" data-act="change">Different technician</button></div>');
+          const pay = o.payUrl
+            ? '<p class="th-hint">Pay securely on Fygaro. <strong>AutoAid 24/7 holds your payment</strong> and only pays <strong>' + esc(o.technician.name) + '</strong> after you confirm the job is done. If it does not go ahead, you are refunded.</p>' +
+              '<div class="th-actions"><a class="btn" href="' + esc(o.payUrl) + '" target="_blank" rel="noopener">Agree and pay ' + jmd(o.quote.amount) + ' securely</a><button class="btn ghost" type="button" data-act="decline">Not this price</button><button class="btn ghost small" type="button" data-act="change">Different technician</button></div>' +
+              '<p class="th-hint">After you pay, come back to this window. It updates by itself.</p>'
+            : '<p class="th-hint">You pay <strong>' + esc(o.technician.name) + '</strong> in person when the job is done. Nothing is charged online.</p>' +
+              '<div class="th-actions"><button class="btn" type="button" data-act="agree">Agree and book</button><button class="btn ghost" type="button" data-act="decline">Not this price</button><button class="btn ghost small" type="button" data-act="change">Different technician</button></div>';
+          out.push(quoteCard(o) + pay);
         }
         if (o.stage === 'agreed') {
           out.push('<div class="deal"><b>Booked: ' + esc(o.technician.name) + ' is coming to you</b><p>Expected in <strong class="countdown" data-until="' + esc(o.etaDeadline) + '"></strong> (by ' + clock(o.etaDeadline) + ').' +
-            (phone ? ' Phone: <a href="tel:' + tel(phone) + '">' + esc(phone) + '</a>.' : '') + '</p><p>Price: <strong>' + jmd(o.quote.amount) + '</strong>, paid to the technician in person.</p></div>' +
+            (phone ? ' Phone: <a href="tel:' + tel(phone) + '">' + esc(phone) + '</a>.' : '') + '</p><p>' + (o.paid ? 'You paid <strong>' + jmd(o.paidAmount) + '</strong>. AutoAid 24/7 holds it until you confirm the job is done.' : 'Price: <strong>' + jmd(o.quote.amount) + '</strong>, paid to the technician in person.') + '</p></div>' +
             '<div class="th-actions"><button class="btn ghost small" type="button" data-act="cancel">Cancel this job</button></div>');
         }
         if (o.stage === 'working') out.push('<div class="deal"><b>' + esc(o.technician.name) + ' has arrived and is working on your vehicle</b>' + (phone ? '<p>Phone: <a href="tel:' + tel(phone) + '">' + esc(phone) + '</a></p>' : '') + '</div>');
-        if (o.stage === 'done_pending') out.push('<div class="deal"><b>The technician says the job is done</b><p>Check the work, pay <strong>' + jmd(o.quote ? o.quote.amount : 0) + '</strong> to the technician in person, then confirm.</p></div><div class="th-actions"><button class="btn" type="button" data-act="confirm">Confirm the job is complete</button></div>');
-        if (o.stage === 'closed') out.push('<div class="deal"><b>Job complete</b><p>' + (o.amount != null ? 'Price: ' + jmd(o.amount) + '. ' : '') + 'Thank you for using AutoAid 24/7.</p></div>' + (o.rating ? '<p class="th-hint">You rated this job <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span></p>' :
+        if (o.stage === 'done_pending') out.push('<div class="deal"><b>The technician says the job is done</b><p>' + (o.paid ? 'Check the work. When you confirm, AutoAid 24/7 pays the technician from your payment.' : 'Check the work, pay <strong>' + jmd(o.quote ? o.quote.amount : 0) + '</strong> to the technician in person, then confirm.') + '</p></div>' +
+          (o.disputed ? '<p class="th-hint"><strong>You reported a problem.</strong> AutoAid 24/7 is looking into it' + (o.paid ? ' and your payment is held' : '') + '. You will be contacted.</p>' : '') +
+          '<div class="th-actions"><button class="btn" type="button" data-act="confirm">Confirm the job is complete</button>' + (o.disputed ? '' : '<button class="btn ghost" type="button" data-act="dispute">Report a problem</button>') + '</div>');
+        if (o.stage === 'closed') out.push('<div class="deal"><b>Job complete</b><p>' + (o.amount != null ? 'Price: ' + jmd(o.amount) + (o.paid ? ' (paid online)' : '') + '. ' : '') + 'Thank you for using AutoAid 24/7.</p></div>' + (o.rating ? '<p class="th-hint">You rated this job <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span></p>' :
           '<div class="rate" data-value="0"><span>How was it?</span><span role="group" aria-label="Rating out of 5">' + [1, 2, 3, 4, 5].map(n => '<button type="button" class="star" data-star="' + n + '" aria-label="' + n + ' stars">★</button>').join('') + '</span><input class="rate-note" maxlength="500" placeholder="A few words (optional)" aria-label="Your comment"><button type="button" class="btn small" data-act="rate" disabled>Send rating</button></div>'));
       } else {
         out.push(summary(o, dept));
         if (['agreed', 'working', 'done_pending'].includes(o.stage)) {
           out.push('<div class="deal"><b>Customer: ' + esc(o.customer.name) + '</b><p>' + (phone ? 'Phone: <a href="tel:' + tel(phone) + '">' + esc(phone) + '</a>. ' : '') + 'Location: ' + esc(o.locationText) + ' (<a href="' + mapsLink(o) + '" target="_blank" rel="noopener">open in maps</a>)</p>' +
-            '<p>Agreed price <strong>' + jmd(o.quote.amount) + '</strong>, collected in person.' + (o.fee ? ' AutoAid fee (' + o.fee.percent + '%): <strong>' + jmd(o.fee.amount) + '</strong>, counted once the customer confirms.' : '') + '</p>' +
+            (o.paid ? '<p><strong>The customer has paid ' + jmd(o.paidAmount) + ' online.</strong> Do not take cash. After they confirm the job you are paid <strong>' + jmd(o.paidAmount - (o.fee ? o.fee.amount : 0)) + '</strong> (price minus the AutoAid fee of ' + (o.fee ? o.fee.percent : 0) + '%).</p>'
+              : '<p>Agreed price <strong>' + jmd(o.quote.amount) + '</strong>, collected in person.' + (o.fee ? ' AutoAid fee (' + o.fee.percent + '%): <strong>' + jmd(o.fee.amount) + '</strong>, counted once the customer confirms.' : '') + '</p>') +
             (o.stage === 'agreed' ? '<p>You promised to arrive in <strong class="countdown" data-until="' + esc(o.etaDeadline) + '"></strong> (by ' + clock(o.etaDeadline) + ').</p>' : '') + '</div>');
         }
         if (o.stage === 'matched' || o.stage === 'quoted') {
@@ -147,8 +155,8 @@
         }
         if (o.stage === 'agreed') out.push('<div class="th-actions"><button class="btn" type="button" data-act="arrived">I have arrived</button><button class="btn ghost" type="button" data-act="done">Mark the job done</button><button class="btn ghost small" type="button" data-act="release">I cannot make it</button></div>');
         if (o.stage === 'working') out.push('<div class="th-actions"><button class="btn" type="button" data-act="done">Mark the job done</button></div>');
-        if (o.stage === 'done_pending') out.push('<p class="th-hint">Waiting for the customer to confirm. Collect <strong>' + jmd(o.quote ? o.quote.amount : 0) + '</strong> from them in person.</p>');
-        if (o.stage === 'closed') out.push('<p class="th-hint">Job complete' + (o.fee ? '. AutoAid fee: ' + jmd(o.fee.amount) + (o.fee.settled ? ' (settled)' : ' (due)') : '') + '.' + (o.rating ? ' Customer rating: <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span>' : '') + '</p>');
+        if (o.stage === 'done_pending') out.push('<p class="th-hint">' + (o.paid ? 'Waiting for the customer to confirm. Their payment is held by AutoAid 24/7 and is released to you once they confirm.' : 'Waiting for the customer to confirm. Collect <strong>' + jmd(o.quote ? o.quote.amount : 0) + '</strong> from them in person.') + '</p>' + (o.disputed ? '<div class="deal"><b>The customer reported a problem</b><p>' + esc(o.disputeNote) + '</p><p>AutoAid 24/7 will contact you both. The payment stays held until then.</p></div>' : ''));
+        if (o.stage === 'closed') out.push('<p class="th-hint">Job complete' + (o.payout ? '. Your payout: <strong>' + jmd(o.payout.amount) + '</strong>' + (o.payout.settled ? ' (paid to you)' : ' (AutoAid will transfer it to your bank account)') : o.fee ? '. AutoAid fee: ' + jmd(o.fee.amount) + (o.fee.settled ? ' (settled)' : ' (due)') : '') + '.' + (o.rating ? ' Customer rating: <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span>' : '') + '</p>');
       }
       if (o.stage === 'cancelled') out.push('<p class="th-hint">This job was cancelled.</p>');
       return out.join('');
@@ -174,7 +182,7 @@
       cur = { id: o.id, order: o, last: data.messages.length ? data.messages[data.messages.length - 1].id : 0 };
       countdowns();
       const fee = dlg.querySelector('#q-fee'), amt = dlg.querySelector('#q-amount');
-      if (fee && amt) { const upd = () => { const v = Number(String(amt.value).replace(/[,\sJ$]/g, '')); fee.textContent = v > 0 && !o.premiumPerk ? 'AutoAid fee ' + (data.feePercent || 5) + '%: ' + jmd(Math.round(v * (data.feePercent || 5)) / 100) + ' (you keep ' + jmd(v - Math.round(v * (data.feePercent || 5)) / 100) + ').' : ''; }; amt.addEventListener('input', upd); upd(); }
+      if (fee && amt) { const upd = () => { const v = Number(String(amt.value).replace(/[,\sJ$]/g, '')); fee.textContent = v > 0 && !o.premiumPerk ? 'AutoAid fee ' + (data.feePercent || 5) + '%: ' + jmd(Math.round(v * (data.feePercent || 5)) / 100) + ' (you keep ' + jmd(v - Math.round(v * (data.feePercent || 5)) / 100) + ').' + (data.onlinePayment ? ' The customer pays online first, and you are paid after they confirm.' : ' The customer pays you in person.') : ''; }; amt.addEventListener('input', upd); upd(); }
     }
 
     async function refresh(keepScroll) {
@@ -217,9 +225,10 @@
       if (a === 'agree') act('/quote/respond', { accept: true });
       else if (a === 'decline') act('/quote/respond', { accept: false });
       else if (a === 'change') { if (confirm('Ask for a different technician? This one will be removed from your job.')) act('/change-technician'); }
-      else if (a === 'cancel') { if (confirm('Cancel this job?')) act('/cancel'); }
+      else if (a === 'cancel') { if (confirm(cur && cur.order && cur.order.paid ? 'Cancel this job? Your payment will be refunded.' : 'Cancel this job?')) act('/cancel'); }
+      else if (a === 'dispute') { const note = prompt('What went wrong? (The payment is held while we look into it.)'); if (note) act('/dispute', { note }); }
       else if (a === 'confirm') { if (confirm('Confirm that the job is complete?')) act('/confirm'); }
-      else if (a === 'release') { if (confirm('Step back from this job? It goes out to other technicians.')) act('/release'); }
+      else if (a === 'release') { if (confirm(cur && cur.order && cur.order.paid ? 'Step back? The job ends and the customer is refunded.' : 'Step back from this job? It goes out to other technicians.')) act('/release'); }
       else if (a === 'arrived') act('/arrived');
       else if (a === 'done') { if (confirm('Mark this job as done?')) act('/done'); }
       else if (a === 'rate') { const box = btn.closest('.rate'); act('/service-request/' + cur.id + '/rating', { rating: Number(box.dataset.value), review: box.querySelector('.rate-note').value }); }

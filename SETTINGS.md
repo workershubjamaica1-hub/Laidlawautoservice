@@ -59,6 +59,7 @@ in the **Fees & orders** tab. Technicians choose their departments in **My accou
 | Name | Default | What it is |
 |---|---|---|
 | `JOBS_FEE_PERCENT` | `5` | AutoAid's share of each completed repair job (0 to 50) |
+| `JOBS_ONLINE_PAYMENT` | off | `true` makes customers pay online (Fygaro) when they agree the price. Needs the `FYGARO_*` settings in PAYMENTS.md |
 
 Run `schema-users.sql` in the Supabase SQL Editor once (safe to run again). Online payment through the platform is added when Fygaro is set up.
 

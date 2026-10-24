@@ -6,7 +6,8 @@
 //      who is paying and for what), so the amount cannot be changed.
 //   2. They pay on Fygaro's page. Fygaro then POSTs a signed notification to  /webhooks/fygaro.
 //   3. We verify the signature (HMAC-SHA256 over "<timestamp>.<raw body>"), check the amount, and extend their access.
-// References:  sub-<userId>-<time>            service provider subscription
+// References:  job-<jobId>-<time>             a repair job paid online (handled by jobRoutes.js through registerPaymentHandler)
+//              sub-<userId>-<time>            service provider subscription
 //              prem-<userId>-<plan>-<time>    Premium customer membership (plan = monthly | yearly)
 // Setup steps are in PAYMENTS.md. Fygaro's JWT links and notifications need their Pro plan.
 const crypto = require('crypto');
@@ -98,8 +99,8 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
     return { ok: true, paidUntil: end };
   }
 
-  const checkoutUrl = claims => {
-    const jwt = signJwt({ ...claims, exp: Math.floor(Date.now() / 1000) + 3600 }, FYGARO.keyId, FYGARO.secret);
+  const checkoutUrl = (claims, ttlSeconds = 3600) => {
+    const jwt = signJwt({ ...claims, exp: Math.floor(Date.now() / 1000) + ttlSeconds }, FYGARO.keyId, FYGARO.secret);
     return FYGARO.buttonUrl + (FYGARO.buttonUrl.includes('?') ? '&' : '?') + 'jwt=' + jwt;
   };
 
@@ -190,6 +191,10 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
     res.status(201).json({ id: ins.data.id, perk, status: ins.data.status });
   }));
 
+  // Other parts of the site can take payments with the same Fygaro account: they register a handler for a reference prefix.
+  const handlers = {};
+  const registerPaymentHandler = (prefix, fn) => { handlers[prefix] = fn; };
+
   // =============================== Fygaro's "payment received" notification ===============================
   // Needs the raw body for the signature check, so it is read with express.raw (see the skip list in server.js).
   router.post('/webhooks/fygaro', express.raw({ type: () => true, limit: '200kb' }), handle(async (req, res) => {
@@ -203,6 +208,12 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
     const ref = String(p.customReference || p.custom_reference || '');
     const prov = /^sub-(\d+)-/.exec(ref), prem = /^prem-(\d+)-(monthly|yearly)-/.exec(ref);
     const paid = Number(p.amount), cur = String(p.currency || '').toUpperCase();
+    const jobRef = /^job-(\d+)-/.exec(ref);
+    if (jobRef && handlers.job) {
+      if (!p.transactionId) { console.warn('Fygaro job payment without a transactionId:', ref); return res.json({ ok: true, ignored: true }); }
+      await handlers.job({ jobId: Number(jobRef[1]), amount: paid, currency: cur, transactionId: String(p.transactionId), reference: ref });
+      return res.json({ ok: true });
+    }
     // From here on we answer 200 even when we decline to credit, so Fygaro does not keep retrying something we will never accept.
     if (!prov && !prem) { console.warn('Fygaro payment with a reference we do not recognise:', ref, p.transactionId); return res.json({ ok: true, ignored: true }); }
     if (!p.transactionId) { console.warn('Fygaro payment without a transactionId:', ref); return res.json({ ok: true, ignored: true }); }
@@ -224,7 +235,7 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
     res.json({ ok: true });
   }));
 
-  return { router, credit, config, gatewayReady, signJwt, verifyFygaroSignature };
+  return { router, credit, config, gatewayReady, signJwt, verifyFygaroSignature, checkoutUrl, registerPaymentHandler };
 };
 module.exports.signJwt = signJwt;
 module.exports.verifyFygaroSignature = verifyFygaroSignature;

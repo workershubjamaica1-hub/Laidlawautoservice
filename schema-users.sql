@@ -312,6 +312,28 @@ create table if not exists job_messages (
 create index if not exists job_messages_job_idx on job_messages(job_id, id);
 alter table job_messages enable row level security;
 
+-- Online payment for repair jobs (Fygaro): the customer pays when they agree the price, AutoAid holds it, and pays the technician
+-- (minus the fee) after the customer confirms the job. Refunds and complaints are tracked here so nothing is lost.
+alter table users add column if not exists payout_details text;
+alter table service_requests add column if not exists pay_mode text not null default 'in_person';
+alter table service_requests add column if not exists pay_status text not null default 'none';
+alter table service_requests add column if not exists paid_at timestamptz;
+alter table service_requests add column if not exists paid_amount numeric(12, 2);
+alter table service_requests add column if not exists transaction_id text;
+alter table service_requests add column if not exists payout_amount numeric(12, 2);
+alter table service_requests add column if not exists payout_settled_at timestamptz;
+alter table service_requests add column if not exists refund_status text not null default 'none';
+alter table service_requests add column if not exists refund_note text;
+alter table service_requests add column if not exists disputed_at timestamptz;
+alter table service_requests add column if not exists dispute_note text;
+alter table service_requests drop constraint if exists service_requests_pay_mode_check;
+alter table service_requests add constraint service_requests_pay_mode_check check (pay_mode in ('in_person', 'platform'));
+alter table service_requests drop constraint if exists service_requests_pay_status_check;
+alter table service_requests add constraint service_requests_pay_status_check check (pay_status in ('none', 'paid'));
+alter table service_requests drop constraint if exists service_requests_refund_status_check;
+alter table service_requests add constraint service_requests_refund_status_check check (refund_status in ('none', 'due', 'done'));
+create unique index if not exists service_requests_transaction_idx on service_requests(transaction_id) where transaction_id is not null;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

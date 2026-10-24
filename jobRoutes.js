@@ -8,8 +8,11 @@
 //
 // Stages:  searching -> matched -> quoted -> agreed -> working -> done_pending -> closed        (or cancelled)
 //   status (what older screens use):  searching, matched, quoted = pending | agreed, working, done_pending = in-progress | closed = completed
-// Payment for now: the customer pays the technician in person. AutoAid's fee (JOBS_FEE_PERCENT, default 5) is worked out when the
-// customer agrees the price, counted once the customer confirms the job, and settled by the admin from the ledger.
+// Payment, two ways (the same job code handles both):
+//   in person (the default)  the customer pays the technician; the technician owes AutoAid its fee (JOBS_FEE_PERCENT, default 5), settled in the ledger.
+//   online (JOBS_ONLINE_PAYMENT=true and Fygaro set up)  the customer pays on Fygaro when they agree the price; AutoAid holds the money,
+//     and after the customer confirms the job it owes the technician price minus fee (a "payout"). A cancelled paid job is refunded,
+//     and a complaint holds the payout until the admin decides.
 const express = require('express');
 
 const feePercent = (() => {
@@ -26,8 +29,9 @@ const money = n => Math.round(Number(n) * 100) / 100;
 const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 const STATUS_OF = { searching: 'pending', matched: 'pending', quoted: 'pending', agreed: 'in-progress', working: 'in-progress', done_pending: 'in-progress', closed: 'completed', cancelled: 'cancelled' };
 
-module.exports = function jobRoutes({ supabase, handle, auth }) {
+module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
   const router = express.Router();
+  const onlinePayment = () => process.env.JOBS_ONLINE_PAYMENT === 'true' && !!subs && subs.gatewayReady();
   const techOnly = [auth.requireWorker, (req, res, next) => (req.user.role === 'staff' ? next() : res.status(403).json({ error: 'Only technicians can do this.' }))];
   const customerOnly = auth.requireRole('customer');
   const anyParty = auth.requireRole('customer', 'staff', 'admin');
@@ -73,13 +77,34 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
           await setJob(r, { stage: 'cancelled' });
           await addMessage(r.id, null, 'system', 'No technician was available in time, so this request was closed. You can post it again.');
         } else if (r.stage === 'done_pending' && r.done_at && Date.now() - Date.parse(r.done_at) > AUTO_CONFIRM_MS) {
-          await setJob(r, { stage: 'closed', completed_at: new Date().toISOString(), amount: r.quote_amount, customer_unread: true });
-          await addMessage(r.id, null, 'system', 'The job was confirmed automatically after 24 hours.');
+          if (!r.disputed_at) await closeJob(r, 'The job was confirmed automatically after 24 hours.');
         }
       }
     } catch (e) { console.error('Job sweep failed:', e.message); }
   }
   setInterval(sweep, 60000).unref();
+
+  // The price is agreed: the arrival clock starts and the fee is worked out
+  async function agreeJob(row, extra = {}) {
+    const fee = row.premium_perk ? 0 : money(Number(row.quote_amount) * feePercent / 100);
+    return setJob(row, { stage: 'agreed', agreed_at: new Date().toISOString(), eta_deadline: new Date(Date.now() + row.quote_eta_minutes * 60000).toISOString(), fee_percent: row.premium_perk ? 0 : feePercent, fee_amount: fee, tech_unread: true, ...extra });
+  }
+  // The job is finished and accepted (by the customer, automatically, or by the admin after a complaint)
+  async function closeJob(row, note) {
+    const platform = row.pay_mode === 'platform' && row.pay_status === 'paid';
+    const patch = { stage: 'closed', completed_at: new Date().toISOString(), amount: row.quote_amount, tech_unread: true };
+    if (platform) patch.payout_amount = money(Number(row.paid_amount) - Number(row.fee_amount || 0));
+    const done = await setJob(row, patch);
+    await addMessage(row.id, null, 'system', note);
+    return done;
+  }
+  // A paid job that will not go ahead: the customer is owed their money back
+  async function cancelWithRefund(row, why, reasonText) {
+    const paid = row.pay_status === 'paid' && row.refund_status !== 'done';
+    const done = await setJob(row, { stage: 'cancelled', fee_percent: null, fee_amount: null, tech_unread: true, customer_unread: true, ...(paid ? { refund_status: 'due', refund_note: reasonText || why } : {}) });
+    await addMessage(row.id, null, 'system', why + (paid ? ' Your payment of ' + jmd(row.paid_amount) + ' will be refunded.' : ''));
+    return done;
+  }
 
   // ---------- shaping ----------
   const deal = r => ['agreed', 'working', 'done_pending', 'closed'].includes(r.stage);
@@ -98,6 +123,11 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
       technician: t ? { id: t.id, name: t.name, ...(deal(r) || !isCustomer ? { phone: t.phone || '' } : {}) } : null,
       customer: !isCustomer ? { name: c ? c.name : (veh ? veh.owner : ''), ...(deal(r) && c ? { phone: c.phone || '' } : {}) } : { name: c ? c.name : '' },
       ...(!isCustomer && r.fee_amount != null ? { fee: { percent: Number(r.fee_percent), amount: Number(r.fee_amount), settled: !!r.fee_settled_at } } : {}),
+      payMode: r.pay_mode || 'in_person', paid: r.pay_status === 'paid', paidAmount: r.paid_amount == null ? null : Number(r.paid_amount),
+      refund: r.refund_status && r.refund_status !== 'none' ? r.refund_status : null, disputed: !!r.disputed_at, disputeNote: r.disputed_at ? (r.dispute_note || '') : '',
+      ...(!isCustomer && r.payout_amount != null ? { payout: { amount: Number(r.payout_amount), settled: !!r.payout_settled_at } } : {}),
+      ...(isCustomer && r.stage === 'quoted' && r.quote_amount != null && Number(r.quote_amount) > 0 && !r.premium_perk && onlinePayment()
+        ? { payUrl: subs.checkoutUrl({ amount: Number(r.quote_amount).toFixed(2), currency: subs.config.currency, custom_reference: 'job-' + r.id + '-' + Date.parse(r.quoted_at || r.updated_at || r.created_at) }, 3 * 3600) } : {}),
       unread: isCustomer ? !!r.customer_unread : isTech ? !!r.tech_unread : false,
       ...extra
     };
@@ -142,12 +172,15 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
       const open = (await rows(supabase.from('service_requests').select('*').eq('stage', 'searching'))).filter(r => !r.technician_id && handles(u, r.category));
       incoming = open.filter(r => !r.parish || r.parish === u.parish || Date.now() - Date.parse(r.created_at) >= WIDEN_AFTER_MS);
     }
-    const ledger = (await rows(supabase.from('service_requests').select('fee_amount, fee_settled_at, stage').eq('technician_id', u.id))).filter(r => r.stage === 'closed' && r.fee_amount && !r.fee_settled_at);
+    const mineAll = await rows(supabase.from('service_requests').select('fee_amount, fee_settled_at, stage, pay_mode, payout_amount, payout_settled_at').eq('technician_id', u.id));
+    const ledger = mineAll.filter(r => r.stage === 'closed' && r.pay_mode !== 'platform' && r.fee_amount && !r.fee_settled_at);
+    const payouts = mineAll.filter(r => r.stage === 'closed' && r.pay_mode === 'platform' && r.payout_amount != null && !r.payout_settled_at);
     res.json({
       online: !!u.online, specialties: specialtiesOf(u), feePercent,
       incoming: await shapeMany(incoming.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)), req.user, r => ({ inYourParish: !r.parish || r.parish === u.parish })),
       mine: await shapeMany(mine.sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at)), req.user),
-      feesDue: money(ledger.reduce((s, r) => s + Number(r.fee_amount), 0))
+      feesDue: money(ledger.reduce((s, r) => s + Number(r.fee_amount), 0)),
+      payoutsDue: money(payouts.reduce((s, r) => s + Number(r.payout_amount), 0)), onlinePayment: onlinePayment()
     });
   }));
 
@@ -188,6 +221,7 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
   router.post('/jobs/:id(\\d+)/release', ...techOnly, handle(async (req, res) => {
     const j = await loadJob(req, res, 'tech'); if (!j) return;
     if (!['matched', 'quoted', 'agreed'].includes(j.row.stage)) return res.status(409).json({ error: 'You can only step back before you start the work.' });
+    if (j.row.pay_status === 'paid') { await cancelWithRefund(j.row, 'The technician cannot make it.', 'Technician could not come'); return res.json({ ok: true, refunded: true }); }
     await setJob(j.row, { stage: 'searching', technician_id: null, accepted_at: null, quote_amount: null, quote_eta_minutes: null, quote_note: null, quoted_at: null, agreed_at: null, eta_deadline: null, fee_percent: null, fee_amount: null, customer_unread: true });
     await addMessage(j.row.id, req.user.id, 'system', 'The technician can no longer take this job. We are looking for another technician.');
     res.json({ ok: true });
@@ -214,8 +248,8 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
     const j = await loadJob(req, res, 'customer'); if (!j) return;
     if (j.row.stage !== 'quoted' || j.row.quote_amount == null) return res.status(409).json({ error: 'There is no price to answer.' });
     if (req.body && req.body.accept === true) {
-      const fee = j.row.premium_perk ? 0 : money(Number(j.row.quote_amount) * feePercent / 100);
-      await setJob(j.row, { stage: 'agreed', agreed_at: new Date().toISOString(), eta_deadline: new Date(Date.now() + j.row.quote_eta_minutes * 60000).toISOString(), fee_percent: j.row.premium_perk ? 0 : feePercent, fee_amount: fee, tech_unread: true });
+      if (onlinePayment() && !j.row.premium_perk && Number(j.row.quote_amount) > 0) return res.status(409).json({ error: 'Use the secure payment button to agree this price. The job is booked as soon as your payment goes through.' });
+      await agreeJob(j.row, { pay_mode: 'in_person' });
       await addMessage(j.row.id, req.user.id, 'system', 'Price agreed: ' + jmd(j.row.quote_amount) + '. The technician should arrive within ' + j.row.quote_eta_minutes + ' minutes. Phone numbers are now showing.');
     } else {
       await setJob(j.row, { stage: 'matched', quote_amount: null, quote_eta_minutes: null, quote_note: null, tech_unread: true });
@@ -235,14 +269,25 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
   router.post('/jobs/:id(\\d+)/confirm', customerOnly, handle(async (req, res) => {
     const j = await loadJob(req, res, 'customer'); if (!j) return;
     if (j.row.stage !== 'done_pending') return res.status(409).json({ error: 'The technician has not said the job is done yet.' });
-    await setJob(j.row, { stage: 'closed', completed_at: new Date().toISOString(), amount: j.row.quote_amount, tech_unread: true });
-    await addMessage(j.row.id, req.user.id, 'system', 'The customer confirmed the job is complete. Thank you!');
+    await closeJob(j.row, 'The customer confirmed the job is complete. Thank you!' + (j.row.pay_mode === 'platform' ? ' The technician is paid from your payment.' : ''));
+    res.json({ ok: true });
+  }));
+
+  // "Report a problem": the payout is held and the admin decides
+  router.post('/jobs/:id(\\d+)/dispute', customerOnly, handle(async (req, res) => {
+    const j = await loadJob(req, res, 'customer'); if (!j) return;
+    if (j.row.stage !== 'done_pending') return res.status(409).json({ error: 'You can report a problem once the technician says the job is done.' });
+    const note = String((req.body && req.body.note) || '').trim().slice(0, 500);
+    if (note.length < 5) return res.status(400).json({ error: 'Tell us briefly what went wrong.' });
+    await setJob(j.row, { disputed_at: new Date().toISOString(), dispute_note: note, tech_unread: true });
+    await addMessage(j.row.id, req.user.id, 'system', 'The customer reported a problem: ' + note + ' AutoAid 24/7 will look into it and contact you both. ' + (j.row.pay_mode === 'platform' ? 'The payment is held until then.' : ''));
     res.json({ ok: true });
   }));
 
   router.post('/jobs/:id(\\d+)/cancel', customerOnly, handle(async (req, res) => {
     const j = await loadJob(req, res, 'customer'); if (!j) return;
     if (!['searching', 'matched', 'quoted', 'agreed'].includes(j.row.stage)) return res.status(409).json({ error: 'This job can no longer be cancelled here. Contact the shop.' });
+    if (j.row.pay_status === 'paid') { await cancelWithRefund(j.row, 'The customer cancelled this job.', 'Customer cancelled'); return res.json({ ok: true, refunded: true }); }
     await setJob(j.row, { stage: 'cancelled', fee_percent: null, fee_amount: null, tech_unread: true });
     if (j.row.technician_id) await addMessage(j.row.id, req.user.id, 'system', 'The customer cancelled this job.');
     res.json({ ok: true });
@@ -264,7 +309,7 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
       onlineTechs = all.filter(t => t.active !== false && t.approved !== false && isFresh(t) && handles(t, row.category)).length;
     }
     res.json({
-      feePercent,
+      feePercent, onlinePayment: onlinePayment(),
       order: shape(row, req.user, vehicles.get(row.vehicle_id), users, onlineTechs == null ? {} : { onlineTechs }),
       messages: msgs.map(m => ({
         id: m.id, kind: m.kind, body: m.body, createdAt: m.created_at,
@@ -292,7 +337,7 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
   router.get('/jobs/ledger', auth.requireRole('staff', 'admin'), handle(async (req, res) => {
     let q = supabase.from('service_requests').select('*').eq('stage', 'closed');
     if (req.user.role === 'staff') q = q.eq('technician_id', req.user.id);
-    const data = (await rows(q)).filter(r => r.fee_amount != null);
+    const data = (await rows(q)).filter(r => r.fee_amount != null && r.pay_mode !== 'platform');
     const users = await usersById(data.map(r => r.technician_id));
     const by = new Map();
     for (const r of data) {
@@ -315,5 +360,65 @@ module.exports = function jobRoutes({ supabase, handle, auth }) {
     res.json({ settled: data.length });
   }));
 
-  return { router, feePercent, ACTIVE, STATUS_OF };
+  // ---------- online payments: the webhook, and what the admin has to do by hand ----------
+  if (subs && subs.registerPaymentHandler) {
+    subs.registerPaymentHandler('job', async ({ jobId, amount, currency, transactionId }) => {
+      const dup = await rows(supabase.from('service_requests').select('id').eq('transaction_id', transactionId));
+      if (dup.length) return;                                  // Fygaro sent the same notification twice
+      const row = (await rows(supabase.from('service_requests').select('*').eq('id', jobId)))[0];
+      if (!row) { console.warn('Fygaro job payment for a job that does not exist:', jobId, transactionId); return; }
+      const fits = row.stage === 'quoted' && row.quote_amount != null && currency === subs.config.currency && Math.abs(amount - Number(row.quote_amount)) < 0.01;
+      const payFields = { pay_mode: 'platform', pay_status: 'paid', paid_at: new Date().toISOString(), paid_amount: amount, transaction_id: transactionId };
+      try {
+        if (fits) {
+          await agreeJob(row, payFields);
+          await addMessage(row.id, null, 'system', 'Payment of ' + jmd(amount) + ' received. AutoAid 24/7 holds it until you confirm the job is done. The technician should arrive within ' + row.quote_eta_minutes + ' minutes. Phone numbers are now showing.');
+        } else {
+          console.warn(`Fygaro job payment ${transactionId} could not be used: job ${jobId} is "${row.stage}", got ${amount} ${currency}, price ${row.quote_amount}`);
+          await setJob(row, { ...payFields, refund_status: 'due', refund_note: 'Payment arrived when the job was not waiting for it (or the price changed).', customer_unread: true });
+          await addMessage(row.id, null, 'system', 'A payment of ' + jmd(amount) + ' arrived, but the job could not use it (the price or the job changed). It will be refunded in full. Nothing else is needed from you.');
+        }
+      } catch (e) { if (!(e && e.code === '23505')) throw e; }   // a second copy of the same transaction arrived at the same moment
+    });
+  }
+
+  // What the admin has to do by hand: pay technicians, refund customers, decide complaints
+  router.get('/jobs/payouts', adminOnly, handle(async (req, res) => {
+    const all = await rows(supabase.from('service_requests').select('*').eq('pay_mode', 'platform'));
+    const users = await usersById([...all.map(r => r.technician_id)]);
+    const vehicles = await vehiclesById(all.map(r => r.vehicle_id));
+    const custUsers = await usersById([...vehicles.values()].map(v => v.user_id));
+    const payoutsMap = new Map();
+    for (const r of all.filter(r => r.stage === 'closed' && r.payout_amount != null && !r.payout_settled_at)) {
+      const t = users.get(r.technician_id);
+      const p = payoutsMap.get(r.technician_id) || { technicianId: r.technician_id, name: t ? t.name : 'Removed technician', phone: t ? t.phone || '' : '', amount: 0, jobs: 0 };
+      p.amount = money(p.amount + Number(r.payout_amount)); p.jobs++; payoutsMap.set(r.technician_id, p);
+    }
+    const details = new Map((await rows(supabase.from('users').select('id, payout_details').in('id', [...payoutsMap.keys()].concat(0)))).map(u => [u.id, u.payout_details || '']));
+    const who = r => { const v = vehicles.get(r.vehicle_id); const c = v ? custUsers.get(v.user_id) : null; return { name: c ? c.name : (v ? v.owner : ''), phone: c ? c.phone || '' : '' }; };
+    res.json({
+      payouts: [...payoutsMap.values()].map(p => ({ ...p, payoutDetails: details.get(p.technicianId) || '' })),
+      refunds: all.filter(r => r.refund_status === 'due').map(r => ({ id: r.id, amount: Number(r.paid_amount), transactionId: r.transaction_id, note: r.refund_note || '', customer: who(r), stage: r.stage })),
+      disputes: all.filter(r => r.disputed_at && r.stage === 'done_pending').map(r => ({ id: r.id, amount: Number(r.paid_amount), note: r.dispute_note || '', customer: who(r), technician: users.get(r.technician_id) ? users.get(r.technician_id).name : '', category: r.category }))
+    });
+  }));
+  router.post('/jobs/technicians/:id(\\d+)/payout-paid', adminOnly, handle(async (req, res) => {
+    const { data, error } = await supabase.from('service_requests').update({ payout_settled_at: new Date().toISOString() }).eq('technician_id', Number(req.params.id)).eq('stage', 'closed').eq('pay_mode', 'platform').is('payout_settled_at', null).select();
+    if (error) throw error;
+    res.json({ paid: data.length });
+  }));
+  router.post('/jobs/:id(\\d+)/refund-done', adminOnly, handle(async (req, res) => {
+    const { data, error } = await supabase.from('service_requests').update({ refund_status: 'done' }).eq('id', Number(req.params.id)).eq('refund_status', 'due').select();
+    if (error) throw error;
+    res.json({ refunded: data.length });
+  }));
+  router.post('/jobs/:id(\\d+)/resolve', adminOnly, handle(async (req, res) => {
+    const row = (await rows(supabase.from('service_requests').select('*').eq('id', Number(req.params.id))))[0];
+    if (!row || row.stage !== 'done_pending' || !row.disputed_at) return res.status(409).json({ error: 'There is no open complaint on this job.' });
+    if (req.body && req.body.action === 'refund') { await cancelWithRefund(row, 'After looking into the complaint, AutoAid 24/7 cancelled this job.', 'Complaint upheld'); return res.json({ ok: true }); }
+    await closeJob(row, 'After looking into the complaint, AutoAid 24/7 closed this job and released the payment to the technician.');
+    res.json({ ok: true });
+  }));
+
+  return { router, feePercent, ACTIVE, STATUS_OF, onlinePayment };
 };

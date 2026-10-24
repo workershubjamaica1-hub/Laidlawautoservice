@@ -443,7 +443,7 @@ app.post('/ai-assist', ...noVendor, handle(async (req, res) => {
 }));
 
 // --- Live jobs: online technicians, department alerts, chat, price and arrival time (jobRoutes.js) ---
-const jobs = require('./jobRoutes')({ supabase, handle, auth });
+const jobs = require('./jobRoutes')({ supabase, handle, auth, subs });
 app.use(jobs.router);
 
 // --- Emergency requests: roadside assistance and wrecker (emergencyRoutes.js) ---
@@ -463,7 +463,7 @@ app.get('/config', (req, res) => res.json({
   businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '',
   legalName: process.env.LEGAL_NAME || '', contactEmail: process.env.CONTACT_EMAIL || '',   // shown on the privacy notice and terms
   subscription: { enabled: subs.config.enabled, priceLabel: subCfg.priceLabel(), days: subs.config.days },
-  jobs: { feePercent: jobs.feePercent },
+  jobs: { feePercent: jobs.feePercent, onlinePayment: jobs.onlinePayment() },
   parts: { enabled: auth.PARTS.enabled, commissionPercent: parts.commissionPercent },
   rentals: { enabled: auth.RENTALS.enabled, commissionPercent: rentals.commissionPercent },
   premium: { enabled: subCfg.premium.enabled, oilPerYear: subCfg.premium.oilPerYear, oilGapDays: subCfg.premium.oilGapDays,

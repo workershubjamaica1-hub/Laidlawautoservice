@@ -72,7 +72,7 @@ const VERIFY = {
 const PARTS = { enabled: String(process.env.PARTS_ENABLED || '').toLowerCase() === 'true' };
 const RENTALS = { enabled: String(process.env.RENTALS_ENABLED || '').toLowerCase() === 'true' };
 const BUSINESS = process.env.BUSINESS_NAME || 'AutoAid 24/7';
-const TERMS_VERSION = '2026-10-24';   // bump when the Terms or Privacy Notice change in a way people should agree to again
+const TERMS_VERSION = '2026-10-25';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
@@ -89,6 +89,7 @@ const publicUser = u => ({
   premium: u.role === 'customer' ? premiumStatusOf(u) : null, premiumPaidUntil: u.premium_paid_until || null,   // only customers can be Premium members
   specialties: u.specialties ? u.specialties.split(',') : [],
   businessName: u.business_name || '', experience: u.experience || '',
+  payoutDetails: u.role === 'staff' ? (u.payout_details || '') : '',
   offers: u.role === 'vendor' ? String(u.vendor_offers || 'parts').split(',').filter(Boolean) : [],
   hasLicence: !!u.licence_photo_path,
   // Customers must have all four before the shop can send someone out
@@ -513,6 +514,7 @@ module.exports = function createAuth({ supabase, handle }) {
         update.experience = ex;
       }
     }
+    if (req.user.role === 'staff' && req.body.payoutDetails !== undefined) update.payout_details = String(req.body.payoutDetails).trim().slice(0, 400) || null;
     if (req.user.role === 'staff' && req.body.specialties !== undefined) {
       const allowed = SPECIALTIES.map(s => s.value);
       const list = [...new Set((Array.isArray(req.body.specialties) ? req.body.specialties : []).filter(v => allowed.includes(v)))];

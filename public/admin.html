@@ -109,6 +109,14 @@
         <thead><tr><th>Vendor</th><th>Orders</th><th>Sales</th><th>Commission</th><th>Settled</th><th>Owed to AutoAid</th><th></th></tr></thead>
         <tbody id="ledgerBody"></tbody>
       </table></div>
+      <div id="payBox" hidden>
+        <h3 style="margin:22px 0 8px">Technician payouts <small style="font-weight:500">(jobs customers paid for online, confirmed by the customer)</small></h3>
+        <div class="table-wrap"><table><thead><tr><th>Technician</th><th>Jobs</th><th>Pay them</th><th>How to pay them</th><th></th></tr></thead><tbody id="payoutBody"></tbody></table></div>
+        <h3 style="margin:22px 0 8px">Refunds to make <small style="font-weight:500">(refund in your Fygaro dashboard, then mark it done)</small></h3>
+        <div class="table-wrap"><table><thead><tr><th>Job</th><th>Customer</th><th>Refund</th><th>Fygaro transaction</th><th>Why</th><th></th></tr></thead><tbody id="refundBody"></tbody></table></div>
+        <h3 style="margin:22px 0 8px">Customer complaints <small style="font-weight:500">(the payment is held until you decide)</small></h3>
+        <div class="table-wrap"><table><thead><tr><th>Job</th><th>Customer</th><th>Technician</th><th>Amount</th><th>The problem</th><th></th></tr></thead><tbody id="disputeBody"></tbody></table></div>
+      </div>
       <h3 style="margin:22px 0 8px" id="partsHead">All part orders</h3>
       <div id="partsOrders" class="card flush"></div>
       <h3 style="margin:22px 0 8px" id="rentHead" hidden>All rental bookings</h3>
@@ -351,7 +359,10 @@ async function pollJobs() {
   jchat.renderList($('myJobs'), feed.mine, 'No active jobs. Accept a new job above and it appears here.');
   const unread = feed.mine.filter(j => j.unread).length;
   $('jobsTab').textContent = 'Jobs' + (feed.incoming.length ? ' (' + feed.incoming.length + ' new)' : unread ? ' (' + unread + ')' : '');
-  $('feesNote').hidden = !feed.feesDue; $('feesNote').textContent = feed.feesDue ? 'AutoAid fees you owe from completed jobs: ' + JobChat.jmd(feed.feesDue) + '. Pay the shop and the admin marks it settled.' : '';
+  const notes = [];
+  if (feed.payoutsDue) notes.push('AutoAid owes you ' + JobChat.jmd(feed.payoutsDue) + ' from jobs customers paid for online. It is sent to the bank details in My account.');
+  if (feed.feesDue) notes.push('AutoAid fees you owe from jobs paid in person: ' + JobChat.jmd(feed.feesDue) + '. Pay the shop and the admin marks it settled.');
+  $('feesNote').hidden = !notes.length; $('feesNote').textContent = notes.join(' ');
 }
 $('onlineToggle').addEventListener('change', async (e) => {
   const want = e.target.checked;
@@ -399,6 +410,30 @@ async function loadParts() {
         rows.push(el('tr', {}, el('td', { textContent: v.name + ' (' + kind.toLowerCase() + ')' }), el('td', { textContent: v.orders }), el('td', { textContent: PartsChat.jmd(v.sales) }), el('td', { textContent: PartsChat.jmd(v.commission) }),
           el('td', { textContent: PartsChat.jmd(v.settled) }), el('td', {}, el('strong', { textContent: PartsChat.jmd(v.owed) })), el('td', { className: 'act' }, btn)));
       }
+    }
+    if (jobsLedger) {
+      const pp = await api('/jobs/payouts');
+      $('payBox').hidden = false;
+      const empty = (n, t) => [el('tr', {}, el('td', { colSpan: n, textContent: t }))];
+      $('payoutBody').replaceChildren(...(pp.payouts.length ? pp.payouts.map(p => {
+        const b = el('button', { className: 'btn safety small', textContent: 'Mark paid' });
+        b.addEventListener('click', async () => { if (!confirm('Mark ' + PartsChat.jmd(p.amount) + ' as paid to ' + p.name + '?')) return; try { await api('/jobs/technicians/' + p.technicianId + '/payout-paid', { method: 'POST' }); loadParts(); } catch (err) { $('appError').textContent = err.message; } });
+        return el('tr', {}, el('td', { textContent: p.name + (p.phone ? ' (' + p.phone + ')' : '') }), el('td', { textContent: p.jobs }), el('td', {}, el('strong', { textContent: PartsChat.jmd(p.amount) })),
+          el('td', { textContent: p.payoutDetails || 'They have not added bank details yet. Contact them.' }), el('td', { className: 'act' }, b));
+      }) : empty(5, 'Nothing to pay out right now.')));
+      $('refundBody').replaceChildren(...(pp.refunds.length ? pp.refunds.map(f => {
+        const b = el('button', { className: 'btn safety small', textContent: 'Mark refunded' });
+        b.addEventListener('click', async () => { if (!confirm('Have you refunded ' + PartsChat.jmd(f.amount) + ' in Fygaro?')) return; try { await api('/jobs/' + f.id + '/refund-done', { method: 'POST' }); loadParts(); } catch (err) { $('appError').textContent = err.message; } });
+        return el('tr', {}, el('td', { textContent: '#' + f.id }), el('td', { textContent: f.customer.name + (f.customer.phone ? ' (' + f.customer.phone + ')' : '') }), el('td', {}, el('strong', { textContent: PartsChat.jmd(f.amount) })),
+          el('td', { textContent: f.transactionId || '' }), el('td', { textContent: f.note }), el('td', { className: 'act' }, b));
+      }) : empty(6, 'No refunds waiting.')));
+      $('disputeBody').replaceChildren(...(pp.disputes.length ? pp.disputes.map(d => {
+        const rel = el('button', { className: 'btn safety small', textContent: 'Pay the technician' }), ref = el('button', { className: 'btn danger small', textContent: 'Refund the customer' });
+        const resolve = action => async () => { if (!confirm(action === 'refund' ? 'Cancel the job and refund the customer?' : 'Release the payment to the technician?')) return; try { await api('/jobs/' + d.id + '/resolve', { method: 'POST', body: { action } }); loadParts(); } catch (err) { $('appError').textContent = err.message; } };
+        rel.addEventListener('click', resolve('release')); ref.addEventListener('click', resolve('refund'));
+        return el('tr', {}, el('td', { textContent: '#' + d.id + ' ' + d.category }), el('td', { textContent: d.customer.name + (d.customer.phone ? ' (' + d.customer.phone + ')' : '') }), el('td', { textContent: d.technician }),
+          el('td', { textContent: PartsChat.jmd(d.amount) }), el('td', { textContent: d.note }), el('td', { className: 'act' }, rel, ' ', ref));
+      }) : empty(6, 'No complaints.')));
     }
     $('ledgerBody').replaceChildren(...(rows.length ? rows : [el('tr', {}, el('td', { colSpan: 7, textContent: 'Nothing completed yet.' }))]));
     if (partsChat) partsChat.renderList($('partsOrders'), await api('/parts/orders'), 'No part orders yet.');

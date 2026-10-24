@@ -119,3 +119,37 @@ The currency is the same `SUBSCRIPTION_CURRENCY` (default `JMD`). Premium paymen
   **Recent payments** list shows Premium payments too.
 * **Do the numbers first.** Work out what a free oil change and a brake check really cost you (technician pay plus oil and filter),
   and make sure the yearly fee covers four oil changes and a brake check.
+
+
+# Paying for repair jobs online (Fygaro)
+
+When this is on, a customer pays when they agree a technician's price, **AutoAid holds the money**, and after the customer confirms the job
+you pay the technician **price minus your fee** (default 5%) by bank transfer. If the job does not go ahead, you refund the customer.
+It uses the same Fygaro account and the same three settings as the subscription (`FYGARO_BUTTON_URL`, `FYGARO_KEY_ID`, `FYGARO_SECRET`).
+It is **off** until you set `JOBS_ONLINE_PAYMENT=true`. While it is off, customers pay technicians in person and technicians owe you the fee.
+
+## Setup
+
+1. Make sure the three Fygaro settings from the section above are in Render (Key ID, Secret, and the button URL). Currency must be JMD
+   (`SUBSCRIPTION_CURRENCY`, default JMD).
+2. In Fygaro, the payment **Hook URL** must be `https://autoaid247.com/webhooks/fygaro` (https, your own domain).
+3. In Render add `JOBS_ONLINE_PAYMENT` = `true` and save.
+4. Run `schema-users.sql` in Supabase (safe to run again) if you have not.
+5. **Test with a small job:** have a technician send a price of J$100, pay it with a real card, and watch the job turn "Booked". Then cancel it
+   and check it appears under **Fees & orders > Refunds to make**; refund it in Fygaro and press **Mark refunded**.
+
+## Day to day (admin: Fees & orders tab)
+
+* **Technician payouts**: jobs the customer paid for and confirmed. It shows the amount, and the bank details the technician saved in My account.
+  Send the transfer from your bank, then press **Mark paid**.
+* **Refunds to make**: paid jobs that were cancelled, or payments that did not match a price. Refund in your Fygaro dashboard (the Fygaro
+  transaction number is shown), then press **Mark refunded**.
+* **Customer complaints**: a customer reported a problem before confirming. The payment is held. Talk to both people, then press
+  **Pay the technician** or **Refund the customer**.
+* Fygaro takes its own fee from each payment. Your 5% job fee is what is left to you after paying the technician, so check that it covers Fygaro's charge.
+
+## If something looks wrong
+
+* Customer paid but the job is still "Price sent": check Render logs for `Fygaro webhook rejected: bad signature` (Key ID or Secret do not match),
+  or `could not be used` (the amount or job changed; it is queued under Refunds to make).
+* You can always see every Fygaro payment in the Fygaro dashboard, with the reference `job-<job number>-<time>`.
