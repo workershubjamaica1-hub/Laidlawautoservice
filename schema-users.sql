@@ -254,6 +254,16 @@ alter table users add column if not exists reset_attempts integer not null defau
 alter table users add column if not exists reset_sent_at timestamptz;
 alter table users add column if not exists deleted_at timestamptz;
 
+-- A short log of emails the email service refused (the reason only, never the key), so a wrong setting is easy to find.
+create table if not exists email_failures (
+  id         bigint generated always as identity primary key,
+  at         timestamptz not null default now(),
+  to_domain  text,
+  subject    text,
+  error      text
+);
+alter table email_failures enable row level security;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

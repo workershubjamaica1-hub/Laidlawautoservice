@@ -264,6 +264,11 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
   // --- Users (admin only) ---
   // Sends one test email and shows exactly what the email service answered, so a wrong key or sender is easy to find.
   const mailer = require('./mailer');
+  async function recentFailures() {
+    const { data } = await supabase.from('email_failures').select('at, to_domain, subject, error').order('id', { ascending: false });
+    return (data || []).slice(0, 5);
+  }
+  router.get('/email-failures', adminOnly, handle(async (req, res) => res.json({ settings: mailer.describe(), recent: await recentFailures() })));
   router.post('/email-test', adminOnly, handle(async (req, res) => {
     const to = String((req.body && req.body.to) || req.user.email || '').trim();
     if (!auth.validEmail(to)) return res.status(400).json({ error: 'Enter a valid email address to send the test to.' });
@@ -273,7 +278,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
       await mailer.sendMail({ to, subject: 'AutoAid 24/7 test email', text: 'This is a test email from your AutoAid 24/7 admin page. If you can read this, sending works.' });
       res.json({ ok: true, settings, to });
     } catch (err) {
-      res.json({ ok: false, settings, error: err.message });
+      res.json({ ok: false, settings, error: err.message, recent: await recentFailures() });
     }
   }));
 

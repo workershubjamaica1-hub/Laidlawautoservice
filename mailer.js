@@ -17,7 +17,19 @@ const API_URL = process.env.EMAIL_API_URL || DEFAULT_URLS[PROVIDER];   // EMAIL_
 // Can we actually send mail with the current settings?
 const ready = () => (PROVIDER === 'console' && !IS_PRODUCTION) || (!!DEFAULT_URLS[PROVIDER] && !!API_KEY && !!FROM_EMAIL);
 
-async function sendMail({ to, subject, text, html }) {
+// server.js registers a function here that saves failures (the reason only, and just the domain of the address)
+let failureLogger = null;
+const onFailure = fn => { failureLogger = fn; };
+
+async function sendMail(message) {
+  try { await deliver(message); }
+  catch (err) {
+    if (failureLogger) { try { await failureLogger({ to: message.to, subject: message.subject, error: err.message }); } catch (_) {} }
+    throw err;
+  }
+}
+
+async function deliver({ to, subject, text, html }) {
   if (PROVIDER === 'console' && !IS_PRODUCTION) {
     console.log(`[email to ${to}] ${subject}\n${text}`);
     return;
@@ -51,4 +63,4 @@ function describe() {
   return { provider: PROVIDER || 'not set', from: FROM_EMAIL || 'not set', fromName: FROM_NAME, key, ready: ready() };
 }
 
-module.exports = { sendMail, ready, describe, provider: PROVIDER };
+module.exports = { sendMail, ready, describe, onFailure, provider: PROVIDER };

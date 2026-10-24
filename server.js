@@ -77,6 +77,11 @@ const handle = fn => (req, res) => fn(req, res).catch(err => {
 });
 
 // --- Accounts (see auth.js). Customers only ever see their own data; staff and admins see everything. ---
+// Remember why the email service refused a message (see mailer.js and the admin "Email check")
+require('./mailer').onFailure(async ({ to, subject, error }) => {
+  await supabase.from('email_failures').insert({ to_domain: String(to || '').split('@')[1] || null, subject: String(subject || '').replace(/\d{6}/g, '######').slice(0, 120), error: String(error || '').slice(0, 400) });
+});
+
 const auth = require('./auth')({ supabase, handle });
 const { requireAuth } = auth;
 // Parts vendors have their own pages and API. They must never reach the customer/staff routes below (which treat anyone who is not a customer as staff).
