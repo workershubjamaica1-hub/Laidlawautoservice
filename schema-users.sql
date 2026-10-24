@@ -268,6 +268,10 @@ alter table email_failures enable row level security;
 alter table vehicles drop constraint if exists vehicles_category_check;
 alter table vehicles add constraint vehicles_category_check check (category in ('car', 'suv', 'van', 'bus', 'motorcycle', 'light-truck', 'small-truck', 'heavy-truck', 'other'));
 
+-- A new department: auto body repairs
+alter table service_requests drop constraint if exists service_requests_category_check;
+alter table service_requests add constraint service_requests_category_check check (category in ('diagnostics', 'mechanical', 'tire', 'electrical', 'maintenance', 'bodywork', 'other'));
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

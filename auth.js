@@ -59,7 +59,7 @@ const PARISHES = ['Kingston', 'St. Andrew', 'St. Thomas', 'Portland', 'St. Mary'
 const SPECIALTIES = [
   { value: 'diagnostics', label: 'Diagnostics' }, { value: 'mechanical', label: 'Mechanical' },
   { value: 'tire', label: 'Tire' }, { value: 'electrical', label: 'Electrical' },
-  { value: 'maintenance', label: 'Maintenance' }, { value: 'roadside', label: 'Roadside assistance' },
+  { value: 'maintenance', label: 'Maintenance' }, { value: 'bodywork', label: 'Auto body repairs' }, { value: 'roadside', label: 'Roadside assistance' },
   { value: 'towing', label: 'Wrecker / towing' }
 ];
 // Email verification: a 6-digit code is emailed when someone signs up. Off until VERIFY_EMAIL=true (and email is set up, see EMAIL.md).

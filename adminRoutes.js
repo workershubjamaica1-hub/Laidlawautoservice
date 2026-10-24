@@ -118,7 +118,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     for (const x of [sr, em, tu]) if (x.error) throw x.error;
     if (!tu.data) return res.status(404).json({ error: 'Technician not found.' });
 
-    const label = { diagnostics: 'Diagnostics', mechanical: 'Mechanical', tire: 'Tire', electrical: 'Electrical', maintenance: 'Maintenance', other: 'Other' };
+    const label = { diagnostics: 'Diagnostics', mechanical: 'Mechanical', tire: 'Tire', electrical: 'Electrical', maintenance: 'Maintenance', bodywork: 'Auto body repairs', other: 'Other' };
     const jobs = [
       ...sr.data.map(r => ({ id: r.id, jobType: 'service', photoPath: r.work_photo_path, kind: 'service', title: label[r.category] || r.category, done: r.status === 'completed', active: r.status === 'in-progress',
         when: r.completed_at || r.updated_at || r.created_at, amount: Number(r.amount || 0) + Number(r.platform_pay || 0), rating: r.rating, review: r.review })),

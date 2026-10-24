@@ -113,6 +113,7 @@ const SERVICE_CATEGORIES = [
   { value: 'tire',        label: 'Tire' },
   { value: 'electrical',  label: 'Electrical' },
   { value: 'maintenance', label: 'Maintenance' },
+  { value: 'bodywork',    label: 'Auto body repairs' },
   { value: 'other',       label: 'Other' }
 ];
 
@@ -376,6 +377,8 @@ const RULES = [
     answer: 'Hard shifts or slipping can come from low or old transmission fluid, a worn clutch on manual vehicles, or internal wear. Check the fluid level and colour first; burnt-smelling fluid needs attention soon.' },
   { words: ['bump', 'clunk', 'bounce', 'steering', 'pulling', 'pulls', 'alignment', 'shock', 'sag', 'leaf spring'], service: 'mechanical', urgency: 'medium',
     answer: 'Clunks over bumps often mean worn bushings, ball joints or sway-bar links. Pulling to one side is commonly wheel alignment or uneven tire pressure. Sagging at the rear under load can mean tired leaf springs or shocks.' },
+  { words: ['dent', 'scratch', 'bumper', 'paint', 'collision', 'crash', 'accident', 'body work', 'bodywork', 'panel', 'fender', 'hood', 'bonnet', 'windshield', 'rust'], service: 'bodywork', urgency: 'low',
+    answer: 'Dents, scratches, cracked bumpers and paint damage are auto body repairs. Take photos of the damage from a few angles. If the vehicle was in an accident, have a technician also check the alignment, suspension and lights, since body damage can hide other problems.' },
   { words: ['tyre', 'tire', 'puncture', 'flat', 'tread', 'pressure', 'load'], service: 'tire', urgency: 'medium',
     answer: 'Check pressures when the tires are cold and look for nails, bulges or uneven wear. Uneven wear can also hint at alignment, suspension or load balance problems.' },
   { words: ['engine', 'misfire', 'check engine', 'warning light', 'smoke', 'knock', 'rough idle', 'stall', 'power', 'diesel', 'injector', 'turbo'], service: 'diagnostics', urgency: 'medium',
