@@ -50,6 +50,18 @@ See **EMAIL.md**. A 6-digit code is emailed when customers and service providers
 | `EMAIL_FROM` | `no-reply@yourdomain.com` | a sender you have verified with the service |
 | `EMAIL_FROM_NAME` | `AutoAid 24/7` | the name people see (optional) |
 
+## Live repair jobs
+
+Customers post a job, online technicians in that department hear a loud alert, the first to accept chats with the customer, sends a price and an arrival time, and the customer agrees.
+The customer pays the technician in person for now. AutoAid's fee is worked out when the customer agrees, counted when they confirm the job is done, and settled by the admin
+in the **Fees & orders** tab. Technicians choose their departments in **My account** and switch **Online** in the **Jobs** tab.
+
+| Name | Default | What it is |
+|---|---|---|
+| `JOBS_FEE_PERCENT` | `5` | AutoAid's share of each completed repair job (0 to 50) |
+
+Run `schema-users.sql` in the Supabase SQL Editor once (safe to run again). Online payment through the platform is added when Fygaro is set up.
+
 ## Parts ordering (optional, off until you switch it on)
 
 Customers order parts from approved parts vendors in a chat. Customers collect the part from the vendor and pay the vendor in person; AutoAid's commission is

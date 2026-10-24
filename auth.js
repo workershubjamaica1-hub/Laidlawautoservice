@@ -72,7 +72,7 @@ const VERIFY = {
 const PARTS = { enabled: String(process.env.PARTS_ENABLED || '').toLowerCase() === 'true' };
 const RENTALS = { enabled: String(process.env.RENTALS_ENABLED || '').toLowerCase() === 'true' };
 const BUSINESS = process.env.BUSINESS_NAME || 'AutoAid 24/7';
-const TERMS_VERSION = '2026-10-22';   // bump when the Terms or Privacy Notice change in a way people should agree to again
+const TERMS_VERSION = '2026-10-24';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 

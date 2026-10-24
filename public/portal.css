@@ -22,6 +22,7 @@ body.hdr-right header .sp { margin-left: auto; }
 .tabs button[data-tab="requests"] { --i: var(--i-clipboard); }
 .tabs button[data-tab="vehicles"] { --i: var(--i-car); }
 .tabs button[data-tab="users"] { --i: var(--i-users); }
+.tabs button[data-tab="jobs"] { --i: var(--i-wrench); }
 .tabs button[data-tab="parts"] { --i: var(--i-wrench); }
 .tabs button[data-tab="account"] { --i: var(--i-lock); }
 .tabs button:hover { background: var(--brand-50); color: var(--brand-700); }

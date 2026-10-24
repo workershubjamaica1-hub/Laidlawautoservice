@@ -272,6 +272,46 @@ alter table vehicles add constraint vehicles_category_check check (category in (
 alter table service_requests drop constraint if exists service_requests_category_check;
 alter table service_requests add constraint service_requests_category_check check (category in ('diagnostics', 'mechanical', 'tire', 'electrical', 'maintenance', 'bodywork', 'other'));
 
+-- Live jobs: technicians go online/offline, a customer's job is offered to online technicians in that department,
+-- the first to accept chats with the customer, sends a price and an arrival time, and the customer agrees and confirms.
+alter table users add column if not exists online boolean not null default false;
+alter table users add column if not exists online_at timestamptz;
+alter table service_requests add column if not exists stage text not null default 'searching';
+alter table service_requests add column if not exists parish text;
+alter table service_requests add column if not exists location_text text;
+alter table service_requests add column if not exists latitude double precision;
+alter table service_requests add column if not exists longitude double precision;
+alter table service_requests add column if not exists accepted_at timestamptz;
+alter table service_requests add column if not exists quote_amount numeric(12, 2);
+alter table service_requests add column if not exists quote_eta_minutes integer;
+alter table service_requests add column if not exists quote_note text;
+alter table service_requests add column if not exists quoted_at timestamptz;
+alter table service_requests add column if not exists agreed_at timestamptz;
+alter table service_requests add column if not exists eta_deadline timestamptz;
+alter table service_requests add column if not exists arrived_at timestamptz;
+alter table service_requests add column if not exists done_at timestamptz;
+alter table service_requests add column if not exists fee_percent numeric(5, 2);
+alter table service_requests add column if not exists fee_amount numeric(12, 2);
+alter table service_requests add column if not exists fee_settled_at timestamptz;
+alter table service_requests add column if not exists customer_unread boolean not null default false;
+alter table service_requests add column if not exists tech_unread boolean not null default false;
+alter table service_requests drop constraint if exists service_requests_stage_check;
+alter table service_requests add constraint service_requests_stage_check check (stage in ('searching', 'matched', 'quoted', 'agreed', 'working', 'done_pending', 'closed', 'cancelled'));
+-- jobs that existed before this feature: line the new stage up with their old status (only touches rows still on the default)
+update service_requests set stage = case when status = 'completed' then 'closed' when status = 'cancelled' then 'cancelled' when status = 'in-progress' then 'working' when technician_id is not null then 'matched' else 'searching' end
+  where stage = 'searching' and (status <> 'pending' or technician_id is not null);
+
+create table if not exists job_messages (
+  id         bigint generated always as identity primary key,
+  job_id     bigint not null references service_requests(id) on delete cascade,
+  sender_id  bigint references users(id) on delete set null,
+  kind       text not null default 'text' check (kind in ('text', 'system')),
+  body       text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists job_messages_job_idx on job_messages(job_id, id);
+alter table job_messages enable row level security;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

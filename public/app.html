@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/icons.css">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/dash.css">
+<link rel="stylesheet" href="/jobs.css">
 </head>
 <body class="dash-body">
 <header class="topbar">
@@ -19,7 +20,7 @@
   <nav class="top-links" aria-label="Main">
     <a href="#overview" data-view="overview">Overview</a>
     <a href="#garage" data-view="garage">My garage</a>
-    <a href="#services" data-view="services">Services</a>
+    <a href="#services" data-view="services">Services<span class="nav-badge" id="jobs-badge" hidden></span></a>
     <a href="#parts" data-view="parts" id="nav-parts" hidden>Parts<span class="nav-badge" id="parts-badge" hidden></span></a>
     <a href="#rentals" data-view="rentals" id="nav-rentals" hidden>Rentals<span class="nav-badge" id="rentals-badge" hidden></span></a>
     <a href="#premium" data-view="premium" id="nav-premium" hidden>Premium</a>
@@ -231,13 +232,17 @@
           <select id="vehicleId" name="vehicleId" required></select>
         </div>
         <div>
-          <label for="category">Category</label>
+          <label for="category">Department</label>
           <select id="category" name="category" required></select>
         </div>
       </div>
       <label for="description">What's happening?</label>
       <textarea id="description" name="description" placeholder="Grinding noise from the front left when braking, started last week." required></textarea>
-      <button class="btn safety" type="submit">Book service</button>
+      <label for="req-where">Where should the technician come?</label>
+      <input id="req-where" maxlength="200" placeholder="Street, community or landmark" autocomplete="street-address">
+      <button type="button" class="linkbtn" id="req-locate">Use my current location</button> <span class="acct-status" id="req-loc-status" role="status"></span>
+      <p class="hint-line">Online technicians in this department are alerted straight away. The first one to accept chats with you, sends a price and when they will arrive, and you decide.</p>
+      <button class="btn safety" type="submit">Find a technician</button>
       <p class="error" id="request-error" role="alert"></p>
     </form>
 </dialog>
@@ -365,6 +370,7 @@
 <script src="/parts.js"></script>
 <script src="/rentals.js"></script>
 <script src="/account.js"></script>
+<script src="/jobs.js"></script>
 <script>
 const state = { vehicles: [], requests: [], categories: { vehicle: [], service: [] }, catalog: {}, filter: 'all' };
 const labelOf = (list, value) => (list.find(c => c.value === value) || {}).label || value;
@@ -458,37 +464,31 @@ const shortDate = iso => new Date(iso).toLocaleDateString('en-US', { month: 'sho
 // The newest request that is still open, shown with its real progress. Nothing is invented: steps light up only from data we hold.
 function renderCurrent() {
   const box = $('current-box');
-  const open = state.requests.filter(r => r.status === 'pending' || r.status === 'in-progress').sort((a, b) => b.id - a.id)[0];
+  const open = state.requests.filter(r => ['searching', 'matched', 'quoted', 'agreed', 'working', 'done_pending'].includes(r.stage)).sort((a, b) => b.id - a.id)[0];
   if (!open) {
     $('current-h').textContent = 'No active service';
-    box.innerHTML = '<div class="cur-empty"><span class="tile blue">' + I('car') + '</span><div><b>Nothing in progress right now</b><p>Book a service or ask the mechanic what your vehicle might need.</p></div><button class="btn" type="button" data-go="request-form">Book a service</button></div>';
-    box.querySelector('[data-go]').addEventListener('click', () => openDlg('dlg-book'));
+    box.innerHTML = '<div class="cur-empty"><span class="tile blue">' + I('car') + '</span><div><b>Nothing in progress right now</b><p>Book a service and an available technician will accept it, chat with you and send a price.</p></div><button class="btn" type="button" data-go="request-form">Book a service</button></div>';
+    box.querySelector('[data-go]').addEventListener('click', () => openBook());
     return;
   }
-  $('current-h').textContent = 'Your vehicle is in good hands';
-  const hasTech = !!(open.technician || open.technicianId);
-  const steps = [
-    { label: 'Requested', done: true },
-    { label: 'Technician assigned', done: hasTech || open.status === 'in-progress' },
-    { label: 'In progress', done: open.status === 'in-progress' },
-    { label: 'Completed', done: false }
-  ];
-  const doneCount = steps.filter(x => x.done).length;
-  const pct = Math.min(100, Math.round(((doneCount - 1) + 0.5) / 3 * 100));
+  $('current-h').textContent = open.stage === 'searching' ? 'Finding you a technician' : open.stage === 'done_pending' ? 'Please confirm the job' : 'Your vehicle is in good hands';
+  const doneCount = { searching: 1, matched: 2, quoted: 2, agreed: 3, working: 4, done_pending: 5 }[open.stage];
+  const labels = ['Requested', 'Technician accepted', 'Price agreed', 'Working', 'Completed'];
+  const pct = Math.min(100, Math.round(((doneCount - 1) + 0.5) / 4 * 100));
   const t = open.technician;
+  const when = open.stage === 'agreed' && open.etaDeadline ? ' Due by ' + esc(new Date(open.etaDeadline).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })) + '.' : '';
   const foot = t
-    ? '<span class="avatar">' + esc(initials(t.name)) + '</span><div class="who-tech"><small>Your technician</small><b>' + esc(t.name) + '</b></div>' +
-      (t.phone ? '<a class="btn ghost" href="tel:' + esc(t.phone.replace(/[^\d+]/g, '')) + '">' + I('phone') + 'Call ' + esc(t.name.split(/\s+/)[0]) + '</a>' : '')
-    : '<span class="avatar wait">' + I('user') + '</span><div class="who-tech"><small>Technician</small><b>Waiting for a technician in your area</b></div>' +
-      '<button class="btn ghost" type="button" data-cancel="' + open.id + '">Cancel request</button>';
+    ? '<span class="avatar">' + esc(initials(t.name)) + '</span><div class="who-tech"><small>Your technician</small><b>' + esc(t.name) + '</b><small>' + esc(({ matched: 'Chat with them, a price is coming.', quoted: 'A price is waiting for you.', agreed: 'On the way.' + when, working: 'Working on your vehicle.', done_pending: 'Please confirm the work is done.' })[open.stage] || '') + '</small></div>' +
+      '<button class="btn" type="button" data-job="' + open.id + '">' + (open.stage === 'quoted' ? 'See the price' : open.stage === 'done_pending' ? 'Confirm job' : 'Open chat') + '</button>'
+    : '<span class="avatar wait">' + I('user') + '</span><div class="who-tech"><small>Technician</small><b>Looking for the first available technician</b></div><button class="btn" type="button" data-job="' + open.id + '">See progress</button>';
   box.innerHTML = '<div class="cur-top"><span class="tile blue lg">' + I('car') + '</span>' +
-    '<div class="cur-main"><span class="pill st-' + esc(open.status) + '">' + (STATUS_LABELS[open.status] || esc(open.status)) + '</span>' +
+    '<div class="cur-main"><span class="pill st-' + esc(open.status) + '">' + esc(JobChat.STAGE[open.stage]) + '</span>' +
       '<div class="current-title">' + esc(labelOf(state.categories.service, open.category)) + '</div>' +
       '<small>' + esc(vehicleName(open.vehicleId)) + ' &middot; Request #' + open.id + '</small></div>' +
-    '<div class="cur-side"><small>Booked</small><b>' + esc(new Date(open.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '</b></div></div>' +
+    '<div class="cur-side"><small>' + (open.quote ? 'Price' : 'Booked') + '</small><b>' + (open.quote ? jmd(open.quote.amount) : esc(new Date(open.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))) + '</b></div></div>' +
     '<div class="bar" aria-hidden="true"><i style="width:' + pct + '%"></i></div>' +
-    '<ol class="steps" aria-label="Progress">' + steps.map((st, i) =>
-      '<li class="' + (st.done ? 'done' : i === doneCount ? 'now' : '') + '"><span class="dot" aria-hidden="true"></span>' + st.label + '</li>').join('') + '</ol>' +
+    '<ol class="steps" aria-label="Progress">' + labels.map((st, i) =>
+      '<li class="' + (i < doneCount ? 'done' : i === doneCount ? 'now' : '') + '"><span class="dot" aria-hidden="true"></span>' + st + '</li>').join('') + '</ol>' +
     '<div class="cur-foot">' + foot + '</div>';
 }
 
@@ -503,10 +503,17 @@ function renderHero() {
   $('hs-month').textContent = '+' + month + ' this month';
 }
 // quick actions in the welcome banner jump to the right place
+let reqCoords = null;
+function openBook() {
+  if (!$('req-where').value && typeof profileUser !== 'undefined' && profileUser) $('req-where').value = profileUser.address || '';
+  reqCoords = null; $('req-loc-status').textContent = '';
+  openDlg('dlg-book');
+}
 const GO_DIALOG = { 'request-form': 'dlg-book', 'assistant': 'dlg-ai', 'vehicle-form': 'dlg-vehicle' };
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', (e) => {
   e.preventDefault();
-  const d = openDlg(GO_DIALOG[b.dataset.go]);
+  if (b.dataset.go === 'request-form') openBook();
+  const d = b.dataset.go === 'request-form' ? $('dlg-book') : openDlg(GO_DIALOG[b.dataset.go]);
   const first = d && d.querySelector('select, textarea, input');
   if (first) setTimeout(() => first.focus({ preventScroll: true }), 50);
 }));
@@ -588,7 +595,7 @@ function renderRequests() {
         '<span class="svc"><span class="tile blue sm">' + I('doc') + '</span><span class="svc-t"><b>' + esc(labelOf(state.categories.service, r.category)) +
           (r.premiumPerk ? '<span class="pbadge">Premium &middot; free</span>' : '') + '</b><small>' + esc(vehicleName(r.vehicleId)) + ' &middot; #' + r.id + '</small></span></span>' +
         '<span class="c-date">' + esc(shortDate(r.createdAt)) + '</span>' +
-        '<span class="c-status"><span class="pill st-' + esc(r.status) + '">' + (STATUS_LABELS[r.status] || esc(r.status)) + '</span></span>' +
+        '<span class="c-status"><span class="pill st-' + esc(r.status) + '">' + esc((JobChat.STAGE[r.stage] && r.status !== 'completed' && r.status !== 'cancelled') ? JobChat.STAGE[r.stage] : (STATUS_LABELS[r.status] || r.status)) + '</span></span>' +
         '<span class="c-amt">' + (r.status === 'completed' && r.amount ? jmd(r.amount) : '\u2014') + '</span>' +
         '<span class="chev" aria-hidden="true"></span></button>' +
       '<div class="tdetail"' + (open ? '' : ' hidden') + '>' +
@@ -596,7 +603,7 @@ function renderRequests() {
         techLine(r.technician) + workPhoto(r.workPhotoUrl, 'desc') +
         (r.status === 'completed' && r.amount && r.premiumPerk ? '<p class="desc">Parts and extras you paid: <strong>' + jmd(r.amount) + '</strong></p>' : '') +
         rateBlock('job', r.id, r.status === 'completed', !!r.technicianId, r.rating, r.review) +
-        (r.status === 'pending' ? '<div><button class="btn small ghost" type="button" data-cancel="' + r.id + '">Cancel request</button></div>' : '') +
+        (['searching', 'matched', 'quoted', 'agreed', 'working', 'done_pending'].includes(r.stage) ? '<div><button class="btn small" type="button" data-job="' + r.id + '">' + (r.stage === 'searching' ? 'See progress' : 'Open chat') + '</button> ' + (r.status === 'pending' ? '<button class="btn small ghost" type="button" data-cancel="' + r.id + '">Cancel request</button>' : '') + '</div>' : '') +
       '</div></article>';
   }).join('');
 }
@@ -782,7 +789,8 @@ $('request-form').addEventListener('submit', async (e) => {
   $('request-error').textContent = '';
   try {
     const r = await api('/service-request', { method: 'POST', body: {
-      vehicleId: f.vehicleId.value, category: f.category.value, description: f.description.value
+      vehicleId: f.vehicleId.value, category: f.category.value, description: f.description.value,
+      locationText: $('req-where').value, ...(reqCoords ? { latitude: reqCoords.lat, longitude: reqCoords.lng } : {})
     }});
     state.requests.push(r);
     f.description.value = '';
@@ -790,8 +798,31 @@ $('request-form').addEventListener('submit', async (e) => {
     syncFilters();
     render();
     closeDlg('dlg-book');
+    jchat.open(r.id).catch(() => {});   // the waiting screen: it turns into the chat when a technician accepts
   } catch (err) { $('request-error').textContent = err.message; }
 });
+
+// Share my location for the job
+$('req-locate').addEventListener('click', () => {
+  const out = $('req-loc-status');
+  if (!navigator.geolocation) { out.textContent = 'This browser cannot share location. Type where you are.'; return; }
+  out.textContent = 'Finding you...';
+  navigator.geolocation.getCurrentPosition(pos => {
+    reqCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    out.textContent = 'Location shared (about ' + Math.round(pos.coords.accuracy) + ' m).';
+    if (!$('req-where').value.trim()) $('req-where').value = 'My current location';
+  }, err => { out.textContent = err.code === 1 ? 'Location is blocked. Type where you are instead.' : 'Could not get your location. Type where you are.'; }, { enableHighAccuracy: true, timeout: 15000 });
+});
+
+// The job window (waiting screen, chat, price, arrival time)
+const jchat = JobChat.create({ api, role: 'customer', shopPhone: () => shopPhone, onChange: () => refreshRequests() });
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-job]'); if (b) jchat.open(Number(b.dataset.job)).catch(err => alert(err.message)); });
+async function refreshRequests() {
+  try { state.requests = await api('/service-requests'); renderRequests(); renderCurrent(); renderHero(); } catch (_) { return; }
+  const unread = state.requests.filter(r => r.unread).length;
+  $('jobs-badge').hidden = !unread; $('jobs-badge').textContent = unread;
+}
+setInterval(() => { if (!document.hidden) refreshRequests(); }, 8000);
 
 // Cancel a pending request (staff handle every other status change in the admin portal)
 document.addEventListener('click', async (e) => {
@@ -977,11 +1008,12 @@ $('premium-box').addEventListener('submit', async (e) => {
   if (!vehicleId) { $('perk-error').textContent = 'Add a vehicle to your garage first.'; return; }
   $('perk-send').disabled = true;
   try {
-    await api('/premium/redeem', { method: 'POST', body: { perk: premiumPerkOpen, vehicleId, note: $('perk-note').value } });
+    const redeemed = await api('/premium/redeem', { method: 'POST', body: { perk: premiumPerkOpen, vehicleId, note: $('perk-note').value } });
     const label = PERK_TEXT[premiumPerkOpen];
     premiumPerkOpen = null;
     await Promise.all([loadPremium(), (async () => { state.requests = await api('/service-requests'); renderRequests(); })()]);
-    const done = $('perk-done'); if (done) { done.textContent = label + ' booked. A technician will pick it up. You can see it under Service requests.'; done.hidden = false; }
+    const done = $('perk-done'); if (done) { done.textContent = label + ' booked. We are finding a technician for you.'; done.hidden = false; }
+    renderCurrent(); jchat.open(redeemed.id).catch(() => {});
   } catch (err) { $('perk-error').textContent = err.message; const b = $('perk-send'); if (b) b.disabled = false; }
 });
 
@@ -1361,7 +1393,7 @@ function addBookButton(msgDiv, tag, question) {
     $('category').value = category;
     if (aiVehicle) $('vehicleId').value = aiVehicle;
     $('description').value = question;
-    closeDlg('dlg-ai'); openDlg('dlg-book');
+    closeDlg('dlg-ai'); openBook();
     (state.vehicles.length ? $('description') : $('owner')).focus({ preventScroll: true });
     if (!state.vehicles.length) $('request-error').textContent = 'Add a vehicle first, then book the service.';
   });

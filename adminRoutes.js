@@ -33,6 +33,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
   // A technician can take an unassigned job ("claim") and then update it. Once a job has a technician, only
   // that technician (or an admin) can change it, so earnings and ratings go to the right person.
   router.post('/service-request/:id/claim', staffUp, handle(async (req, res) => {
+    if (req.user.role === 'staff') return res.status(403).json({ error: 'Jobs are taken from the Jobs tab now. Go online to see new jobs and accept one.' });
     const id = Number(req.params.id);
     const cur = await supabase.from('service_requests').select('*').eq('id', id).maybeSingle();
     if (cur.error) throw cur.error;
@@ -40,13 +41,14 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     if (cur.data.technician_id) return res.status(409).json({ error: cur.data.technician_id === req.user.id ? 'You already have this job.' : 'Another technician already took this job.' });
     if (cur.data.status === 'completed' || cur.data.status === 'cancelled') return res.status(409).json({ error: 'This job is already finished.' });
     const { data, error } = await supabase.from('service_requests')
-      .update({ technician_id: req.user.id, status: 'in-progress' }).eq('id', id).is('technician_id', null).select().maybeSingle();
+      .update({ technician_id: req.user.id, status: 'in-progress', stage: 'working' }).eq('id', id).is('technician_id', null).select().maybeSingle();
     if (error) throw error;
     if (!data) return res.status(409).json({ error: 'Another technician just took this job.' });
     res.json(toRequest(data));
   }));
 
   router.patch('/service-request/:id', staffUp, handle(async (req, res) => {
+    if (req.user.role === 'staff') return res.status(403).json({ error: 'Jobs are run from the Jobs tab now: send your price, then mark arrived and done there.' });
     const { status } = req.body;
     if (!STATUSES.includes(status)) return res.status(400).json({ error: `Status must be one of: ${STATUSES.join(', ')}.` });
     const id = Number(req.params.id);
@@ -59,7 +61,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     }
     const amount = auth.parseAmount(req.body.amount);
     if (amount.error) return res.status(400).json({ error: amount.error });
-    const update = { status };
+    const update = { status, stage: { 'pending': row.technician_id ? 'matched' : 'searching', 'in-progress': 'working', 'completed': 'closed', 'cancelled': 'cancelled' }[status] };
     // moving an unassigned job forward takes it
     if (!isAdmin && !row.technician_id && (status === 'in-progress' || status === 'completed')) update.technician_id = req.user.id;
     if (status === 'completed') {

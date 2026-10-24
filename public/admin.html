@@ -14,6 +14,7 @@
 <link rel="stylesheet" href="/icons.css">
 <link rel="stylesheet" href="/portal.css">
 <link rel="stylesheet" href="/parts.css">
+<link rel="stylesheet" href="/jobs.css">
 <script src="/banner.js" defer></script>
 </head>
 <body class="hdr-right">
@@ -32,11 +33,12 @@
   </header>
   <main class="portal">
     <nav class="tabs" role="group" aria-label="Section">
+      <button data-tab="jobs" id="jobsTab" aria-pressed="false" hidden>Jobs</button>
       <button data-tab="dashboard" aria-pressed="true">My dashboard</button>
       <button data-tab="emergencies" id="emergTab" aria-pressed="false">Emergencies</button>
-      <button data-tab="requests" aria-pressed="false">Service requests</button>
+      <button data-tab="requests" id="requestsTab" aria-pressed="false">Service requests</button>
       <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
-      <button data-tab="parts" id="partsTab" aria-pressed="false" hidden>Parts & rentals</button>
+      <button data-tab="parts" id="partsTab" aria-pressed="false" hidden>Fees & orders</button>
       <button data-tab="users" id="usersTab" aria-pressed="false" hidden>Users</button>
       <button data-tab="account" id="accountTab" aria-pressed="false">My account</button>
     </nav>
@@ -51,6 +53,21 @@
       <select id="parishFilter"><option value="">All parishes</option></select>
     </div>
 
+
+    <div class="panel" id="jobsPanel" hidden>
+      <div class="jobs-top" id="jobsTop">
+        <label class="switch" aria-label="Online: receive new jobs"><input type="checkbox" id="onlineToggle" role="switch"><span class="slider"></span></label>
+        <div class="grow"><b id="onlineLabel">You are offline</b><small id="onlineHint">Switch on to receive new jobs for your departments. Keep this page open and your sound on.</small></div>
+        <button class="btn ghost small" id="soundTest" type="button">Test the alert sound</button>
+      </div>
+      <div class="alert-banner" id="alertBanner" hidden role="alert"><span id="alertText">New job!</span><button class="btn small" id="silence" type="button">Silence</button></div>
+      <p class="sound-note" id="soundNote" hidden>Tap anywhere on this page once so your browser allows the alert sound.</p>
+      <h3 style="margin:18px 0 0">New jobs for you <span id="incomingCount"></span></h3>
+      <div class="incoming" id="incomingList"><p class="empty">Go online to see new jobs.</p></div>
+      <h3 style="margin:8px 0 8px">My jobs</h3>
+      <div class="card flush" id="myJobs"><p class="empty">No active jobs.</p></div>
+      <p class="empty" id="feesNote" style="margin-top:14px" hidden></p>
+    </div>
 
     <div class="panel" id="dashPanel"><p class="empty">Loading your dashboard...</p></div>
 
@@ -144,6 +161,7 @@
 <script src="/parts.js"></script>
 <script src="/rentals.js"></script>
 <script src="/account.js"></script>
+<script src="/jobs.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'completed': 'Completed', 'cancelled': 'Cancelled' };
@@ -166,6 +184,7 @@ const fmtDate = s => new Date(s).toLocaleDateString(undefined, { day: 'numeric',
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
+    body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,   // callers may pass an object or a JSON string
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...options.headers }
   });
   const body = await res.json().catch(() => ({}));
@@ -260,6 +279,7 @@ async function load() {
       if (me.role === 'customer') return location.replace('/app.html');
       if (me.role === 'vendor') return location.replace('/vendor.html');
       AccountUI.mountDetails($('acctDetails'), { api, user: me, onSaved: u => { me = u; $('who').textContent = u.name + ' (' + u.role + ')'; } }).catch(() => {});
+      if (me.role === 'staff') { $('jobsTab').hidden = false; $('requestsTab').hidden = true; startJobs(); }
       AccountUI.mountSecurity($('acctSecurity'), { api, canDelete: me.role !== 'admin', onTokenChange: t => { token = t; } });
       $('who').textContent = me.name + ' (' + me.role + ')';
       $('who-dot').textContent = (me.name || '?').trim().charAt(0).toUpperCase();
@@ -277,6 +297,7 @@ async function load() {
     if (!window.__firstLoadDone) {
       window.__firstLoadDone = true;
       if (emergencies.some(e => e.status === 'open')) document.querySelector('.tabs button[data-tab="emergencies"]').click();
+      else if (me.role === 'staff') $('jobsTab').click();
     }
     await loadDashboard();
     if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); }
@@ -288,14 +309,76 @@ async function load() {
   renderUsers();
 }
 
+// --- Live jobs: go online, hear the alert, accept, chat, price ---
+const jchat = JobChat.create({ api, role: 'staff', onChange: () => pollJobs() });
+let jobsStarted = false, jobsTimer = null, seenIncoming = new Set(), lastFeed = null;
+const jobAgo = iso => { const s = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 1000)); return s < 60 ? s + 's ago' : Math.floor(s / 60) + ' min ago'; };
+function startJobs() {
+  if (jobsStarted) return; jobsStarted = true;
+  document.addEventListener('click', () => { JobAlerts.unlock(); $('soundNote').hidden = JobAlerts.isReady(); }, { once: false });
+  pollJobs(); jobsTimer = setInterval(pollJobs, 4000);
+}
+function setOnlineUI(on) {
+  $('onlineToggle').checked = on;
+  $('jobsTop').classList.toggle('on', on);
+  $('onlineLabel').textContent = on ? 'You are ONLINE: new jobs will ring here' : 'You are offline';
+  $('onlineHint').textContent = on ? 'Keep this page open with the sound on. Switch off when you are not available.' : 'Switch on to receive new jobs for your departments. Keep this page open and your sound on.';
+}
+async function pollJobs() {
+  let feed;
+  try { feed = await api('/jobs/feed'); } catch (_) { return; }
+  lastFeed = feed;
+  setOnlineUI(feed.online);
+  const fresh = feed.incoming.filter(j => !seenIncoming.has(j.id));
+  seenIncoming = new Set(feed.incoming.map(j => j.id));
+  if (feed.online && fresh.length) {
+    JobAlerts.start('NEW JOB');
+    const lbl = await JobChat.catLabel(fresh[0].category);
+    $('alertText').textContent = '\u{1F6A8} New ' + lbl + ' job' + (fresh.length > 1 ? 's (' + fresh.length + ')' : '') + ': ' + (fresh[0].locationText || fresh[0].parish);
+    $('alertBanner').hidden = false;
+    JobAlerts.notify('New ' + lbl + ' job', fresh[0].description);
+    $('soundNote').hidden = JobAlerts.isReady();
+  }
+  if (!feed.incoming.length) { JobAlerts.stop(); $('alertBanner').hidden = true; }
+  $('incomingCount').textContent = feed.incoming.length ? '(' + feed.incoming.length + ')' : '';
+  const labels = await Promise.all(feed.incoming.map(j => JobChat.catLabel(j.category)));
+  $('incomingList').innerHTML = !feed.online ? '<p class="empty">You are offline. Switch on the toggle above to receive new jobs.</p>'
+    : feed.incoming.length ? feed.incoming.map((j, i) => '<article class="jobcard' + (j.inYourParish ? '' : ' far') + '"><div><div class="jc-top"><span class="tag">' + JobChat.esc(labels[i]) + '</span>' +
+        (j.inYourParish ? '<span class="tag near">In your parish</span>' : '<span class="tag">' + JobChat.esc(j.parish) + '</span>') + '<span>' + jobAgo(j.createdAt) + '</span></div>' +
+        '<h4>' + JobChat.esc(j.vehicle ? j.vehicle.name : '') + '</h4><p>' + JobChat.esc(j.description) + '</p><p><strong>Where:</strong> ' + JobChat.esc(j.locationText || j.parish) + '</p></div>' +
+        '<button class="btn" type="button" data-accept="' + j.id + '">Accept job</button></article>').join('')
+      : '<p class="empty">No new jobs right now. You will hear a loud alert the moment one comes in.</p>';
+  jchat.renderList($('myJobs'), feed.mine, 'No active jobs. Accept a new job above and it appears here.');
+  const unread = feed.mine.filter(j => j.unread).length;
+  $('jobsTab').textContent = 'Jobs' + (feed.incoming.length ? ' (' + feed.incoming.length + ' new)' : unread ? ' (' + unread + ')' : '');
+  $('feesNote').hidden = !feed.feesDue; $('feesNote').textContent = feed.feesDue ? 'AutoAid fees you owe from completed jobs: ' + JobChat.jmd(feed.feesDue) + '. Pay the shop and the admin marks it settled.' : '';
+}
+$('onlineToggle').addEventListener('change', async (e) => {
+  const want = e.target.checked;
+  JobAlerts.unlock(); if (want) JobAlerts.askPermission();
+  try { await api('/jobs/online', { method: 'POST', body: { online: want } }); if (!want) { JobAlerts.stop(); $('alertBanner').hidden = true; } await pollJobs(); }
+  catch (err) { e.target.checked = !want; alert(err.message); }
+});
+$('soundTest').addEventListener('click', () => { JobAlerts.unlock(); JobAlerts.siren(); $('soundNote').hidden = JobAlerts.isReady(); });
+$('silence').addEventListener('click', () => { JobAlerts.stop(); $('alertBanner').hidden = true; });
+$('incomingList').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-accept]'); if (!b) return;
+  b.disabled = true;
+  try { await api('/jobs/' + b.dataset.accept + '/accept', { method: 'POST' }); JobAlerts.stop(); $('alertBanner').hidden = true; await pollJobs(); jchat.open(Number(b.dataset.accept)).catch(() => {}); }
+  catch (err) { alert(err.message); await pollJobs(); }
+});
+$('myJobs').addEventListener('click', (e) => { const b = e.target.closest('[data-job]'); if (b) jchat.open(Number(b.dataset.job)).catch(err => alert(err.message)); });
+
 // --- Parts and rentals (admin): the commission each vendor owes, and every order / booking ---
 let partsChat = null, rentChat = null, marketStarted = false;
+let jobsLedger = false;
 async function setupParts() {
   if (marketStarted) return;
   marketStarted = true;
   try { await api('/parts/ledger'); partsChat = PartsChat.create({ api, role: 'admin' }); } catch (_) {}   // 404 = switched off
   try { await api('/rentals/ledger'); rentChat = RentalChat.create({ api, role: 'admin' }); } catch (_) {}
-  if (!partsChat && !rentChat) return;
+  try { await api('/jobs/ledger'); jobsLedger = true; } catch (_) {}
+  if (!partsChat && !rentChat && !jobsLedger) return;
   $('partsTab').hidden = false;
   $('partsHead').hidden = !partsChat; $('partsOrders').hidden = !partsChat;
   $('rentHead').hidden = !rentChat; $('rentBookings').hidden = !rentChat;
@@ -303,16 +386,16 @@ async function setupParts() {
   $('rentBookings').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b && rentChat) rentChat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
 }
 async function loadParts() {
-  if (!partsChat && !rentChat) return;
+  if (!partsChat && !rentChat && !jobsLedger) return;
   try {
-    const pl = partsChat ? await api('/parts/ledger') : null, rl = rentChat ? await api('/rentals/ledger') : null;
-    $('partsNote').textContent = 'Commission rates: ' + [pl && 'parts ' + pl.commissionPercent + '%', rl && 'rentals ' + rl.commissionPercent + '% (of the rent, not the deposit)'].filter(Boolean).join(', ') + '. Vendors collect the money from customers; they owe AutoAid the commission. Press "Mark settled" after they pay you.';
+    const pl = partsChat ? await api('/parts/ledger') : null, rl = rentChat ? await api('/rentals/ledger') : null, jl = jobsLedger ? await api('/jobs/ledger') : null;
+    $('partsNote').textContent = 'Commission and fee rates: ' + [pl && 'parts ' + pl.commissionPercent + '%', rl && 'rentals ' + rl.commissionPercent + '% (of the rent, not the deposit)', jl && 'repair jobs ' + jl.commissionPercent + '%'].filter(Boolean).join(', ') + '. Customers pay vendors and technicians directly; they owe AutoAid the amount below. Press "Mark settled" after they pay you.';
     const rows = [];
-    for (const [kind, l, base] of [['Parts', pl, '/parts'], ['Rentals', rl, '/rentals']]) {
+    for (const [kind, l, base, seg] of [['Parts', pl, '/parts', 'vendors'], ['Rentals', rl, '/rentals', 'vendors'], ['Repair jobs', jl, '/jobs', 'technicians']]) {
       if (!l) continue;
       for (const v of l.vendors) {
         const btn = el('button', { className: 'btn safety small', textContent: 'Mark settled', hidden: !(v.owed > 0) });
-        btn.addEventListener('click', async () => { if (!confirm('Mark ' + v.name + "'s " + kind.toLowerCase() + ' commission of ' + PartsChat.jmd(v.owed) + ' as paid?')) return; try { await api(base + '/vendors/' + v.vendorId + '/settle', { method: 'POST' }); loadParts(); } catch (err) { $('appError').textContent = err.message; } });
+        btn.addEventListener('click', async () => { if (!confirm('Mark ' + v.name + "'s " + kind.toLowerCase() + ' amount of ' + PartsChat.jmd(v.owed) + ' as paid?')) return; try { await api(base + '/' + seg + '/' + v.vendorId + '/settle', { method: 'POST' }); loadParts(); } catch (err) { $('appError').textContent = err.message; } });
         rows.push(el('tr', {}, el('td', { textContent: v.name + ' (' + kind.toLowerCase() + ')' }), el('td', { textContent: v.orders }), el('td', { textContent: PartsChat.jmd(v.sales) }), el('td', { textContent: PartsChat.jmd(v.commission) }),
           el('td', { textContent: PartsChat.jmd(v.settled) }), el('td', {}, el('strong', { textContent: PartsChat.jmd(v.owed) })), el('td', { className: 'act' }, btn)));
       }
@@ -911,6 +994,7 @@ $('emailTestForm').addEventListener('submit', async (e) => {
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
   $('dashPanel').hidden = b.dataset.tab !== 'dashboard';
+  $('jobsPanel').hidden = b.dataset.tab !== 'jobs';
   $('emergPanel').hidden = b.dataset.tab !== 'emergencies';
   $('requestsPanel').hidden = b.dataset.tab !== 'requests';
   $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';

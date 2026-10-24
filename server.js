@@ -66,6 +66,9 @@ const toRequest = r => ({
   technicianId: r.technician_id || null, amount: r.amount == null ? null : Number(r.amount),
   rating: r.rating || null, review: r.review || '', completedAt: r.completed_at || null,
   hasWorkPhoto: !!r.work_photo_path,
+  stage: r.stage || 'searching', parish: r.parish || '', locationText: r.location_text || '',
+  quote: r.quote_amount == null ? null : { amount: Number(r.quote_amount), etaMinutes: r.quote_eta_minutes, note: r.quote_note || '' },
+  etaDeadline: r.eta_deadline || null, agreedAt: r.agreed_at || null, doneAt: r.done_at || null, unread: !!r.customer_unread,
   premiumPerk: r.premium_perk || null,                       // 'oil' or 'brakes' when this job is a free Premium service
   platformPay: r.platform_pay == null ? null : Number(r.platform_pay)   // what AutoAid pays the technician for it
 });
@@ -276,7 +279,8 @@ app.get('/service-requests', ...noVendor, handle(async (req, res) => {
     })));
   }
   res.json(await Promise.all(data.map(async r => ({
-    ...toRequest(r), ...(isCustomer(req) ? { platformPay: null } : {}), technician: techs.get(r.technician_id) || null,
+    ...toRequest(r), ...(isCustomer(req) ? { platformPay: null } : {}),
+    technician: (t => (t && isCustomer(req) && !['agreed', 'working', 'done_pending', 'closed'].includes(r.stage) ? { ...t, phone: '' } : t))(techs.get(r.technician_id) || null),
     workPhotoUrl: r.work_photo_path ? await auth.signedPhotoUrl(r.work_photo_path).catch(() => null) : null
   }))));
 }));
@@ -284,6 +288,10 @@ app.get('/service-requests', ...noVendor, handle(async (req, res) => {
 app.post('/service-request', ...noVendor, handle(async (req, res) => {
   const { vehicleId, category, description } = req.body;
   const vid = Number(vehicleId);
+  const lat = Number(req.body.latitude), lng = Number(req.body.longitude);
+  const hasCoords = req.body.latitude != null && req.body.longitude != null && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  const where = String(req.body.locationText || req.user.address || '').trim().slice(0, 200);
+  if (isCustomer(req) && where.length < 3 && !hasCoords) return res.status(400).json({ error: 'Tell us where the technician should come (street, community or landmark), or share your location.' });
   let vehicleQuery = supabase.from('vehicles').select('id').eq('id', vid);
   if (isCustomer(req)) vehicleQuery = vehicleQuery.eq('user_id', req.user.id);
   const { data: found, error: findError } = await vehicleQuery.maybeSingle();
@@ -300,7 +308,10 @@ app.post('/service-request', ...noVendor, handle(async (req, res) => {
   const { data, error } = await supabase.from('service_requests').insert({
     vehicle_id: vid,
     category,   // e.g. "diagnostics", "mechanical", "tire"
-    description: description.trim()
+    description: description.trim(),
+    parish: req.user.parish || null, location_text: where || null,
+    latitude: hasCoords ? lat : null, longitude: hasCoords ? lng : null,
+    stage: 'searching'
     // status defaults to 'pending' in the database
   }).select().single();
   if (error) throw error;
@@ -319,13 +330,14 @@ app.patch('/service-request/:id', ...noVendor, handle(async (req, res) => {
     if (status !== 'cancelled') return res.status(403).json({ error: 'You can only cancel a request.' });
     const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
     if (mine.error) throw mine.error;
-    const own = await supabase.from('service_requests').select('id').eq('id', id).in('vehicle_id', mine.data.map(v => v.id)).maybeSingle();
+    const own = await supabase.from('service_requests').select('id, stage').eq('id', id).in('vehicle_id', mine.data.map(v => v.id)).maybeSingle();
     if (own.error) throw own.error;
     if (!own.data) return res.status(404).json({ error: 'Request not found.' });
+    if (!['searching', 'matched', 'quoted', 'agreed'].includes(own.data.stage || 'searching')) return res.status(409).json({ error: 'This job can no longer be cancelled here. Contact the shop.' });
   }
   // updated_at is set by a database trigger
   const { data, error } = await supabase.from('service_requests')
-    .update({ status }).eq('id', id).select().maybeSingle();
+    .update({ status, stage: 'cancelled', fee_percent: null, fee_amount: null }).eq('id', id).select().maybeSingle();
   if (error) throw error;
   if (!data) return res.status(404).json({ error: 'Request not found.' });
   res.json(toRequest(data));
@@ -430,6 +442,10 @@ app.post('/ai-assist', ...noVendor, handle(async (req, res) => {
   res.json({ question, vehicleCategory: vehicleCategory || null, ...diagnose(question, vehicleCategory) });
 }));
 
+// --- Live jobs: online technicians, department alerts, chat, price and arrival time (jobRoutes.js) ---
+const jobs = require('./jobRoutes')({ supabase, handle, auth });
+app.use(jobs.router);
+
 // --- Emergency requests: roadside assistance and wrecker (emergencyRoutes.js) ---
 app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
 
@@ -447,6 +463,7 @@ app.get('/config', (req, res) => res.json({
   businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '',
   legalName: process.env.LEGAL_NAME || '', contactEmail: process.env.CONTACT_EMAIL || '',   // shown on the privacy notice and terms
   subscription: { enabled: subs.config.enabled, priceLabel: subCfg.priceLabel(), days: subs.config.days },
+  jobs: { feePercent: jobs.feePercent },
   parts: { enabled: auth.PARTS.enabled, commissionPercent: parts.commissionPercent },
   rentals: { enabled: auth.RENTALS.enabled, commissionPercent: rentals.commissionPercent },
   premium: { enabled: subCfg.premium.enabled, oilPerYear: subCfg.premium.oilPerYear, oilGapDays: subCfg.premium.oilGapDays,
