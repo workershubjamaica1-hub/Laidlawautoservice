@@ -62,6 +62,20 @@
     if (!categories) { try { categories = Object.fromEntries((await (await fetch('/categories')).json()).service.map(x => [x.value, x.label])); } catch (_) { categories = {}; } }
     return categories[c] || c;
   }
+  // shrinks a photo before it is uploaded
+  function prepareImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+        c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        c.toBlob(blob => { if (!blob) return reject(new Error('Could not read that photo. Try another one.')); const r = new FileReader(); r.onload = () => resolve(String(r.result).split(',')[1]); r.onerror = () => reject(new Error('Could not read that photo.')); r.readAsDataURL(blob); }, 'image/jpeg', 0.85);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file is not a photo we can read. Use a JPEG or PNG picture.')); };
+      img.src = url;
+    });
+  }
   const mapsLink = o => o.hasCoords || o.latitude != null ? 'https://www.google.com/maps?q=' + o.latitude + ',' + o.longitude : 'https://www.google.com/maps/search/' + encodeURIComponent(o.locationText + ', ' + o.parish + ', Jamaica');
 
   function create({ api, role, shopPhone: shopPhoneOpt, onChange }) {
@@ -96,8 +110,11 @@
       dlg.querySelectorAll('[data-since]').forEach(el => { el.textContent = mmss(Date.now() - Date.parse(el.dataset.since)); });
     }
 
+    const photoBlock = (o) => (o.photoUrl ? '<a class="jphoto-link" href="' + esc(o.photoUrl) + '" target="_blank" rel="noopener"><img class="jphoto" src="' + esc(o.photoUrl) + '" alt="Photo from the customer" loading="lazy" onerror="this.outerHTML=\'Open the photo\'"></a>' : '') +
+      (isCustomer && ['searching', 'matched', 'quoted', 'agreed', 'working'].includes(o.stage) && o.urgent
+        ? '<label class="btn ghost small photo-add">' + (o.photoUrl ? 'Change the photo' : 'Add a photo of where you are') + '<input type="file" accept="image/*" capture="environment" data-photo hidden></label><span class="th-hint photo-status" role="status"></span>' : '');
     const summary = (o, dept) => '<div class="offer"><div><b>' + esc(dept) + ' &middot; ' + esc(o.vehicle ? o.vehicle.name : '') + '</b><small>' + esc(o.description) + '</small>' +
-      '<small>' + esc(o.locationText ? 'At: ' + o.locationText : '') + (o.parish ? ' (' + esc(o.parish) + ')' : '') + '</small></div></div>';
+      '<small>' + esc(o.locationText ? 'At: ' + o.locationText : '') + (o.parish ? ' (' + esc(o.parish) + ')' : '') + '</small></div></div>' + photoBlock(o);
     const quoteCard = o => o.quote ? '<div class="offer"><div><b>Price: ' + jmd(o.quote.amount) + (o.premiumPerk ? ' (parts and extras)' : '') + '</b><small>Arrives within ' + o.quote.etaMinutes + ' minutes after you agree</small>' + (o.quote.note ? '<small>' + esc(o.quote.note) + '</small>' : '') + '</div></div>' : '';
 
     function quoteForm(o) {
@@ -234,6 +251,12 @@
       else if (a === 'done') { if (confirm('Mark this job as done?')) act('/done'); }
       else if (a === 'rate') { const box = btn.closest('.rate'); act('/service-request/' + cur.id + '/rating', { rating: Number(box.dataset.value), review: box.querySelector('.rate-note').value }); }
     });
+    dlg.addEventListener('change', async (e) => {
+      const f = e.target.closest('[data-photo]'); if (!f || !f.files[0]) return;
+      const st = dlg.querySelector('.photo-status'); if (st) st.textContent = 'Uploading...';
+      try { await api('/jobs/' + cur.id + '/photo', { method: 'POST', body: { image: await prepareImage(f.files[0]) } }); await refresh(false); }
+      catch (err) { $('th-error').textContent = err.message; if (st) st.textContent = ''; }
+    });
     dlg.addEventListener('submit', async (e) => {
       if (e.target.id === 'th-quote') {
         e.preventDefault();
@@ -265,5 +288,5 @@
   }
 
   window.JobAlerts = JobAlerts;
-  window.JobChat = { create, STAGE, PILL, jmd, esc, mmss, catLabel };
+  window.JobChat = { create, STAGE, PILL, jmd, esc, mmss, catLabel, prepareImage };
 })();

@@ -354,7 +354,7 @@ async function pollJobs() {
   $('incomingList').innerHTML = !feed.online ? '<p class="empty">You are offline. Switch on the toggle above to receive new jobs.</p>'
     : feed.incoming.length ? feed.incoming.map((j, i) => '<article class="jobcard' + (j.urgent ? ' urgent' : '') + (j.inYourParish ? '' : ' far') + '"><div><div class="jc-top">' + (j.urgent ? '<span class="tag urgent">URGENT</span>' : '') + '<span class="tag">' + JobChat.esc(labels[i]) + '</span>' +
         (j.inYourParish ? '<span class="tag near">In your parish</span>' : '<span class="tag">' + JobChat.esc(j.parish) + '</span>') + '<span>' + jobAgo(j.createdAt) + '</span></div>' +
-        '<h4>' + JobChat.esc(j.vehicle ? j.vehicle.name : '') + '</h4><p>' + JobChat.esc(j.description) + '</p><p><strong>Where:</strong> ' + JobChat.esc(j.locationText || j.parish) + '</p></div>' +
+        '<h4>' + JobChat.esc(j.vehicle ? j.vehicle.name : (j.urgent ? 'Vehicle not given' : '')) + '</h4><p>' + JobChat.esc(j.description) + '</p>' + (j.photoUrl ? '<p><a href="' + JobChat.esc(j.photoUrl) + '" target="_blank" rel="noopener"><img class="jthumb" src="' + JobChat.esc(j.photoUrl) + '" alt="Photo of where the customer is" loading="lazy" onerror="this.outerHTML=\'Open the photo\'"></a></p>' : '') + '<p><strong>Where:</strong> ' + JobChat.esc(j.locationText || j.parish) + '</p></div>' +
         '<button class="btn" type="button" data-accept="' + j.id + '">Accept job</button></article>').join('')
       : '<p class="empty">No new jobs right now. You will hear a loud alert the moment one comes in.</p>';
   jchat.renderList($('myJobs'), feed.mine, 'No active jobs. Accept a new job above and it appears here.');

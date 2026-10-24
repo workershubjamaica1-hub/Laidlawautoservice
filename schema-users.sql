@@ -345,6 +345,10 @@ alter table service_requests drop constraint if exists service_requests_category
 alter table service_requests add constraint service_requests_category_check check (category in ('diagnostics', 'mechanical', 'tire', 'electrical', 'maintenance', 'bodywork', 'roadside', 'towing', 'other'));
 create index if not exists service_requests_customer_idx on service_requests(customer_id);
 
+-- A photo the customer adds to a job (for an emergency: where they are, so the technician can find them)
+alter table service_requests add column if not exists photo_path text;
+alter table service_requests add column if not exists photo_at timestamptz;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

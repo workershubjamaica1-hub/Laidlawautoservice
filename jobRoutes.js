@@ -14,6 +14,7 @@
 //     and after the customer confirms the job it owes the technician price minus fee (a "payout"). A cancelled paid job is refunded,
 //     and a complaint holds the payout until the admin decides.
 const express = require('express');
+const bigJson = express.json({ limit: '6mb' });
 
 const feePercent = (() => {
   const n = Number(process.env.JOBS_FEE_PERCENT);
@@ -139,7 +140,8 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
   async function shapeMany(list, viewer, extras = () => ({})) {
     const vehicles = await vehiclesById(list.map(r => r.vehicle_id));
     const users = await usersById([...list.map(r => r.technician_id), ...list.map(r => r.customer_id), ...[...vehicles.values()].map(v => v.user_id)]);
-    return list.map(r => shape(r, viewer, vehicles.get(r.vehicle_id), users, extras(r)));
+    const urls = new Map(await Promise.all(list.filter(r => r.photo_path).map(async r => [r.id, await auth.signedPhotoUrl(r.photo_path).catch(() => null)])));
+    return list.map(r => shape(r, viewer, vehicles.get(r.vehicle_id), users, { ...(urls.get(r.id) ? { photoUrl: urls.get(r.id) } : {}), ...extras(r) }));
   }
 
   async function loadJob(req, res, who) {
@@ -278,6 +280,19 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
     res.json({ ok: true });
   }));
 
+  // The customer adds a photo of where they are (or of the problem). Technicians who can see the job see it too.
+  router.post('/jobs/:id(\\d+)/photo', customerOnly, bigJson, handle(async (req, res) => {
+    const j = await loadJob(req, res, 'customer'); if (!j) return;
+    if (!['searching', 'matched', 'quoted', 'agreed', 'working'].includes(j.row.stage)) return res.status(409).json({ error: 'You can add a photo while the job is open.' });
+    const img = auth.readImage(req.body);
+    if (img.error) return res.status(img.status).json({ error: img.error });
+    const path = 'jobs/photo-' + j.row.id;
+    await auth.storePhoto(path, img.buf, img.type);
+    await setJob(j.row, { photo_path: path, photo_at: new Date().toISOString(), tech_unread: !!j.row.technician_id });
+    if (j.row.technician_id) await addMessage(j.row.id, req.user.id, 'system', 'The customer added a photo.');
+    res.json({ ok: true });
+  }));
+
   // "Report a problem": the payout is held and the admin decides
   router.post('/jobs/:id(\\d+)/dispute', customerOnly, handle(async (req, res) => {
     const j = await loadJob(req, res, 'customer'); if (!j) return;
@@ -315,7 +330,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
     }
     res.json({
       feePercent, onlinePayment: onlinePayment(),
-      order: shape(row, req.user, vehicles.get(row.vehicle_id), users, onlineTechs == null ? {} : { onlineTechs }),
+      order: shape(row, req.user, vehicles.get(row.vehicle_id), users, { ...(onlineTechs == null ? {} : { onlineTechs }), ...(row.photo_path ? { photoUrl: await auth.signedPhotoUrl(row.photo_path).catch(() => null) } : {}) }),
       messages: msgs.map(m => ({
         id: m.id, kind: m.kind, body: m.body, createdAt: m.created_at,
         from: m.kind === 'system' ? 'system' : m.sender_id === req.user.id ? 'me' : 'them',

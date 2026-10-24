@@ -358,6 +358,8 @@
       </div>
       <label for="sos-vehicle">Which vehicle?</label>
       <select id="sos-vehicle"></select>
+      <label for="sos-photo">A photo of where you are (optional, it helps the technician find you)</label>
+      <input id="sos-photo" type="file" accept="image/*" capture="environment">
       <label for="sos-note">What happened? (optional)</label>
       <textarea id="sos-note" maxlength="500" rows="2" placeholder="e.g. flat front tire, no spare"></textarea>
       <button class="btn safety" id="sos-send" type="submit" style="font-size:18px;padding:12px 22px">Send help request</button>
@@ -1081,6 +1083,8 @@ $('sos-form').addEventListener('submit', async (e) => {
       locationText: $('sos-where').value, phone: $('sos-phone').value, parish: $('sos-parish').value,
       vehicleId: Number($('sos-vehicle').value) || undefined, note: $('sos-note').value
     }});
+    const photo = $('sos-photo').files[0]; $('sos-photo').value = '';
+    if (photo) { try { await api('/jobs/' + sent.id + '/photo', { method: 'POST', body: { image: await prepareImage(photo) } }); } catch (_) { /* the job is already out: the photo can be added from the job window */ } }
     goView('emergency'); closeDlg('dlg-sos'); $('sos-where').value = ''; $('sos-note').value = ''; sosCoords = null;
     $('sos-sent').textContent = 'Request sent. Technicians have been alerted. Keep your phone on and stay somewhere safe.';
     $('sos-sent').hidden = false;

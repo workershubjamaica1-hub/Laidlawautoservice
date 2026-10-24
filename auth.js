@@ -679,7 +679,8 @@ module.exports = function createAuth({ supabase, handle }) {
       }
       await supabase.from('emergency_requests').update({ status: 'cancelled' }).eq('user_id', u.id).eq('status', 'open');
       await supabase.from('service_requests').update({ status: 'cancelled', stage: 'cancelled' }).eq('customer_id', u.id).in('stage', ['searching', 'matched', 'quoted']);
-      await supabase.from('service_requests').update({ location_text: null, latitude: null, longitude: null, contact_phone: null }).eq('customer_id', u.id);
+      for (const jp of await rows(supabase.from('service_requests').select('photo_path').eq('customer_id', u.id))) if (jp.photo_path) await removePhoto(jp.photo_path).catch(() => {});
+      await supabase.from('service_requests').update({ location_text: null, latitude: null, longitude: null, contact_phone: null, photo_path: null }).eq('customer_id', u.id);
       await supabase.from('emergency_requests').update({ phone: '', location_text: null, note: null, latitude: null, longitude: null }).eq('user_id', u.id);
     }
     if (u.role === 'vendor') {
