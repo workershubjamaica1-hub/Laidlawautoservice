@@ -41,4 +41,14 @@ async function sendMail({ to, subject, text, html }) {
   }
 }
 
-module.exports = { sendMail, ready, provider: PROVIDER };
+// What the settings look like, for the admin "email check" (never includes the key itself)
+function describe() {
+  let key = 'not set';
+  if (API_KEY) {
+    if (PROVIDER === 'brevo') key = API_KEY.startsWith('xkeysib-') ? 'looks like a Brevo API key (good)' : API_KEY.startsWith('xsmtpsib-') ? 'this is a Brevo SMTP key, which does not work here. Create an API key instead (it starts with xkeysib-)' : 'does not start with xkeysib-, so it may not be a Brevo API key';
+    else key = 'set';
+  }
+  return { provider: PROVIDER || 'not set', from: FROM_EMAIL || 'not set', fromName: FROM_NAME, key, ready: ready() };
+}
+
+module.exports = { sendMail, ready, describe, provider: PROVIDER };

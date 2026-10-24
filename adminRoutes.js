@@ -262,6 +262,21 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
   }));
 
   // --- Users (admin only) ---
+  // Sends one test email and shows exactly what the email service answered, so a wrong key or sender is easy to find.
+  const mailer = require('./mailer');
+  router.post('/email-test', adminOnly, handle(async (req, res) => {
+    const to = String((req.body && req.body.to) || req.user.email || '').trim();
+    if (!auth.validEmail(to)) return res.status(400).json({ error: 'Enter a valid email address to send the test to.' });
+    const settings = mailer.describe();
+    if (!settings.ready) return res.json({ ok: false, settings, error: 'Email is not fully set up. One of EMAIL_PROVIDER, EMAIL_API_KEY or EMAIL_FROM is missing in Render.' });
+    try {
+      await mailer.sendMail({ to, subject: 'AutoAid 24/7 test email', text: 'This is a test email from your AutoAid 24/7 admin page. If you can read this, sending works.' });
+      res.json({ ok: true, settings, to });
+    } catch (err) {
+      res.json({ ok: false, settings, error: err.message });
+    }
+  }));
+
   router.get('/users', adminOnly, handle(async (req, res) => {
     const { data, error } = await supabase.from('users').select('*').order('id');
     if (error) throw error;

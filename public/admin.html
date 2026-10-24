@@ -99,6 +99,15 @@
     </div>
 
     <div class="panel" id="usersPanel" hidden>
+      <details class="emailcheck" id="emailCheck" style="margin-bottom:14px">
+        <summary style="cursor:pointer;font-weight:700">Email check (sign-up and password reset codes)</summary>
+        <p class="empty" style="margin:8px 0">Sends one test email and shows exactly what the email service replied. Use it if codes are not arriving.</p>
+        <form id="emailTestForm" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="emailTestTo" type="email" placeholder="Send the test to this email" aria-label="Test email address" style="flex:1;min-width:220px">
+          <button class="btn safety small" id="emailTestBtn" type="submit">Send test email</button>
+        </form>
+        <pre id="emailTestOut" style="white-space:pre-wrap;margin:10px 0 0;font:13px/1.5 inherit"></pre>
+      </details>
       <div id="subBox" class="subinfo" hidden></div>
       <div id="pendingBox" class="pending" hidden></div>
       <form id="userForm" class="userform">
@@ -886,6 +895,18 @@ function armDelete(btn, action, armedLabel = 'Confirm?') {
     try { await action(); } catch (err) { $('appError').textContent = err.message; delete btn.dataset.armed; btn.textContent = label; }
   });
 }
+
+$('emailTestForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('emailTestBtn').disabled = true; $('emailTestOut').textContent = 'Sending...';
+  try {
+    const r = await api('/admin/email-test', { method: 'POST', body: { to: $('emailTestTo').value } });
+    const s = r.settings;
+    $('emailTestOut').textContent = (r.ok ? 'SENT. Check the inbox (and spam) of ' + r.to + '.\n\n' : 'FAILED.\n' + r.error + '\n\n') +
+      'Service: ' + s.provider + '\nSending from: ' + s.fromName + ' <' + s.from + '>\nAPI key: ' + s.key;
+  } catch (err) { $('emailTestOut').textContent = err.message; }
+  finally { $('emailTestBtn').disabled = false; }
+});
 
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
