@@ -1,5 +1,8 @@
 // emergencyRoutes.js — roadside assistance and wrecker (towing) requests.
 //
+// NEW emergencies are created as urgent jobs (see jobRoutes.js): online technicians are alerted, the first to accept chats with the
+// customer, and they agree a price and arrival time. The routes below that read and change the older emergency_requests table remain
+// for emergencies made before that change.
 // Customers:  POST /emergency, GET /emergency/mine, POST /emergency/:id/cancel
 // Technicians and admins:  GET /admin/emergencies, PATCH /admin/emergencies/:id  (accept, release, resolve, cancel)
 //
@@ -59,22 +62,24 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
     }
 
     // Stop accidental repeats and abuse
-    const mine = await supabase.from('emergency_requests').select('id, status, created_at').eq('user_id', req.user.id);
+    const mine = await supabase.from('service_requests').select('id, stage, urgent, created_at').eq('customer_id', req.user.id);
     if (mine.error) throw mine.error;
-    if (mine.data.filter(r => r.status === 'open' || r.status === 'dispatched').length >= MAX_ACTIVE) {
+    const urgentMine = mine.data.filter(r => r.urgent);
+    if (urgentMine.filter(r => ['searching', 'matched', 'quoted', 'agreed', 'working', 'done_pending'].includes(r.stage)).length >= MAX_ACTIVE) {
       return res.status(429).json({ error: 'You already have emergency requests in progress. Cancel one or call the shop.' });
     }
-    if (mine.data.filter(r => Date.now() - new Date(r.created_at).getTime() < HOUR).length >= MAX_PER_HOUR) {
+    if (urgentMine.filter(r => Date.now() - new Date(r.created_at).getTime() < HOUR).length >= MAX_PER_HOUR) {
       return res.status(429).json({ error: 'Too many requests this hour. Please call the shop directly.' });
     }
 
-    const { data, error } = await supabase.from('emergency_requests').insert({
-      user_id: req.user.id, kind: b.kind, vehicle_id: vehicleId, note: note || null,
+    const { data, error } = await supabase.from('service_requests').insert({
+      customer_id: req.user.id, vehicle_id: vehicleId, category: b.kind, urgent: true, stage: 'searching',
+      description: note || (b.kind === 'towing' ? 'Tow truck needed' : 'Roadside help needed'),
       latitude: hasCoords ? lat : null, longitude: hasCoords ? lng : null, location_text: locationText || null,
-      parish, phone: phoneCheck.value.phone, status: 'open'
+      parish, contact_phone: phoneCheck.value.phone
     }).select().single();
     if (error) throw error;
-    res.status(201).json(toEmergency(data));
+    res.status(201).json({ id: data.id, kind: b.kind, stage: data.stage || 'searching', status: data.status || 'pending', urgent: true, createdAt: data.created_at });
   }));
 
   // --- Customer: my recent requests, with the technician's details once someone accepts ---

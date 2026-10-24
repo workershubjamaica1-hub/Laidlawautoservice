@@ -72,7 +72,7 @@ const VERIFY = {
 const PARTS = { enabled: String(process.env.PARTS_ENABLED || '').toLowerCase() === 'true' };
 const RENTALS = { enabled: String(process.env.RENTALS_ENABLED || '').toLowerCase() === 'true' };
 const BUSINESS = process.env.BUSINESS_NAME || 'AutoAid 24/7';
-const TERMS_VERSION = '2026-10-25';   // bump when the Terms or Privacy Notice change in a way people should agree to again
+const TERMS_VERSION = '2026-10-26';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
@@ -642,7 +642,9 @@ module.exports = function createAuth({ supabase, handle }) {
 
     if (u.role === 'customer') {
       const vids = (await rows(supabase.from('vehicles').select('id').eq('user_id', u.id))).map(v => v.id);
-      const busyJobs = vids.length ? (await rows(supabase.from('service_requests').select('id, status').in('vehicle_id', vids))).filter(r => r.status === 'in-progress') : [];
+      const byVehicle = vids.length ? await rows(supabase.from('service_requests').select('id, status, stage').in('vehicle_id', vids)) : [];
+      const byOwner = await rows(supabase.from('service_requests').select('id, status, stage').eq('customer_id', u.id));
+      const busyJobs = [...byVehicle, ...byOwner].filter(r => r.status === 'in-progress');
       if (busyJobs.length) blocked.push('a service request that a technician is working on');
       if ((await rows(supabase.from('emergency_requests').select('id, status').eq('user_id', u.id))).some(e => e.status === 'dispatched')) blocked.push('an emergency a technician is on the way to');
     }
@@ -676,6 +678,8 @@ module.exports = function createAuth({ supabase, handle }) {
         await supabase.from('service_requests').update({ status: 'cancelled' }).in('vehicle_id', mine.map(v => v.id)).eq('status', 'pending');
       }
       await supabase.from('emergency_requests').update({ status: 'cancelled' }).eq('user_id', u.id).eq('status', 'open');
+      await supabase.from('service_requests').update({ status: 'cancelled', stage: 'cancelled' }).eq('customer_id', u.id).in('stage', ['searching', 'matched', 'quoted']);
+      await supabase.from('service_requests').update({ location_text: null, latitude: null, longitude: null, contact_phone: null }).eq('customer_id', u.id);
       await supabase.from('emergency_requests').update({ phone: '', location_text: null, note: null, latitude: null, longitude: null }).eq('user_id', u.id);
     }
     if (u.role === 'vendor') {

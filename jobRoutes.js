@@ -21,7 +21,9 @@ const feePercent = (() => {
 })();
 const ONLINE_WINDOW_MS = 150 * 1000;         // a technician counts as online while their screen keeps checking in
 const WIDEN_AFTER_MS = 2 * 60 * 1000;       // jobs reach technicians in other parishes after this long
+const WIDEN_URGENT_MS = 30 * 1000;          // emergencies spread much faster
 const EXPIRE_AFTER_MS = 60 * 60 * 1000;     // a job nobody accepts for an hour is closed
+const EXPIRE_URGENT_MS = 30 * 60 * 1000;    // an emergency nobody accepts for 30 minutes is closed (so the customer can call the shop or try again)
 const AUTO_CONFIRM_MS = 24 * 60 * 60 * 1000; // a finished job the customer never confirms is confirmed after a day
 const MAX_ACTIVE_PER_TECH = 5;
 const ACTIVE = ['matched', 'quoted', 'agreed', 'working', 'done_pending'];
@@ -73,7 +75,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
     try {
       const open = await rows(supabase.from('service_requests').select('*').in('stage', ['searching', 'done_pending']));
       for (const r of open) {
-        if (r.stage === 'searching' && Date.now() - Date.parse(r.created_at) > EXPIRE_AFTER_MS) {
+        if (r.stage === 'searching' && Date.now() - Date.parse(r.created_at) > (r.urgent ? EXPIRE_URGENT_MS : EXPIRE_AFTER_MS)) {
           await setJob(r, { stage: 'cancelled' });
           await addMessage(r.id, null, 'system', 'No technician was available in time, so this request was closed. You can post it again.');
         } else if (r.stage === 'done_pending' && r.done_at && Date.now() - Date.parse(r.done_at) > AUTO_CONFIRM_MS) {
@@ -110,7 +112,8 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
   const deal = r => ['agreed', 'working', 'done_pending', 'closed'].includes(r.stage);
   function shape(r, viewer, veh, users, extra = {}) {
     const isCustomer = viewer.role === 'customer', isTech = viewer.role === 'staff';
-    const t = users.get(r.technician_id), c = veh ? users.get(veh.user_id) : null;
+    const t = users.get(r.technician_id), c = users.get(r.customer_id) || (veh ? users.get(veh.user_id) : null);
+    const sharePhones = deal(r) || (!!r.urgent && !!r.technician_id);   // emergencies share phone numbers as soon as a technician accepts
     return {
       id: r.id, stage: r.stage, status: r.status, category: r.category, description: r.description, premiumPerk: r.premium_perk || null,
       vehicle: veh ? { id: veh.id, name: veh.year + ' ' + veh.type } : null,
@@ -120,8 +123,9 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
       quote: r.quote_amount == null ? null : { amount: Number(r.quote_amount), etaMinutes: r.quote_eta_minutes, note: r.quote_note || '' },
       agreedAt: r.agreed_at || null, etaDeadline: r.eta_deadline || null, arrivedAt: r.arrived_at || null, doneAt: r.done_at || null, completedAt: r.completed_at || null,
       amount: r.amount == null ? null : Number(r.amount), rating: r.rating || null, review: r.review || '',
-      technician: t ? { id: t.id, name: t.name, ...(deal(r) || !isCustomer ? { phone: t.phone || '' } : {}) } : null,
-      customer: !isCustomer ? { name: c ? c.name : (veh ? veh.owner : ''), ...(deal(r) && c ? { phone: c.phone || '' } : {}) } : { name: c ? c.name : '' },
+      technician: t ? { id: t.id, name: t.name, ...(sharePhones || !isCustomer ? { phone: t.phone || '' } : {}) } : null,
+      customer: !isCustomer ? { name: c ? c.name : (veh ? veh.owner : ''), ...(sharePhones ? { phone: r.contact_phone || (c ? c.phone : '') || '' } : {}) } : { name: c ? c.name : '' },
+      urgent: !!r.urgent,
       ...(!isCustomer && r.fee_amount != null ? { fee: { percent: Number(r.fee_percent), amount: Number(r.fee_amount), settled: !!r.fee_settled_at } } : {}),
       payMode: r.pay_mode || 'in_person', paid: r.pay_status === 'paid', paidAmount: r.paid_amount == null ? null : Number(r.paid_amount),
       refund: r.refund_status && r.refund_status !== 'none' ? r.refund_status : null, disputed: !!r.disputed_at, disputeNote: r.disputed_at ? (r.dispute_note || '') : '',
@@ -134,7 +138,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
   }
   async function shapeMany(list, viewer, extras = () => ({})) {
     const vehicles = await vehiclesById(list.map(r => r.vehicle_id));
-    const users = await usersById([...list.map(r => r.technician_id), ...[...vehicles.values()].map(v => v.user_id)]);
+    const users = await usersById([...list.map(r => r.technician_id), ...list.map(r => r.customer_id), ...[...vehicles.values()].map(v => v.user_id)]);
     return list.map(r => shape(r, viewer, vehicles.get(r.vehicle_id), users, extras(r)));
   }
 
@@ -144,7 +148,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
     const row = (await rows(supabase.from('service_requests').select('*').eq('id', id)))[0];
     if (!row) { res.status(404).json({ error: 'Job not found.' }); return null; }
     const veh = (await vehiclesById([row.vehicle_id])).get(row.vehicle_id);
-    const isCustomer = !!veh && veh.user_id === req.user.id, isTech = row.technician_id === req.user.id, isAdmin = req.user.role === 'admin';
+    const isCustomer = row.customer_id === req.user.id || (!!veh && veh.user_id === req.user.id), isTech = row.technician_id === req.user.id, isAdmin = req.user.role === 'admin';
     const canTake = who === 'accept' && req.user.role === 'staff';   // a technician may open an unassigned job in order to accept it
     if (!(isCustomer || isTech || isAdmin || canTake)) { res.status(404).json({ error: 'Job not found.' }); return null; }
     if (who === 'customer' && !isCustomer) { res.status(403).json({ error: 'Only the customer can do this.' }); return null; }
@@ -170,14 +174,14 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
     let incoming = [];
     if (u.online) {
       const open = (await rows(supabase.from('service_requests').select('*').eq('stage', 'searching'))).filter(r => !r.technician_id && handles(u, r.category));
-      incoming = open.filter(r => !r.parish || r.parish === u.parish || Date.now() - Date.parse(r.created_at) >= WIDEN_AFTER_MS);
+      incoming = open.filter(r => !r.parish || r.parish === u.parish || Date.now() - Date.parse(r.created_at) >= (r.urgent ? WIDEN_URGENT_MS : WIDEN_AFTER_MS));
     }
     const mineAll = await rows(supabase.from('service_requests').select('fee_amount, fee_settled_at, stage, pay_mode, payout_amount, payout_settled_at').eq('technician_id', u.id));
     const ledger = mineAll.filter(r => r.stage === 'closed' && r.pay_mode !== 'platform' && r.fee_amount && !r.fee_settled_at);
     const payouts = mineAll.filter(r => r.stage === 'closed' && r.pay_mode === 'platform' && r.payout_amount != null && !r.payout_settled_at);
     res.json({
       online: !!u.online, specialties: specialtiesOf(u), feePercent,
-      incoming: await shapeMany(incoming.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)), req.user, r => ({ inYourParish: !r.parish || r.parish === u.parish })),
+      incoming: await shapeMany(incoming.sort((a, b) => (Number(!!b.urgent) - Number(!!a.urgent)) || Date.parse(b.created_at) - Date.parse(a.created_at)), req.user, r => ({ inYourParish: !r.parish || r.parish === u.parish })),
       mine: await shapeMany(mine.sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at)), req.user),
       feesDue: money(ledger.reduce((s, r) => s + Number(r.fee_amount), 0)),
       payoutsDue: money(payouts.reduce((s, r) => s + Number(r.payout_amount), 0)), onlinePayment: onlinePayment()
@@ -198,7 +202,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
       .eq('id', j.row.id).eq('stage', 'searching').is('technician_id', null).select().maybeSingle();
     if (error) throw error;
     if (!data) return res.status(409).json({ error: 'Another technician just took this job.' });
-    await addMessage(data.id, u.id, 'system', u.name + ' accepted your request. Say hello and describe the problem. They will send you a price and an arrival time.');
+    await addMessage(data.id, u.id, 'system', u.name + (data.urgent ? ' accepted your emergency request. Their phone number is showing so you can call them. They will send you a price and an arrival time here.' : ' accepted your request. Say hello and describe the problem. They will send you a price and an arrival time.'));
     res.json({ ok: true, id: data.id });
   }));
 
@@ -210,7 +214,8 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
     const perk = !!j.row.premium_perk;
     if (amount.error || amount.value === null || (!perk && amount.value <= 0)) return res.status(400).json({ error: perk ? 'Enter what the customer pays for parts and extras (0 if nothing).' : 'Enter your price in Jamaican dollars, e.g. 6500.' });
     const eta = Number(b.etaMinutes);
-    if (!Number.isInteger(eta) || eta < 10 || eta > 1440) return res.status(400).json({ error: 'Say how many minutes until you arrive after the customer agrees (10 to 1440).' });
+    const minEta = j.row.urgent ? 5 : 10;
+    if (!Number.isInteger(eta) || eta < minEta || eta > 1440) return res.status(400).json({ error: 'Say how many minutes until you arrive after the customer agrees (' + minEta + ' to 1440).' });
     const note = String(b.note || '').trim().slice(0, 300);
     await setJob(j.row, { stage: 'quoted', quote_amount: amount.value, quote_eta_minutes: eta, quote_note: note || null, quoted_at: new Date().toISOString(), customer_unread: true });
     await addMessage(j.row.id, req.user.id, 'system', 'Price: ' + jmd(amount.value) + '. The technician will arrive within ' + eta + ' minutes after you agree.' + (note ? ' Note: ' + note : ''));
@@ -387,7 +392,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
     const all = await rows(supabase.from('service_requests').select('*').eq('pay_mode', 'platform'));
     const users = await usersById([...all.map(r => r.technician_id)]);
     const vehicles = await vehiclesById(all.map(r => r.vehicle_id));
-    const custUsers = await usersById([...vehicles.values()].map(v => v.user_id));
+    const custUsers = await usersById([...all.map(r => r.customer_id), ...[...vehicles.values()].map(v => v.user_id)]);
     const payoutsMap = new Map();
     for (const r of all.filter(r => r.stage === 'closed' && r.payout_amount != null && !r.payout_settled_at)) {
       const t = users.get(r.technician_id);
@@ -395,7 +400,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
       p.amount = money(p.amount + Number(r.payout_amount)); p.jobs++; payoutsMap.set(r.technician_id, p);
     }
     const details = new Map((await rows(supabase.from('users').select('id, payout_details').in('id', [...payoutsMap.keys()].concat(0)))).map(u => [u.id, u.payout_details || '']));
-    const who = r => { const v = vehicles.get(r.vehicle_id); const c = v ? custUsers.get(v.user_id) : null; return { name: c ? c.name : (v ? v.owner : ''), phone: c ? c.phone || '' : '' }; };
+    const who = r => { const v = vehicles.get(r.vehicle_id); const c = custUsers.get(r.customer_id) || (v ? custUsers.get(v.user_id) : null); return { name: c ? c.name : (v ? v.owner : ''), phone: c ? c.phone || '' : '' }; };
     res.json({
       payouts: [...payoutsMap.values()].map(p => ({ ...p, payoutDetails: details.get(p.technicianId) || '' })),
       refunds: all.filter(r => r.refund_status === 'due').map(r => ({ id: r.id, amount: Number(r.paid_amount), transactionId: r.transaction_id, note: r.refund_note || '', customer: who(r), stage: r.stage })),

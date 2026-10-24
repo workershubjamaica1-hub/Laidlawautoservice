@@ -334,6 +334,17 @@ alter table service_requests drop constraint if exists service_requests_refund_s
 alter table service_requests add constraint service_requests_refund_status_check check (refund_status in ('none', 'due', 'done'));
 create unique index if not exists service_requests_transaction_idx on service_requests(transaction_id) where transaction_id is not null;
 
+-- Emergencies (roadside and towing) now run through the same live job flow: online technicians are alerted, the first to accept chats
+-- with the customer, and the customer agrees a price and arrival time. A job belongs to its customer directly (the vehicle is optional).
+alter table service_requests add column if not exists customer_id bigint references users(id) on delete set null;
+update service_requests s set customer_id = v.user_id from vehicles v where s.vehicle_id = v.id and s.customer_id is null;
+alter table service_requests alter column vehicle_id drop not null;
+alter table service_requests add column if not exists urgent boolean not null default false;
+alter table service_requests add column if not exists contact_phone text;
+alter table service_requests drop constraint if exists service_requests_category_check;
+alter table service_requests add constraint service_requests_category_check check (category in ('diagnostics', 'mechanical', 'tire', 'electrical', 'maintenance', 'bodywork', 'roadside', 'towing', 'other'));
+create index if not exists service_requests_customer_idx on service_requests(customer_id);
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

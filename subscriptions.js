@@ -176,7 +176,7 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
     const pay = perk === 'oil' ? premium.payOil : premium.payBrakes;
     const ins = await supabase.from('service_requests').insert({
       vehicle_id: v.data.id, category: PERKS[perk].category,
-      parish: req.user.parish || null, location_text: req.user.address || null,
+      customer_id: req.user.id, parish: req.user.parish || null, location_text: req.user.address || null,
       stage: 'searching',
       description: PERKS[perk].description + (note ? '. Customer note: ' + note : ''),
       premium_perk: perk, platform_pay: pay > 0 ? pay : null

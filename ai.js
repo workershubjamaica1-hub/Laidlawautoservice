@@ -25,7 +25,7 @@ const MAX_MESSAGES = 20;          // conversation turns sent to the model
 const MAX_MESSAGE_CHARS = 4000;   // per message
 const HOURLY_LIMIT = Number(process.env.AI_HOURLY_LIMIT || 40); // questions per user per hour
 
-const SERVICE_VALUES = ['diagnostics', 'mechanical', 'tire', 'electrical', 'maintenance', 'bodywork', 'other'];
+const SERVICE_VALUES = ['diagnostics', 'mechanical', 'tire', 'electrical', 'maintenance', 'bodywork', 'roadside', 'towing', 'other'];
 
 const SYSTEM_PROMPT = `You are the in-house mechanic assistant for AutoAid 24/7, a vehicle repair and roadside assistance service in Jamaica. Customers talk to you through a chat on the AutoAid 24/7 website.
 

@@ -66,7 +66,7 @@ const toRequest = r => ({
   technicianId: r.technician_id || null, amount: r.amount == null ? null : Number(r.amount),
   rating: r.rating || null, review: r.review || '', completedAt: r.completed_at || null,
   hasWorkPhoto: !!r.work_photo_path,
-  stage: r.stage || 'searching', parish: r.parish || '', locationText: r.location_text || '',
+  stage: r.stage || 'searching', urgent: !!r.urgent, parish: r.parish || '', locationText: r.location_text || '',
   quote: r.quote_amount == null ? null : { amount: Number(r.quote_amount), etaMinutes: r.quote_eta_minutes, note: r.quote_note || '' },
   etaDeadline: r.eta_deadline || null, agreedAt: r.agreed_at || null, doneAt: r.done_at || null, unread: !!r.customer_unread,
   premiumPerk: r.premium_perk || null,                       // 'oil' or 'brakes' when this job is a free Premium service
@@ -117,6 +117,8 @@ const SERVICE_CATEGORIES = [
   { value: 'electrical',  label: 'Electrical' },
   { value: 'maintenance', label: 'Maintenance' },
   { value: 'bodywork',    label: 'Auto body repairs' },
+  { value: 'roadside',    label: 'Roadside assistance' },
+  { value: 'towing',      label: 'Wrecker / towing' },
   { value: 'other',       label: 'Other' }
 ];
 
@@ -261,14 +263,19 @@ app.delete('/vehicle/:id', ...noVendor, handle(async (req, res) => {
 // --- Service Requests ---
 app.get('/service-requests', ...noVendor, handle(async (req, res) => {
   let query = supabase.from('service_requests').select('*').order('id');
+  let extra = [];
   if (isCustomer(req)) {
     const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
     if (mine.error) throw mine.error;
     query = query.in('vehicle_id', mine.data.map(v => v.id));
+    const owned = await supabase.from('service_requests').select('*').eq('customer_id', req.user.id);   // emergencies have no vehicle
+    if (owned.error) throw owned.error;
+    extra = owned.data;
   }
   if (req.query.vehicleId) query = query.eq('vehicle_id', Number(req.query.vehicleId));
-  const { data, error } = await query;
+  let { data, error } = await query;
   if (error) throw error;
+  if (extra.length) { const seen = new Set(data.map(r => r.id)); data = data.concat(extra.filter(r => !seen.has(r.id))).sort((a, b) => a.id - b.id); }
   const techIds = [...new Set(data.map(r => r.technician_id).filter(Boolean))];
   const techs = new Map();
   if (techIds.length) {
@@ -292,7 +299,7 @@ app.post('/service-request', ...noVendor, handle(async (req, res) => {
   const hasCoords = req.body.latitude != null && req.body.longitude != null && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
   const where = String(req.body.locationText || req.user.address || '').trim().slice(0, 200);
   if (isCustomer(req) && where.length < 3 && !hasCoords) return res.status(400).json({ error: 'Tell us where the technician should come (street, community or landmark), or share your location.' });
-  let vehicleQuery = supabase.from('vehicles').select('id').eq('id', vid);
+  let vehicleQuery = supabase.from('vehicles').select('id, user_id').eq('id', vid);
   if (isCustomer(req)) vehicleQuery = vehicleQuery.eq('user_id', req.user.id);
   const { data: found, error: findError } = await vehicleQuery.maybeSingle();
   if (findError) throw findError;
@@ -309,6 +316,7 @@ app.post('/service-request', ...noVendor, handle(async (req, res) => {
     vehicle_id: vid,
     category,   // e.g. "diagnostics", "mechanical", "tire"
     description: description.trim(),
+    customer_id: isCustomer(req) ? req.user.id : (found.user_id || null),
     parish: req.user.parish || null, location_text: where || null,
     latitude: hasCoords ? lat : null, longitude: hasCoords ? lng : null,
     stage: 'searching'
@@ -330,8 +338,9 @@ app.patch('/service-request/:id', ...noVendor, handle(async (req, res) => {
     if (status !== 'cancelled') return res.status(403).json({ error: 'You can only cancel a request.' });
     const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
     if (mine.error) throw mine.error;
-    const own = await supabase.from('service_requests').select('id, stage').eq('id', id).in('vehicle_id', mine.data.map(v => v.id)).maybeSingle();
-    if (own.error) throw own.error;
+    const one = await supabase.from('service_requests').select('id, stage, vehicle_id, customer_id').eq('id', id).maybeSingle();
+    if (one.error) throw one.error;
+    const own = { data: one.data && (one.data.customer_id === req.user.id || mine.data.some(v => v.id === one.data.vehicle_id)) ? one.data : null };
     if (!own.data) return res.status(404).json({ error: 'Request not found.' });
     if (!['searching', 'matched', 'quoted', 'agreed'].includes(own.data.stage || 'searching')) return res.status(409).json({ error: 'This job can no longer be cancelled here. Contact the shop.' });
   }
@@ -351,8 +360,9 @@ app.post('/service-request/:id/rating', ...noVendor, handle(async (req, res) => 
   const review = String(req.body.review || '').trim().slice(0, 500);
   const mine = await supabase.from('vehicles').select('id').eq('user_id', req.user.id);
   if (mine.error) throw mine.error;
-  const cur = await supabase.from('service_requests').select('*').eq('id', Number(req.params.id)).in('vehicle_id', mine.data.map(v => v.id)).maybeSingle();
-  if (cur.error) throw cur.error;
+  const one = await supabase.from('service_requests').select('*').eq('id', Number(req.params.id)).maybeSingle();
+  if (one.error) throw one.error;
+  const cur = { data: one.data && (one.data.customer_id === req.user.id || mine.data.some(v => v.id === one.data.vehicle_id)) ? one.data : null };   // by owner (emergencies have no vehicle) or by vehicle
   if (!cur.data) return res.status(404).json({ error: 'Request not found.' });
   if (cur.data.status !== 'completed' || !cur.data.technician_id) return res.status(400).json({ error: 'You can rate a job once a technician has finished it.' });
   if (cur.data.rating) return res.status(409).json({ error: 'You already rated this job.' });

@@ -571,6 +571,7 @@ function renderSelects() {
 }
 
 function vehicleName(id) {
+  if (!id) return 'Vehicle not given';
   const v = state.vehicles.find(v => v.id === id);
   return v ? `${v.year} ${v.type}` : 'Removed vehicle';
 }
@@ -1074,7 +1075,7 @@ $('sos-form').addEventListener('submit', async (e) => {
   $('sos-error').textContent = '';
   $('sos-send').disabled = true;
   try {
-    await api('/emergency', { method: 'POST', body: {
+    const sent = await api('/emergency', { method: 'POST', body: {
       kind: sosKind,
       latitude: sosCoords ? sosCoords.lat : undefined, longitude: sosCoords ? sosCoords.lng : undefined,
       locationText: $('sos-where').value, phone: $('sos-phone').value, parish: $('sos-parish').value,
@@ -1083,8 +1084,9 @@ $('sos-form').addEventListener('submit', async (e) => {
     goView('emergency'); closeDlg('dlg-sos'); $('sos-where').value = ''; $('sos-note').value = ''; sosCoords = null;
     $('sos-sent').textContent = 'Request sent. Technicians have been alerted. Keep your phone on and stay somewhere safe.';
     $('sos-sent').hidden = false;
+    await refreshRequests();
     await loadSos();
-    $('sos-list').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    jchat.open(sent.id).catch(() => {});   // the waiting screen, then the chat with whoever accepts
   } catch (err) { $('sos-error').textContent = err.message; }
   finally { $('sos-send').disabled = false; }
 });
@@ -1093,8 +1095,15 @@ async function loadSos() {
   let list = [];
   try { list = await api('/emergency/mine'); } catch (_) { return; }
   if ([...document.querySelectorAll('#sos-list .rate')].some(b => b.dataset.value !== '0' || b.querySelector('.rate-note').value)) return;
+  const liveJobs = state.requests.filter(r => r.urgent && (['searching', 'matched', 'quoted', 'agreed', 'working', 'done_pending'].includes(r.stage) || Date.now() - new Date(r.updatedAt || r.createdAt) < 6 * 3600 * 1000)).sort((a, b) => b.id - a.id);
+  const jobsHtml = liveJobs.map(r => {
+    const t = r.technician, active = ['searching', 'matched', 'quoted', 'agreed', 'working', 'done_pending'].includes(r.stage);
+    const line = r.stage === 'searching' ? 'Alerting available technicians. Stay with your vehicle in a safe place.' : t ? '<strong>' + esc(t.name) + '</strong>' + (t.phone ? ' <a href="tel:' + esc(t.phone.replace(/[^\d+]/g, '')) + '">' + esc(t.phone) + '</a>' : '') + ' &middot; ' + esc(JobChat.STAGE[r.stage] || r.stage) : esc(JobChat.STAGE[r.stage] || r.stage);
+    return '<div class="sos-item ' + (active ? 'open' : 'resolved') + '"><strong>' + esc(SOS_LABEL[r.category] || r.category) + '</strong> <span class="sos-status">requested ' + esc(new Date(r.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })) + ' &middot; ' + esc(JobChat.STAGE[r.stage] || r.stage) + '</span><p style="margin:4px 0 0">' + line + '</p>' +
+      '<button class="btn small" type="button" data-job="' + r.id + '">' + (r.stage === 'searching' ? 'See progress' : r.stage === 'closed' ? 'Open' : 'Open chat') + '</button></div>';
+  }).join('');
   const shown = list.filter(r => r.status === 'open' || r.status === 'dispatched' || Date.now() - new Date(r.updatedAt || r.createdAt) < 6 * 3600 * 1000);
-  $('sos-list').innerHTML = shown.map(r => {
+  $('sos-list').innerHTML = jobsHtml + shown.map(r => {
     const when = new Date(r.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     let body = '';
     if (r.status === 'open') body = '<p style="margin:4px 0 0">Looking for a technician near you. Stay with your vehicle in a safe place.' + (shopPhone ? ' You can also call the shop.' : '') + '</p>';

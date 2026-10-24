@@ -31,6 +31,9 @@
 /* technician: incoming job cards */
 .incoming { display: grid; gap: 12px; margin: 10px 0 18px; }
 .jobcard { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: center; padding: 16px 18px; border-radius: 16px; background: #fff; border: 1.5px solid #F0C9C4; border-left: 6px solid #C93B2B; box-shadow: 0 8px 18px -14px rgba(201, 59, 43, .6); }
+.jobcard.urgent { border-width: 2px; border-color: #C93B2B; background: #FFF5F4; }
+.jobcard.urgent h4 { color: #B42323; }
+.tag.urgent, .pill.urgent { background: #C93B2B !important; color: #fff !important; }
 .jobcard.far { border-left-color: #E8A06A; border-color: var(--line, #E3E9F2); }
 .jobcard .jc-top { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; }
 .jobcard .tag { padding: 3px 10px; border-radius: 999px; font-weight: 800; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; background: #DDEEFA; color: #0069A3; }

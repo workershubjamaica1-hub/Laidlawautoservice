@@ -287,7 +287,7 @@ async function load() {
       if (me.role === 'customer') return location.replace('/app.html');
       if (me.role === 'vendor') return location.replace('/vendor.html');
       AccountUI.mountDetails($('acctDetails'), { api, user: me, onSaved: u => { me = u; $('who').textContent = u.name + ' (' + u.role + ')'; } }).catch(() => {});
-      if (me.role === 'staff') { $('jobsTab').hidden = false; $('requestsTab').hidden = true; startJobs(); }
+      if (me.role === 'staff') { $('jobsTab').hidden = false; $('requestsTab').hidden = true; $('emergTab').hidden = true; startJobs(); }
       AccountUI.mountSecurity($('acctSecurity'), { api, canDelete: me.role !== 'admin', onTokenChange: t => { token = t; } });
       $('who').textContent = me.name + ' (' + me.role + ')';
       $('who-dot').textContent = (me.name || '?').trim().charAt(0).toUpperCase();
@@ -340,9 +340,10 @@ async function pollJobs() {
   const fresh = feed.incoming.filter(j => !seenIncoming.has(j.id));
   seenIncoming = new Set(feed.incoming.map(j => j.id));
   if (feed.online && fresh.length) {
-    JobAlerts.start('NEW JOB');
+    const urgent = fresh.some(j => j.urgent);
+    JobAlerts.start(urgent ? 'URGENT JOB' : 'NEW JOB');
     const lbl = await JobChat.catLabel(fresh[0].category);
-    $('alertText').textContent = '\u{1F6A8} New ' + lbl + ' job' + (fresh.length > 1 ? 's (' + fresh.length + ')' : '') + ': ' + (fresh[0].locationText || fresh[0].parish);
+    $('alertText').textContent = '\u{1F6A8} ' + (urgent ? 'URGENT: ' : 'New ') + lbl + ' job' + (fresh.length > 1 ? 's (' + fresh.length + ')' : '') + ': ' + (fresh[0].locationText || fresh[0].parish);
     $('alertBanner').hidden = false;
     JobAlerts.notify('New ' + lbl + ' job', fresh[0].description);
     $('soundNote').hidden = JobAlerts.isReady();
@@ -351,7 +352,7 @@ async function pollJobs() {
   $('incomingCount').textContent = feed.incoming.length ? '(' + feed.incoming.length + ')' : '';
   const labels = await Promise.all(feed.incoming.map(j => JobChat.catLabel(j.category)));
   $('incomingList').innerHTML = !feed.online ? '<p class="empty">You are offline. Switch on the toggle above to receive new jobs.</p>'
-    : feed.incoming.length ? feed.incoming.map((j, i) => '<article class="jobcard' + (j.inYourParish ? '' : ' far') + '"><div><div class="jc-top"><span class="tag">' + JobChat.esc(labels[i]) + '</span>' +
+    : feed.incoming.length ? feed.incoming.map((j, i) => '<article class="jobcard' + (j.urgent ? ' urgent' : '') + (j.inYourParish ? '' : ' far') + '"><div><div class="jc-top">' + (j.urgent ? '<span class="tag urgent">URGENT</span>' : '') + '<span class="tag">' + JobChat.esc(labels[i]) + '</span>' +
         (j.inYourParish ? '<span class="tag near">In your parish</span>' : '<span class="tag">' + JobChat.esc(j.parish) + '</span>') + '<span>' + jobAgo(j.createdAt) + '</span></div>' +
         '<h4>' + JobChat.esc(j.vehicle ? j.vehicle.name : '') + '</h4><p>' + JobChat.esc(j.description) + '</p><p><strong>Where:</strong> ' + JobChat.esc(j.locationText || j.parish) + '</p></div>' +
         '<button class="btn" type="button" data-accept="' + j.id + '">Accept job</button></article>').join('')

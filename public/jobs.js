@@ -101,7 +101,7 @@
     const quoteCard = o => o.quote ? '<div class="offer"><div><b>Price: ' + jmd(o.quote.amount) + (o.premiumPerk ? ' (parts and extras)' : '') + '</b><small>Arrives within ' + o.quote.etaMinutes + ' minutes after you agree</small>' + (o.quote.note ? '<small>' + esc(o.quote.note) + '</small>' : '') + '</div></div>' : '';
 
     function quoteForm(o) {
-      const etas = [15, 30, 45, 60, 90, 120, 180, 240];
+      const etas = o.urgent ? [5, 10, 15, 20, 30, 45, 60, 90] : [15, 30, 45, 60, 90, 120, 180, 240];
       return '<form class="offer-form" id="th-quote" novalidate><label for="q-amount">' + (o.premiumPerk ? 'Parts and extras the customer pays (J$, 0 if none)' : 'Your price for this job (J$)') + '</label>' +
         '<input id="q-amount" inputmode="decimal" placeholder="6500" value="' + (o.quote ? o.quote.amount : '') + '">' +
         '<div class="row"><div><label for="q-eta">I will arrive within</label><select id="q-eta">' + etas.map(m => '<option value="' + m + '"' + ((o.quote ? o.quote.etaMinutes : 45) === m ? ' selected' : '') + '>' + (m < 60 ? m + ' minutes' : (m / 60) + (m === 60 ? ' hour' : ' hours')) + '</option>').join('') + '</select></div>' +
@@ -114,13 +114,13 @@
       const phone = isCustomer ? (o.technician && o.technician.phone) : (o.customer && o.customer.phone);
       if (isCustomer) {
         if (o.stage === 'searching') {
-          out.push('<div class="finding"><div class="spin" aria-hidden="true"></div><div><b>Finding a ' + esc(dept.toLowerCase()) + ' technician near you</b>' +
-            '<p>Waiting <span data-since="' + esc(o.createdAt) + '">0:00</span>. The first available technician will accept and chat with you here. Keep this window open.</p>' +
+          out.push('<div class="finding"><div class="spin" aria-hidden="true"></div><div><b>' + (o.urgent ? 'Alerting every available technician near you now' : 'Finding a ' + esc(dept.toLowerCase()) + ' technician near you') + '</b>' +
+            '<p>Waiting <span data-since="' + esc(o.createdAt) + '">0:00</span>. The first available technician will accept and chat with you here. ' + (o.urgent ? 'Stay somewhere safe and keep your phone on. ' : '') + 'Keep this window open.</p>' +
             '<p class="th-hint">' + (o.onlineTechs > 0 ? '<strong>' + o.onlineTechs + '</strong> technician' + (o.onlineTechs > 1 ? 's are' : ' is') + ' online for this department right now.' :
               'No technician is online for this department at the moment. We will keep looking.' + (shopPhone() ? ' You can also call the shop: <a href="tel:' + tel(shopPhone()) + '">' + esc(shopPhone()) + '</a>.' : '')) + '</p></div></div>');
           out.push(summary(o, dept)); out.push('<div class="th-actions"><button class="btn ghost" type="button" data-act="cancel">Cancel request</button></div>');
         }
-        if (o.stage === 'matched') { out.push(summary(o, dept)); out.push('<p class="th-hint"><strong>' + esc(o.technician.name) + '</strong> accepted your request. Chat below and describe the problem. They will send you a price and an arrival time.</p><div class="th-actions"><button class="btn ghost small" type="button" data-act="change">Ask for a different technician</button></div>'); }
+        if (o.stage === 'matched') { out.push(summary(o, dept)); out.push('<p class="th-hint"><strong>' + esc(o.technician.name) + '</strong> accepted your request.' + (o.urgent && o.technician.phone ? ' Call them now: <a href="tel:' + tel(o.technician.phone) + '">' + esc(o.technician.phone) + '</a>.' : ' Chat below and describe the problem.') + ' They will send you a price and an arrival time.</p><div class="th-actions"><button class="btn ghost small" type="button" data-act="change">Ask for a different technician</button></div>'); }
         if (o.stage === 'quoted') {
           const pay = o.payUrl
             ? '<p class="th-hint">Pay securely on Fygaro. <strong>AutoAid 24/7 holds your payment</strong> and only pays <strong>' + esc(o.technician.name) + '</strong> after you confirm the job is done. If it does not go ahead, you are refunded.</p>' +
@@ -143,6 +143,7 @@
           '<div class="rate" data-value="0"><span>How was it?</span><span role="group" aria-label="Rating out of 5">' + [1, 2, 3, 4, 5].map(n => '<button type="button" class="star" data-star="' + n + '" aria-label="' + n + ' stars">★</button>').join('') + '</span><input class="rate-note" maxlength="500" placeholder="A few words (optional)" aria-label="Your comment"><button type="button" class="btn small" data-act="rate" disabled>Send rating</button></div>'));
       } else {
         out.push(summary(o, dept));
+        if (o.urgent && ['matched', 'quoted'].includes(o.stage)) out.push('<div class="deal"><b>URGENT: ' + esc(o.customer.name) + ' needs help now</b><p>' + (o.customer.phone ? 'Phone: <a href="tel:' + tel(o.customer.phone) + '">' + esc(o.customer.phone) + '</a>. ' : '') + 'Location: ' + esc(o.locationText) + ' (<a href="' + mapsLink(o) + '" target="_blank" rel="noopener">open in maps</a>)</p></div>');
         if (['agreed', 'working', 'done_pending'].includes(o.stage)) {
           out.push('<div class="deal"><b>Customer: ' + esc(o.customer.name) + '</b><p>' + (phone ? 'Phone: <a href="tel:' + tel(phone) + '">' + esc(phone) + '</a>. ' : '') + 'Location: ' + esc(o.locationText) + ' (<a href="' + mapsLink(o) + '" target="_blank" rel="noopener">open in maps</a>)</p>' +
             (o.paid ? '<p><strong>The customer has paid ' + jmd(o.paidAmount) + ' online.</strong> Do not take cash. After they confirm the job you are paid <strong>' + jmd(o.paidAmount - (o.fee ? o.fee.amount : 0)) + '</strong> (price minus the AutoAid fee of ' + (o.fee ? o.fee.percent : 0) + '%).</p>'
@@ -255,7 +256,7 @@
       const labels = await Promise.all(jobs.map(j => catLabel(j.category)));
       el.innerHTML = jobs.map((j, i) => '<button class="porder" type="button" data-job="' + j.id + '">' +
         '<span class="tile blue sm"><span class="ic" style="--m: var(--d-wrench)"></span></span>' +
-        '<span class="p-main"><b>' + esc(labels[i]) + (j.vehicle ? ': ' + esc(j.vehicle.name) : '') + (j.unread ? '<i class="dot-new" title="New message"></i>' : '') + '</b>' +
+        '<span class="p-main"><b>' + (j.urgent ? '<span class="pill st-cancelled urgent">URGENT</span> ' : '') + esc(labels[i]) + (j.vehicle ? ': ' + esc(j.vehicle.name) : '') + (j.unread ? '<i class="dot-new" title="New message"></i>' : '') + '</b>' +
           '<small>' + esc(isCustomer ? (j.technician ? j.technician.name : 'Finding a technician') : (j.customer ? j.customer.name : '') + (j.locationText ? ' · ' + j.locationText : '')) + '</small>' +
           '<small class="p-last">' + esc(j.description) + '</small></span>' +
         '<span class="p-side"><span class="pill st-' + PILL[j.stage] + '">' + esc(STAGE[j.stage] || j.stage) + '</span>' + (j.quote ? '<b>' + jmd(j.quote.amount) + '</b>' : '') + '</span></button>').join('');
