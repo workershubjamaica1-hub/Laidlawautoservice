@@ -264,6 +264,10 @@ create table if not exists email_failures (
 );
 alter table email_failures enable row level security;
 
+-- More vehicle types: SUV, van, bus, motorcycle and other (customers can add a vehicle that is not in our list)
+alter table vehicles drop constraint if exists vehicles_category_check;
+alter table vehicles add constraint vehicles_category_check check (category in ('car', 'suv', 'van', 'bus', 'motorcycle', 'light-truck', 'small-truck', 'heavy-truck', 'other'));
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

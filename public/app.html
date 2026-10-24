@@ -298,6 +298,12 @@
         <ul class="results" id="type-results" role="listbox" hidden></ul>
       </div>
       <p class="found" id="type-found" aria-live="polite"></p>
+      <button type="button" class="linkbtn" id="not-listed">My vehicle isn't listed</button>
+      <div id="custom-row" hidden>
+        <p class="hint-line" style="margin:6px 0">No problem: type its make and model above, then tell us what kind of vehicle it is.</p>
+        <label for="type-cat">Type of vehicle</label>
+        <select id="type-cat"></select>
+      </div>
       <label for="year">Year</label>
       <input id="year" name="year" type="number" inputmode="numeric" placeholder="2016" required>
       <label for="vin">VIN (optional)</label>
@@ -516,7 +522,7 @@ $('add-vehicle-toggle').addEventListener('click', () => {
   $('type').focus({ preventScroll: true });
 });
 $('add-vehicle-cancel').addEventListener('click', () => {
-  $('vehicle-form').reset(); $('owner').value = $('who').textContent; clearPick(); $('vehicle-error').textContent = ''; closeDlg('dlg-vehicle');
+  $('vehicle-form').reset(); $('owner').value = $('who').textContent; clearPick(); showCustom(false); $('vehicle-error').textContent = ''; closeDlg('dlg-vehicle');
 });
 
 function renderVehicles() {
@@ -544,6 +550,8 @@ function renderSelects() {
     : '<option value="">Add a vehicle first</option>';
   if (state.vehicles.some(v => String(v.id) === current)) vSel.value = current;
 
+  const tcat = $('type-cat');
+  if (!tcat.options.length) tcat.innerHTML = '<option value="">Choose the type</option>' + state.categories.vehicle.map(c => `<option value="${c.value}">${esc(c.label)}</option>`).join('');
   const cSel = $('category');
   if (!cSel.options.length) {
     cSel.innerHTML = state.categories.service.map(c => `<option value="${c.value}">${esc(c.label)}</option>`).join('');
@@ -606,8 +614,10 @@ $('vehicle-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = e.target;
   $('vehicle-error').textContent = '';
+  const custom = !picked && !$('custom-row').hidden;
+  if (custom && !$('type-cat').value) { $('vehicle-error').textContent = 'Choose what type of vehicle it is.'; return; }
   // If nothing was picked from the list, use the only match or ask them to choose
-  if (!picked) {
+  if (!picked && !custom) {
     const matches = searchCatalog(state.catalog, f.type.value);
     if (matches.length === 1 || (matches[0] && matches[0].score === 100)) pickVehicle(matches[0]);
     else if (f.type.value.trim()) {
@@ -620,12 +630,13 @@ $('vehicle-form').addEventListener('submit', async (e) => {
   }
   try {
     const v = await api('/vehicle', { method: 'POST', body: {
-      owner: f.owner.value, type: picked ? picked.name : f.type.value, year: f.year.value, vin: f.vin.value.trim()
+      owner: f.owner.value, type: picked ? picked.name : f.type.value, year: f.year.value, vin: f.vin.value.trim(),
+      ...(custom ? { category: $('type-cat').value } : {})
     }});
     state.vehicles.push(v);
     f.reset();
     f.owner.value = $('who').textContent;
-    clearPick();
+    clearPick(); showCustom(false);
     render();
     $('vehicleId').value = v.id;
     $('ai-vehicle').value = v.id;
@@ -693,9 +704,12 @@ const input = $('type');
 const list = $('type-results');
 
 function clearPick() { picked = null; $('type-found').textContent = ''; }
+function showCustom(on) { $('custom-row').hidden = !on; $('not-listed').hidden = on; if (on) hideResults(); }
+$('not-listed').addEventListener('click', () => { showCustom(true); clearPick(); $('type').focus(); });
 
 function pickVehicle(r) {
   picked = { name: r.name, category: r.category };
+  showCustom(false);
   input.value = r.name;
   $('type-found').innerHTML = `Found: <strong>${esc(r.name)}</strong>, ${esc(labelOf(state.categories.vehicle, r.category))}`;
   hideResults();
@@ -713,10 +727,11 @@ function showResults() {
   if (!q) { hideResults(); return; }
   results = searchCatalog(state.catalog, q);
   active = results.length ? 0 : -1;
-  list.innerHTML = results.length
+  const own = '<li class="none own" role="option" data-custom>' + (results.length ? 'Not in the list? ' : 'No match. Check the spelling, or ') + '<strong>tap here to add it yourself</strong>.</li>';
+  list.innerHTML = (results.length
     ? results.map((r, i) => `<li role="option" id="opt-${i}" data-i="${i}" aria-selected="${i === active}">
         <span>${esc(r.name)}</span><small>${esc(labelOf(state.categories.vehicle, r.category))}</small></li>`).join('')
-    : '<li class="none" role="option" aria-disabled="true">No match in the Jamaica catalog. Check the spelling.</li>';
+    : '') + own;
   list.hidden = false;
   input.setAttribute('aria-expanded', 'true');
   if (active >= 0) input.setAttribute('aria-activedescendant', 'opt-0');
@@ -740,6 +755,7 @@ input.addEventListener('keydown', (e) => {
 });
 // mousedown (not click) so the pick happens before the input loses focus
 list.addEventListener('mousedown', (e) => {
+  if (e.target.closest('[data-custom]')) { e.preventDefault(); showCustom(true); return; }
   const li = e.target.closest('li[data-i]');
   if (li) { e.preventDefault(); pickVehicle(results[Number(li.dataset.i)]); }
 });

@@ -96,9 +96,14 @@ const isCustomer = req => req.user.role === 'customer';
 // Vehicle categories
 const VEHICLE_CATEGORIES = [
   { value: 'car',         label: 'Car' },
-  { value: 'light-truck', label: 'Light truck' },
+  { value: 'suv',         label: 'SUV' },
+  { value: 'van',         label: 'Van / minibus' },
+  { value: 'bus',         label: 'Bus / coaster' },
+  { value: 'motorcycle',  label: 'Motorcycle / ATV' },
+  { value: 'light-truck', label: 'Pickup / light truck' },
   { value: 'small-truck', label: 'Small truck' },
-  { value: 'heavy-truck', label: 'Heavy truck' }
+  { value: 'heavy-truck', label: 'Heavy truck / equipment' },
+  { value: 'other',       label: 'Other' }
 ];
 
 // Service categories (edit this list to match what the shop offers)
@@ -119,7 +124,7 @@ app.get('/categories', (req, res) => res.json({ vehicle: VEHICLE_CATEGORIES, ser
 
 // Common makes and models, grouped by vehicle category value ("car", "light-truck", ...).
 // Edit vehicleCatalog.js to change the list. Only listed models can be registered.
-const CATALOG_KEYS = { cars: 'car', lightTrucks: 'light-truck', smallTrucks: 'small-truck', heavyTrucks: 'heavy-truck' };
+const CATALOG_KEYS = { cars: 'car', suvs: 'suv', vans: 'van', buses: 'bus', motorcycles: 'motorcycle', lightTrucks: 'light-truck', smallTrucks: 'small-truck', heavyTrucks: 'heavy-truck' };
 const CATALOG = Object.fromEntries(
   Object.entries(CATALOG_KEYS).map(([key, category]) => [category, vehicleCatalog[key] || []])
 );
@@ -200,16 +205,23 @@ app.post('/vehicle', ...noVendor, handle(async (req, res) => {
   }
   // Find the vehicle in the Jamaica catalog. Case, spaces and dashes don't matter,
   // and the vehicle type (car, light truck...) comes from the catalog, not the request.
+  let type, category;
   const found = findExact(CATALOG, req.body.type);
-  if (!found) {
-    const suggestions = searchCatalog(CATALOG, req.body.type, 3).map(r => r.name);
-    return res.status(400).json({
-      error: 'Vehicle type not recognized in Jamaica catalog.' +
-        (suggestions.length ? ` Did you mean ${suggestions.join(', ')}?` : ' Check the spelling and try again.'),
-      suggestions
-    });
+  if (found) {
+    ({ name: type, category } = found);
+  } else {
+    // Not in our list: the customer may still add it, if they say what kind of vehicle it is
+    const typed = String(req.body.type).trim().replace(/\s+/g, ' ');
+    if (isVehicleCategory(req.body.category) && typed.length >= 3 && typed.length <= 60 && /^[\p{L}\p{N} .,'\/&+()-]+$/u.test(typed)) {
+      type = typed; category = req.body.category;
+    } else {
+      const suggestions = searchCatalog(CATALOG, req.body.type, 3).map(r => r.name);
+      return res.status(400).json({
+        error: 'We could not find that vehicle.' + (suggestions.length ? ` Did you mean ${suggestions.join(', ')}? ` : ' ') + 'You can also choose "My vehicle isn\'t listed" and add it yourself.',
+        code: 'not_listed', suggestions
+      });
+    }
   }
-  const { name: type, category } = found;
   const y = Number(year);
   const maxYear = new Date().getFullYear() + 1;
   if (!Number.isInteger(y) || y < 1900 || y > maxYear) {
