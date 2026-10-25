@@ -38,7 +38,7 @@
 <header class="topbar">
   <a class="brand" href="#" aria-label="AutoAid 24/7"><img src="/logo.png" alt="AutoAid 24/7"></a>
   <nav class="top-links" aria-label="Main">
-    <a href="#orders" data-view="orders" id="tab-orders" hidden>Part orders<span class="nav-badge" id="orders-badge" hidden></span></a>
+    <a href="#orders" data-view="orders" id="tab-orders" hidden>Orders<span class="nav-badge" id="orders-badge" hidden></span></a>
     <a href="#rentals" data-view="rentals" id="tab-rentals" hidden>Rentals<span class="nav-badge" id="rentals-badge" hidden></span></a>
     <a href="#sales" data-view="sales">Sales</a>
   </nav>
@@ -53,7 +53,7 @@
   <!-- PART ORDERS -->
   <div class="view" id="view-orders" data-view="orders" hidden>
     <div class="page-head">
-      <div><p class="eyebrow">Parts</p><h1>Part requests</h1><p class="welcome-sub">Customers ask for a part, you chat, send an offer, and they collect it from you.</p></div>
+      <div><p class="eyebrow">Parts</p><h1>Orders</h1><p class="welcome-sub">Customers ask for a part or an accessory, you chat, send an offer (with a fitting charge if you fit it), and they pay you in person.</p></div>
       <div class="filters seg" role="group" aria-label="Filter orders" id="order-filters">
         <button type="button" data-filter="open" aria-pressed="true">Open</button>
         <button type="button" data-filter="completed" aria-pressed="false">Completed</button>
@@ -211,7 +211,7 @@ let orders = [], ofilter = 'open', bookings = [], bfilter = 'open', vehicles = [
 const isOpenOrder = o => o.status === 'chatting' || o.status === 'offered' || o.status === 'accepted';
 function drawOrders() {
   const list = orders.filter(o => ofilter === 'all' || (ofilter === 'open' ? isOpenOrder(o) : o.status === ofilter));
-  pchat.renderList($('orders-list'), list, ofilter === 'open' ? 'No open part requests right now. New ones appear here.' : 'Nothing here.');
+  pchat.renderList($('orders-list'), list, ofilter === 'open' ? 'No open requests right now. New ones appear here.' : 'Nothing here.');
   const unread = orders.filter(o => o.unread).length;
   $('orders-badge').hidden = !unread; $('orders-badge').textContent = unread;
 }
@@ -337,10 +337,10 @@ $('rbookings-list').addEventListener('click', (e) => { const b = e.target.closes
     if (user.role !== 'vendor') return location.replace('/admin.html');
     me = user;
     cfg = await (await fetch('/config')).json().catch(() => ({}));
-    offersParts = user.offers.includes('parts') && !!(cfg.parts && cfg.parts.enabled);
+    offersParts = (user.offers.includes('parts') || user.offers.includes('accessories')) && !!(cfg.parts && cfg.parts.enabled);   // parts and accessories share one list of orders
     offersRentals = user.offers.includes('rentals') && !!(cfg.rentals && cfg.rentals.enabled);
     $('who').textContent = user.businessName || user.name;
-    $('who-sub').textContent = offersParts && offersRentals ? 'Parts and rentals' : offersRentals ? 'Rentals' : 'Parts vendor';
+    $('who-sub').textContent = [user.offers.includes('parts') && offersParts && 'Parts', user.offers.includes('accessories') && offersParts && 'Accessories', offersRentals && 'Rentals'].filter(Boolean).join(', ') || 'Vendor';
     $('who-dot').textContent = (user.businessName || user.name || '?').trim().split(/\s+/).slice(0, 2).map(w => w.charAt(0)).join('').toUpperCase();
     VIEWS = [offersParts && 'orders', offersRentals && 'rentals', 'sales', 'profile'].filter(Boolean);
     $('tab-orders').hidden = !offersParts; $('tab-rentals').hidden = !offersRentals;

@@ -6,6 +6,7 @@
   const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
   const STATUS = { chatting: 'Chatting', offered: 'Offer sent', accepted: 'Accepted', completed: 'Completed', cancelled: 'Cancelled' };
   const COND = { new: 'New', used: 'Used', aftermarket: 'Aftermarket', reconditioned: 'Reconditioned' };
+  const FIT = { shop: 'fitted at the seller\'s shop', mobile: 'fitted where the customer is (the seller comes to them)' };
   const when = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   function create({ api, role, commissionPercent, onChange }) {
@@ -32,17 +33,17 @@
     dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); if (e.target.closest('[data-close]')) dlg.close(); });
 
     const summary = o => o.offer
-      ? '<div class="offer"><div><b>' + esc(o.offer.item) + '</b><small>' + esc(COND[o.offer.condition] || o.offer.condition) + ' &middot; ' + o.offer.quantity + ' &times; ' + jmd(o.offer.unitPrice) + '</small></div><div class="offer-total"><small>Total</small><b>' + jmd(o.offer.total) + '</b></div></div>'
+      ? '<div class="offer"><div><b>' + esc(o.offer.item) + '</b><small>' + esc(COND[o.offer.condition] || o.offer.condition) + ' &middot; ' + o.offer.quantity + ' &times; ' + jmd(o.offer.unitPrice) + (o.offer.installFee > 0 ? ' + fitting ' + jmd(o.offer.installFee) : o.kind === 'accessory' && o.installMode ? ' &middot; fitting included' : '') + '</small></div><div class="offer-total"><small>Total</small><b>' + jmd(o.offer.total) + '</b></div></div>'
       : '';
 
     function panel(o) {
       const out = [];
       const closed = o.status === 'completed' || o.status === 'cancelled';
       if (role === 'customer') {
-        if (o.status === 'chatting') out.push('<p class="th-hint">Chat with the vendor. They will send you an offer with the price. You only pay when you collect the part.</p>');
+        if (o.status === 'chatting') out.push('<p class="th-hint">Chat with the ' + (o.kind === 'accessory' ? 'seller' : 'vendor') + '. They will send you an offer with the price' + (o.kind === 'accessory' && o.installMode ? ' (and the fitting charge)' : '') + '. You only pay when you ' + (o.kind === 'accessory' && o.installMode ? 'get it fitted' : 'collect it') + '.</p>');
         if (o.status === 'offered') out.push(summary(o) + '<div class="th-actions"><button class="btn" type="button" data-act="accept">Accept offer</button><button class="btn ghost" type="button" data-act="decline">Decline</button></div>');
-        if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>Collect your part</b><p>' + esc(o.vendor.name) + (o.vendor.address ? ', ' + esc(o.vendor.address) : '') + (o.vendor.phone ? '<br>Phone: <a href="tel:' + esc(String(o.vendor.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.vendor.phone) + '</a>' : '') +
-          '</p><p>Pay <strong>' + jmd(o.offer.total) + '</strong> to the vendor when you collect it.</p></div>');
+        if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>' + (o.kind === 'accessory' ? (o.installMode === 'mobile' ? 'Agree a time for the fitting' : o.installMode === 'shop' ? 'Take your vehicle to the shop for fitting' : 'Collect your item') : 'Collect your part') + '</b><p>' + esc(o.vendor.name) + (o.vendor.address ? ', ' + esc(o.vendor.address) : '') + (o.vendor.phone ? '<br>Phone: <a href="tel:' + esc(String(o.vendor.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.vendor.phone) + '</a>' : '') +
+          '</p><p>Pay <strong>' + jmd(o.offer.total) + '</strong> to the ' + (o.kind === 'accessory' ? 'seller' : 'vendor') + (o.kind === 'accessory' && o.installMode ? ' when it is fitted.' : ' when you collect it.') + '</p></div>');
         if (o.status === 'completed') {
           out.push(summary(o));
           out.push(o.rating ? '<p class="th-hint">You rated this vendor <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span></p>'
@@ -52,17 +53,19 @@
       } else {
         if (o.status === 'chatting' || o.status === 'offered') {
           if (o.status === 'offered') out.push(summary(o));
+          if (o.kind === 'accessory') out.push('<p class="th-hint"><strong>Accessory request.</strong> ' + (o.installMode ? 'The customer wants it ' + esc(FIT[o.installMode]) + '. Put your fitting charge in the offer.' : 'The customer does not need fitting.') + '</p>');
           out.push('<div class="th-actions"><button class="btn' + (o.status === 'offered' ? ' ghost' : '') + '" type="button" data-act="offer-toggle">' + (o.status === 'offered' ? 'Change offer' : 'Send an offer') + '</button></div>');
           out.push('<form class="offer-form" id="th-offer" novalidate' + (offerOpen ? '' : ' hidden') + '>' +
-            '<label for="of-item">Part you are offering</label><input id="of-item" maxlength="150" placeholder="Brand, part number, what it fits" value="' + esc(o.offer ? o.offer.item : '') + '">' +
+            '<label for="of-item">' + (o.kind === 'accessory' ? 'Item you are offering' : 'Part you are offering') + '</label><input id="of-item" maxlength="150" placeholder="Brand, part number, what it fits" value="' + esc(o.offer ? o.offer.item : '') + '">' +
             '<div class="row"><div><label for="of-cond">Condition</label><select id="of-cond">' + Object.entries(COND).map(([v, l]) => '<option value="' + v + '"' + (o.offer && o.offer.condition === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>' +
             '<div><label for="of-qty">Quantity</label><input id="of-qty" type="number" min="1" max="50" value="' + (o.offer ? o.offer.quantity : 1) + '"></div>' +
             '<div><label for="of-price">Price of one (J$)</label><input id="of-price" inputmode="decimal" placeholder="8500" value="' + (o.offer ? o.offer.unitPrice : '') + '"></div></div>' +
+            (o.kind === 'accessory' ? '<div><label for="of-install">Fitting charge (J$, 0 if none)</label><input id="of-install" inputmode="decimal" placeholder="0" value="' + (o.offer && o.offer.installFee ? o.offer.installFee : '') + '"></div>' : '') +
             '<p class="th-hint" id="of-total"></p><button class="btn" type="submit">Send offer to customer</button></form>');
         }
-        if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>The customer accepted. They will collect the part from you.</b><p>Customer: ' + esc(o.customer.name) + (o.customer.phone ? ' &middot; <a href="tel:' + esc(String(o.customer.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.customer.phone) + '</a>' : '') + '</p>' +
+        if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>' + (o.kind === 'accessory' ? (o.installMode === 'mobile' ? 'The customer accepted. Agree a time to go and fit it.' : o.installMode === 'shop' ? 'The customer accepted. They will bring the vehicle to your shop for fitting.' : 'The customer accepted. They will collect it from you.') : 'The customer accepted. They will collect the part from you.') + '</b><p>Customer: ' + esc(o.customer.name) + (o.customer.phone ? ' &middot; <a href="tel:' + esc(String(o.customer.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.customer.phone) + '</a>' : '') + '</p>' +
           '<p>They pay you <strong>' + jmd(o.offer.total) + '</strong> in person.' + (o.commission ? ' AutoAid commission (' + o.commission.percent + '%): <strong>' + jmd(o.commission.amount) + '</strong>, due once you mark it picked up.' : '') + '</p></div>' +
-          (role === 'vendor' ? '<div class="th-actions"><button class="btn" type="button" data-act="complete">Mark picked up and paid</button></div>' : ''));
+          (role === 'vendor' ? '<div class="th-actions"><button class="btn" type="button" data-act="complete">' + (o.kind === 'accessory' && o.installMode ? 'Mark fitted and paid' : 'Mark picked up and paid') + '</button></div>' : ''));
         if (o.status === 'completed') out.push(summary(o) + (o.commission ? '<p class="th-hint">AutoAid commission (' + o.commission.percent + '%): ' + jmd(o.commission.amount) + (o.commission.settled ? ' &middot; settled' : ' &middot; due') + '.</p>' : '') +
           (o.rating ? '<p class="th-hint">Customer rating <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span>' + (o.review ? ' "' + esc(o.review) + '"' : '') + '</p>' : ''));
       }
@@ -93,8 +96,9 @@
 
     function updateTotal() {
       const t = dlg.querySelector('#of-total'); if (!t) return;
-      const q = Number(dlg.querySelector('#of-qty').value), p = Number(String(dlg.querySelector('#of-price').value).replace(/[,\sJ$]/g, ''));
-      t.textContent = q > 0 && p > 0 ? 'Total ' + jmd(q * p) + (commissionPercent ? '. AutoAid commission (' + commissionPercent + '%): ' + jmd(Math.round(q * p * commissionPercent) / 100) + '.' : '') : '';
+      const num = s => Number(String(s).replace(/[,\sJ$]/g, '')) || 0;
+      const q = Number(dlg.querySelector('#of-qty').value), p = num(dlg.querySelector('#of-price').value), f = dlg.querySelector('#of-install') ? num(dlg.querySelector('#of-install').value) : 0, all = q * p + f;
+      t.textContent = q > 0 && p > 0 ? 'Total ' + jmd(all) + (commissionPercent ? '. AutoAid commission (' + commissionPercent + '%): ' + jmd(Math.round(all * commissionPercent) / 100) + '.' : '') : '';
     }
 
     async function refresh(keepScroll) {
@@ -138,7 +142,7 @@
     dlg.addEventListener('submit', async (e) => {
       if (e.target.id !== 'th-offer') return;
       e.preventDefault();
-      await act('/offer', { item: dlg.querySelector('#of-item').value, condition: dlg.querySelector('#of-cond').value, quantity: Number(dlg.querySelector('#of-qty').value), unitPrice: dlg.querySelector('#of-price').value }, () => { offerOpen = false; });
+      await act('/offer', { item: dlg.querySelector('#of-item').value, condition: dlg.querySelector('#of-cond').value, quantity: Number(dlg.querySelector('#of-qty').value), unitPrice: dlg.querySelector('#of-price').value, installFee: dlg.querySelector('#of-install') ? dlg.querySelector('#of-install').value : undefined }, () => { offerOpen = false; });
     });
     dlg.addEventListener('click', (e) => {
       const star = e.target.closest('.star');
@@ -164,7 +168,7 @@
         '<span class="tile blue sm"><span class="ic" style="--m: var(--d-doc)"></span></span>' +
         '<span class="p-main"><b>' + esc(o.part) + (o.unread ? '<i class="dot-new" title="New message"></i>' : '') + '</b>' +
           '<small>' + esc(role === 'customer' ? o.vendor.name : o.customer.name + (role === 'admin' ? ' with ' + o.vendor.name : '')) + (o.vehicle ? ' &middot; ' + esc(o.vehicle.name) : '') + '</small>' +
-          '<small class="p-last">' + esc(o.lastMessage || '').replace(/\n/g, ' ') + '</small></span>' +
+          (o.kind === 'accessory' ? '<small><em class="near">Accessory' + (o.installMode ? ' + fitting' : '') + '</em></small>' : '') + '<small class="p-last">' + esc(o.lastMessage || '').replace(/\n/g, ' ') + '</small></span>' +
         '<span class="p-side"><span class="pill st-' + esc(o.status === 'chatting' ? 'pending' : o.status === 'offered' || o.status === 'accepted' ? 'in-progress' : o.status) + '">' + esc(STATUS[o.status] || o.status) + '</span>' +
           (o.offer ? '<b>' + jmd(o.offer.total) + '</b>' : '') + '</span></button>').join('');
     }

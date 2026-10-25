@@ -13,6 +13,8 @@ const express = require('express');
 const mailer = require('./mailer');
 
 const CONDITIONS = ['new', 'used', 'aftermarket', 'reconditioned'];
+const INSTALL_MODES = ['none', 'shop', 'mobile'];   // accessories: fit it yourself, fitted at the seller's shop, or the seller comes to you
+const INSTALL_TEXT = { shop: 'fitted at the seller\'s shop', mobile: 'fitted where the customer is (the seller comes to them)' };
 const MAX_OPEN_PER_CUSTOMER = 15;
 const MAX_MESSAGES_PER_ORDER = 500;
 const commissionPercent = (() => {
@@ -44,7 +46,9 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     if (error) throw error;
     return new Map(data.map(v => [v.id, v]));
   }
-  const offersParts = u => String(u.vendor_offers || 'parts').split(',').includes('parts');   // rental-only companies are not parts vendors
+  // rental-only companies are not parts vendors, and a parts-only vendor does not sell accessories
+  const offersKind = (u, kind) => String(u.vendor_offers || 'parts').split(',').includes(kind === 'accessory' ? 'accessories' : 'parts');
+  const kindOf = v => (v === 'accessory' ? 'accessory' : 'part');
   const vendorName = u => (u ? (u.business_name || u.name) : 'Removed vendor');
 
   // What each person may see. Contact details are shared only once the customer accepts an offer.
@@ -53,11 +57,11 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     const deal = o.status === 'accepted' || o.status === 'completed';
     const c = users.get(o.customer_id), v = users.get(o.vendor_id), veh = vehicles.get(o.vehicle_id);
     return {
-      id: o.id, part: o.part, status: o.status,
+      id: o.id, part: o.part, status: o.status, kind: o.kind || 'part', installMode: o.install_mode && o.install_mode !== 'none' ? o.install_mode : null,
       vehicle: veh ? { id: veh.id, name: veh.year + ' ' + veh.type } : null,
       customer: c ? { name: c.name, ...(deal && !isCustomer ? { phone: c.phone || '', parish: c.parish || '' } : {}) } : { name: 'Removed customer' },
       vendor: v ? { id: v.id, name: vendorName(v), parish: v.parish || '', ...(deal && !isVendor ? { address: v.address || '', phone: v.phone || '' } : {}) } : { name: 'Removed vendor' },
-      offer: o.offer_total == null ? null : { item: o.offer_item, condition: o.offer_condition, quantity: o.offer_quantity, unitPrice: Number(o.offer_unit_price), total: Number(o.offer_total) },
+      offer: o.offer_total == null ? null : { item: o.offer_item, condition: o.offer_condition, quantity: o.offer_quantity, unitPrice: Number(o.offer_unit_price), installFee: Number(o.offer_install_fee || 0), total: Number(o.offer_total) },
       ...(!isCustomer && o.commission_amount != null ? { commission: { percent: Number(o.commission_percent), amount: Number(o.commission_amount), settled: !!o.commission_settled_at } } : {}),
       rating: o.rating || null, review: o.review || '',
       unread: isCustomer ? !!o.customer_unread : isVendor ? !!o.vendor_unread : false,
@@ -98,7 +102,8 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
   router.get('/parts/vendors', ...customerOnly, handle(async (req, res) => {
     const { data, error } = await supabase.from('users').select('id, name, business_name, parish, experience, approved, active, email_verified, role, vendor_offers').eq('role', 'vendor');
     if (error) throw error;
-    const list = data.filter(u => u.approved !== false && u.active !== false && u.email_verified !== false && offersParts(u))
+    const kind = kindOf(req.query.kind);
+    const list = data.filter(u => u.approved !== false && u.active !== false && u.email_verified !== false && offersKind(u, kind))
       .map(u => ({ id: u.id, name: vendorName(u), parish: u.parish || '', about: u.experience || '', nearYou: !!req.user.parish && u.parish === req.user.parish }))
       .sort((a, b) => (b.nearYou - a.nearYou) || a.name.localeCompare(b.name));
     res.json({ commissionPercent, vendors: list });
@@ -107,12 +112,15 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
   // --- Start an order chat with a vendor ---
   router.post('/parts/orders', ...customerOnly, handle(async (req, res) => {
     const b = req.body || {};
+    const kind = kindOf(b.kind), accessory = kind === 'accessory';
     const part = String(b.part || '').trim();
-    if (part.length < 3 || part.length > 150) return res.status(400).json({ error: 'Say which part you need (3 to 150 characters), e.g. "front brake pads".' });
+    if (part.length < 3 || part.length > 150) return res.status(400).json({ error: accessory ? 'Say what you want (3 to 150 characters), e.g. "LED headlight bulbs" or "black leather seat covers".' : 'Say which part you need (3 to 150 characters), e.g. "front brake pads".' });
+    const install = accessory ? String(b.install || 'none') : null;
+    if (accessory && !INSTALL_MODES.includes(install)) return res.status(400).json({ error: 'Choose how you want it fitted: no fitting, at the seller\'s shop, or where you are.' });
     const note = String(b.message || '').trim().slice(0, 1000);
     const vendor = await supabase.from('users').select('id, name, business_name, approved, active, email_verified, vendor_offers').eq('id', Number(b.vendorId)).eq('role', 'vendor').maybeSingle();
     if (vendor.error) throw vendor.error;
-    if (!vendor.data || vendor.data.approved === false || vendor.data.active === false || vendor.data.email_verified === false || !offersParts(vendor.data)) return res.status(400).json({ error: 'Choose a vendor from the list.' });
+    if (!vendor.data || vendor.data.approved === false || vendor.data.active === false || vendor.data.email_verified === false || !offersKind(vendor.data, kind)) return res.status(400).json({ error: 'Choose a vendor from the list.' });
     const veh = await supabase.from('vehicles').select('id, type, year, vin').eq('id', Number(b.vehicleId)).eq('user_id', req.user.id).maybeSingle();
     if (veh.error) throw veh.error;
     if (!veh.data) return res.status(400).json({ error: 'Choose one of your vehicles, so the vendor gets the right part.' });
@@ -121,11 +129,11 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     if (open.data.filter(o => !isClosed(o)).length >= MAX_OPEN_PER_CUSTOMER) return res.status(429).json({ error: 'You have a lot of open part orders. Finish or cancel some first.' });
 
     const { data, error } = await supabase.from('part_orders')
-      .insert({ customer_id: req.user.id, vendor_id: vendor.data.id, vehicle_id: veh.data.id, part, status: 'chatting', customer_unread: false, vendor_unread: true }).select().single();
+      .insert({ customer_id: req.user.id, vendor_id: vendor.data.id, vehicle_id: veh.data.id, part, kind, install_mode: install, status: 'chatting', customer_unread: false, vendor_unread: true }).select().single();
     if (error) throw error;
-    const intro = 'I need: ' + part + '\nVehicle: ' + veh.data.year + ' ' + veh.data.type + (veh.data.vin ? ' (VIN ' + veh.data.vin + ')' : '') + (note ? '\n' + note : '');
+    const intro = (accessory ? 'I want: ' : 'I need: ') + part + (install && install !== 'none' ? '\nFitting: I want it ' + INSTALL_TEXT[install] + '.' : '') + '\nVehicle: ' + veh.data.year + ' ' + veh.data.type + (veh.data.vin ? ' (VIN ' + veh.data.vin + ')' : '') + (note ? '\n' + note : '');
     await addMessage(data.id, req.user.id, 'text', intro);
-    notify(vendor.data.id, 'New parts request on AutoAid 24/7', req.user.name + ' is asking for: ' + part + ' (' + veh.data.year + ' ' + veh.data.type + ').');
+    notify(vendor.data.id, accessory ? 'New accessories request on AutoAid 24/7' : 'New parts request on AutoAid 24/7', req.user.name + ' is asking for: ' + part + ' (' + veh.data.year + ' ' + veh.data.type + ').' + (install && install !== 'none' ? ' They want it ' + INSTALL_TEXT[install] + '.' : ''));
     const users = await usersById([data.customer_id, data.vendor_id]);
     res.status(201).json(shape(data, req.user, users, new Map([[veh.data.id, veh.data]]), intro));
   }));
@@ -192,17 +200,24 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     if (o.status !== 'chatting' && o.status !== 'offered') return res.status(409).json({ error: 'An offer can only be sent while the order is open.' });
     const b = req.body || {};
     const item = String(b.item || '').trim();
-    if (item.length < 2 || item.length > 150) return res.status(400).json({ error: 'Describe the part you are offering (brand, number, fits).' });
+    const accessory = o.kind === 'accessory';
+    if (item.length < 2 || item.length > 150) return res.status(400).json({ error: accessory ? 'Describe what you are offering (brand, model, colour, fits).' : 'Describe the part you are offering (brand, number, fits).' });
     if (!CONDITIONS.includes(b.condition)) return res.status(400).json({ error: 'Choose new, used, aftermarket or reconditioned.' });
     const quantity = Number(b.quantity);
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 50) return res.status(400).json({ error: 'Quantity must be a whole number from 1 to 50.' });
     const price = auth.parseAmount(b.unitPrice);
     if (price.error || price.value === null || price.value <= 0) return res.status(400).json({ error: 'Enter the price of one part in Jamaican dollars, e.g. 8500.' });
-    const total = money(price.value * quantity);
+    let installFee = 0;
+    if (accessory && b.installFee !== undefined && b.installFee !== null && String(b.installFee).trim() !== '') {
+      const f = auth.parseAmount(b.installFee);
+      if (f.error || f.value === null || f.value < 0 || f.value > 1000000) return res.status(400).json({ error: 'Enter the fitting charge in Jamaican dollars (0 if there is none).' });
+      installFee = f.value;
+    }
+    const total = money(price.value * quantity + installFee);
     if (total > 10000000) return res.status(400).json({ error: 'That total is too large.' });
-    await update(o, { status: 'offered', offer_item: item, offer_condition: b.condition, offer_quantity: quantity, offer_unit_price: price.value, offer_total: total, customer_unread: true });
-    await addMessage(o.id, req.user.id, 'system', 'Offer: ' + quantity + ' x ' + item + ' (' + b.condition + ') at ' + jmd(price.value) + ' each. Total ' + jmd(total) + '.');
-    notify(o.customer_id, 'You have an offer for your part', 'A vendor sent an offer for ' + o.part + ': ' + jmd(total) + '.');
+    await update(o, { status: 'offered', offer_item: item, offer_condition: b.condition, offer_quantity: quantity, offer_unit_price: price.value, offer_install_fee: installFee, offer_total: total, customer_unread: true });
+    await addMessage(o.id, req.user.id, 'system', 'Offer: ' + quantity + ' x ' + item + ' (' + b.condition + ') at ' + jmd(price.value) + ' each' + (installFee > 0 ? ', plus ' + jmd(installFee) + ' for fitting' : accessory && o.install_mode && o.install_mode !== 'none' ? ', fitting included' : '') + '. Total ' + jmd(total) + '.');
+    notify(o.customer_id, accessory ? 'You have an offer for your accessory' : 'You have an offer for your part', 'A vendor sent an offer for ' + o.part + ': ' + jmd(total) + '.');
     res.json({ ok: true, total });
   }));
 
@@ -214,10 +229,13 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     if (req.body && req.body.accept === true) {
       const commission = money(Number(o.offer_total) * commissionPercent / 100);
       await update(o, { status: 'accepted', accepted_at: new Date().toISOString(), commission_percent: commissionPercent, commission_amount: commission, vendor_unread: true });
-      await addMessage(o.id, req.user.id, 'system', 'Offer accepted. Collect the part from the vendor and pay them ' + jmd(o.offer_total) + '. Their address and phone are now showing.');
+      const acc = o.kind === 'accessory';
+      await addMessage(o.id, req.user.id, 'system', acc
+        ? 'Offer accepted. ' + (o.install_mode === 'mobile' ? 'Agree a time in this chat for the seller to come and fit it, and pay them ' : o.install_mode === 'shop' ? 'Take your vehicle to the seller\'s shop to have it fitted, and pay them ' : 'Collect it from the seller and pay them ') + jmd(o.offer_total) + '. Their address and phone are now showing.'
+        : 'Offer accepted. Collect the part from the vendor and pay them ' + jmd(o.offer_total) + '. Their address and phone are now showing.');
       notify(o.vendor_id, 'Offer accepted', 'The customer accepted your offer of ' + jmd(o.offer_total) + ' for ' + o.part + '. They will collect it.');
     } else {
-      await update(o, { status: 'chatting', offer_item: null, offer_condition: null, offer_quantity: null, offer_unit_price: null, offer_total: null, vendor_unread: true });
+      await update(o, { status: 'chatting', offer_item: null, offer_condition: null, offer_quantity: null, offer_unit_price: null, offer_install_fee: 0, offer_total: null, vendor_unread: true });
       await addMessage(o.id, req.user.id, 'system', 'Offer declined. You can keep chatting or send a new offer.');
     }
     res.json({ ok: true });
@@ -229,7 +247,7 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     if (o.vendor_id !== req.user.id) return res.status(404).json({ error: 'Order not found.' });
     if (o.status !== 'accepted') return res.status(409).json({ error: 'Only an accepted order can be marked picked up.' });
     await update(o, { status: 'completed', completed_at: new Date().toISOString(), customer_unread: true });
-    await addMessage(o.id, req.user.id, 'system', 'The vendor marked this order as picked up and paid. Thank you!');
+    await addMessage(o.id, req.user.id, 'system', o.kind === 'accessory' ? 'The seller marked this order as done and paid' + (o.install_mode && o.install_mode !== 'none' ? ' (fitted)' : '') + '. Thank you!' : 'The vendor marked this order as picked up and paid. Thank you!');
     res.json({ ok: true });
   }));
 
@@ -273,7 +291,7 @@ module.exports = function partsRoutes({ supabase, handle, auth }) {
     const vendors = [...by.values()].map(v => ({ ...v, owed: money(v.commission - v.settled) }));
     res.json({
       commissionPercent, vendors,
-      orders: req.user.role === 'vendor' ? data.map(o => ({ id: o.id, part: o.part, total: Number(o.offer_total), commission: Number(o.commission_amount || 0), settled: !!o.commission_settled_at, completedAt: o.completed_at })) : undefined
+      orders: req.user.role === 'vendor' ? data.map(o => ({ id: o.id, kind: o.kind || 'part', part: o.part, total: Number(o.offer_total), commission: Number(o.commission_amount || 0), settled: !!o.commission_settled_at, completedAt: o.completed_at })) : undefined
     });
   }));
 

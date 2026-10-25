@@ -50,7 +50,7 @@
       </button>
       <button type="button" class="choice" id="choose-vendor" hidden>
         <span class="cico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l1.5-4h13L20 8M4 8v12h16V8M4 8h16M9 20v-6h6v6"/></svg></span>
-        <span class="ctext"><strong>I run a business (parts or rentals)</strong>
+        <span class="ctext"><strong>I run a business (parts, accessories or rentals)</strong>
         <small>Sell auto parts, rent out vehicles, or both. Apply to receive customers.</small></span>
         <span class="arrow" aria-hidden="true">&rsaquo;</span>
       </button>
@@ -95,6 +95,7 @@
         <label>What do you offer?</label>
         <div class="checks" id="offers">
           <label id="offer-parts-row"><input type="checkbox" value="parts" checked> Auto parts</label>
+          <label id="offer-accessories-row"><input type="checkbox" value="accessories"> Auto accessories and cosmetics (lights, covers, tint, rims), with fitting if you offer it</label>
           <label id="offer-rentals-row"><input type="checkbox" value="rentals"> Vehicle rentals (daily, 3 days minimum)</label>
         </div>
         <label for="vbusiness">Business name</label>
@@ -171,8 +172,8 @@ const home = role => role === 'customer' ? '/app.html' : role === 'vendor' ? '/v
 fetch('/config').then(r => r.json()).then(c => {
   const pOn = !!(c.parts && c.parts.enabled), rOn = !!(c.rentals && c.rentals.enabled);
   if (pOn || rOn) $('choose-vendor').hidden = false;
-  $('offer-parts-row').hidden = !pOn; $('offer-rentals-row').hidden = !rOn;
-  if (!pOn) document.querySelector('#offers input[value="parts"]').checked = false;
+  $('offer-parts-row').hidden = !pOn; $('offer-accessories-row').hidden = !pOn; $('offer-rentals-row').hidden = !rOn;
+  if (!pOn) { document.querySelector('#offers input[value="parts"]').checked = false; document.querySelector('#offers input[value="accessories"]').checked = false; }
   if (!pOn && rOn) document.querySelector('#offers input[value="rentals"]').checked = true;
   if (c.subscription && c.subscription.enabled && c.subscription.priceLabel) {
     $('feeHint').textContent = 'After you are approved, service providers pay a monthly subscription of ' + c.subscription.priceLabel + ' to start taking jobs.';

@@ -387,11 +387,11 @@ module.exports = function createAuth({ supabase, handle }) {
     if (contact.error) return res.status(400).json({ error: contact.error });
     const businessName = String(req.body.businessName || '').trim().slice(0, 100);
     if (businessName.length < 2) return res.status(400).json({ error: 'Enter the name of your business.' });
-    const allowedOffers = [PARTS.enabled && 'parts', RENTALS.enabled && 'rentals'].filter(Boolean);
+    const allowedOffers = [PARTS.enabled && 'parts', PARTS.enabled && 'accessories', RENTALS.enabled && 'rentals'].filter(Boolean);
     const offers = [...new Set((Array.isArray(req.body.offers) ? req.body.offers : ['parts']).filter(o => allowedOffers.includes(o)))];
-    if (!offers.length) return res.status(400).json({ error: 'Choose what you offer: auto parts, vehicle rentals, or both.' });
+    if (!offers.length) return res.status(400).json({ error: 'Choose what you offer: auto parts, auto accessories, vehicle rentals, or a mix.' });
     const experience = String(req.body.experience || '').trim().slice(0, 600);
-    if (experience.length < 10) return res.status(400).json({ error: 'Tell us what you offer (parts you stock, or the vehicles you rent out).' });
+    if (experience.length < 10) return res.status(400).json({ error: 'Tell us what you offer (parts or accessories you stock, fitting you do, or the vehicles you rent out).' });
     if (VERIFY.enabled && !mailer.ready()) return notReady(res);
     const existing = await findByEmail(email);
     if (existing && !(VERIFY.enabled && existing.email_verified === false && existing.role === 'vendor')) {

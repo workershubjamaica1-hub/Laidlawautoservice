@@ -375,6 +375,15 @@ alter table service_requests add column if not exists tech_lng double precision;
 alter table service_requests add column if not exists tech_loc_at timestamptz;
 alter table service_requests add column if not exists escalated_at timestamptz;
 
+-- Auto accessories (lights, seat covers, tint, cosmetics), with optional installation: same orders as parts, told apart by kind
+alter table part_orders add column if not exists kind text not null default 'part';
+alter table part_orders add column if not exists install_mode text;
+alter table part_orders add column if not exists offer_install_fee numeric(12, 2) not null default 0;
+alter table part_orders drop constraint if exists part_orders_kind_check;
+alter table part_orders add constraint part_orders_kind_check check (kind in ('part', 'accessory'));
+alter table part_orders drop constraint if exists part_orders_install_check;
+alter table part_orders add constraint part_orders_install_check check (install_mode is null or install_mode in ('none', 'shop', 'mobile'));
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

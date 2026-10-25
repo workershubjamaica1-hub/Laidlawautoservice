@@ -27,6 +27,7 @@
     <a href="#garage" data-view="garage">My garage</a>
     <a href="#services" data-view="services">Services<span class="nav-badge" id="jobs-badge" hidden></span></a>
     <a href="#parts" data-view="parts" id="nav-parts" hidden>Parts<span class="nav-badge" id="parts-badge" hidden></span></a>
+    <a href="#accessories" data-view="accessories" id="nav-accessories" hidden>Accessories<span class="nav-badge" id="acc-badge" hidden></span></a>
     <a href="#rentals" data-view="rentals" id="nav-rentals" hidden>Rentals<span class="nav-badge" id="rentals-badge" hidden></span></a>
     <a href="#premium" data-view="premium" id="nav-premium" hidden>Premium</a>
     <a href="#emergency" data-view="emergency">Emergency</a>
@@ -135,6 +136,14 @@
   </div>
 
   <!-- PARTS -->
+  <div class="view" id="view-accessories" data-view="accessories" hidden>
+    <div class="page-head">
+      <div><p class="eyebrow">Accessories</p><h1>Car accessories</h1><p class="welcome-sub">Lights, seat covers, tint, rims, sound systems and car cosmetics from local sellers. Many will fit them for you too.</p></div>
+      <button class="btn" id="acc-new" type="button"><span class="ic" style="--m: var(--d-plus)"></span>Ask for an accessory</button>
+    </div>
+    <div class="card flush" id="acc-list"><p class="empty">No accessory requests yet.</p></div>
+  </div>
+
   <div class="view" id="view-parts" data-view="parts" hidden>
     <div class="page-head">
       <div><p class="eyebrow">Parts</p><h1>Order a part</h1><p class="welcome-sub">Ask an auto parts vendor for the part your car or truck needs, agree the price in a chat, then collect it from them.</p></div>
@@ -272,6 +281,30 @@
   </form>
 </dialog>
 
+<dialog class="modal wide" id="dlg-acc" aria-label="Ask for an accessory">
+  <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
+  <form class="panel" id="acc-form" novalidate>
+    <h3>Ask for an accessory</h3>
+    <div class="row">
+      <div><label for="acc-vehicle">Vehicle</label><select id="acc-vehicle"></select></div>
+      <div><label for="acc-name">What do you want?</label><input id="acc-name" maxlength="150" placeholder="e.g. LED headlights, black seat covers, window tint"></div>
+    </div>
+    <label for="acc-fit">Fitting</label>
+    <select id="acc-fit">
+      <option value="none">I do not need fitting</option>
+      <option value="shop">Fit it for me at the seller's shop</option>
+      <option value="mobile">Fit it where I am (the seller comes to me)</option>
+    </select>
+    <label for="acc-note">Anything the seller should know? (optional)</label>
+    <textarea id="acc-note" maxlength="500" rows="2" placeholder="e.g. colour, brand, the budget you have in mind"></textarea>
+    <label>Choose a seller</label>
+    <div class="vendor-pick" id="acc-vendors" role="radiogroup" aria-label="Accessory sellers"></div>
+    <p class="hint-line">The seller sends you a price (and a fitting charge if you want it fitted). You pay them directly when it is collected or fitted.</p>
+    <button class="btn" id="acc-send" type="submit">Start chat with seller</button>
+    <p class="error" id="acc-error" role="alert"></p>
+  </form>
+</dialog>
+
 <dialog class="modal wide" id="dlg-rent" aria-label="Rent a vehicle">
   <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
   <form class="panel" id="rent-form" novalidate>
@@ -387,9 +420,9 @@ const STATUS_LABELS = { 'pending': 'Pending', 'in-progress': 'In progress', 'com
 const $ = (id) => document.getElementById(id);
 
 // Tabs: one page, several views switched by the link in the address (#garage, #services, ...)
-const VIEWS = ['overview', 'garage', 'services', 'parts', 'rentals', 'premium', 'emergency', 'profile'];
+const VIEWS = ['overview', 'garage', 'services', 'parts', 'accessories', 'rentals', 'premium', 'emergency', 'profile'];
 function showView(v) {
-  if (!VIEWS.includes(v) || (v === 'premium' && $('nav-premium').hidden) || (v === 'parts' && $('nav-parts').hidden) || (v === 'rentals' && $('nav-rentals').hidden)) v = 'overview';
+  if (!VIEWS.includes(v) || (v === 'premium' && $('nav-premium').hidden) || (v === 'parts' && $('nav-parts').hidden) || (v === 'accessories' && $('nav-accessories').hidden) || (v === 'rentals' && $('nav-rentals').hidden)) v = 'overview';
   document.querySelectorAll('.view').forEach(el => { el.hidden = el.dataset.view !== v; });
   document.querySelectorAll('[data-view]').forEach(a => { if (a.tagName === 'A') { a.classList.toggle('on', a.dataset.view === v); if (a.dataset.view === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); } });
   window.scrollTo(0, 0);
@@ -1181,7 +1214,7 @@ $('sos-list').addEventListener('click', async (e) => {
 });
 setInterval(() => { if (!document.hidden) loadSos(); }, 20000);
 api('/config').then(c => {
-  if (c.parts && c.parts.enabled) startParts();
+  if (c.parts && c.parts.enabled) { startParts(); startAccessories(); }
   if (c.rentals && c.rentals.enabled) startRentals();
   shopPhone = c.shopPhone || '';
   if (shopPhone) { const a = $('sos-call'); a.href = 'tel:' + shopPhone.replace(/[^\d+]/g, ''); a.textContent = 'Or call the shop: ' + shopPhone; a.hidden = false; }
@@ -1191,7 +1224,7 @@ api('/config').then(c => {
 let chat = null, partsStarted = false;
 async function loadParts() {
   let orders = [];
-  try { orders = await api('/parts/orders'); } catch (_) { return; }
+  try { orders = (await api('/parts/orders')).filter(o => o.kind !== 'accessory'); } catch (_) { return; }
   chat.renderList($('parts-list'), orders, 'No part orders yet. Tap "Order a part" to ask a vendor.');
   const unread = orders.filter(o => o.unread).length;
   $('parts-badge').hidden = !unread; $('parts-badge').textContent = unread;
@@ -1230,6 +1263,52 @@ async function sendPartRequest(e) {
     chat.open(o.id).catch(() => {});
   } catch (err) { $('part-error').textContent = err.message; }
   finally { $('part-send').disabled = false; }
+}
+
+// --- Accessories: ask a seller for lights, covers, tint, cosmetics, with or without fitting ---
+let accChat = null, accStarted = false;
+async function loadAccessories() {
+  let orders = [];
+  try { orders = (await api('/parts/orders')).filter(o => o.kind === 'accessory'); } catch (_) { return; }
+  accChat.renderList($('acc-list'), orders, 'No accessory requests yet. Tap "Ask for an accessory" to start.');
+  const unread = orders.filter(o => o.unread).length;
+  $('acc-badge').hidden = !unread; $('acc-badge').textContent = unread;
+}
+function startAccessories() {
+  if (accStarted) return; accStarted = true;
+  $('nav-accessories').hidden = false;
+  accChat = PartsChat.create({ api, role: 'customer', onChange: () => { loadAccessories(); loadParts(); } });
+  loadAccessories();
+  setInterval(() => { if (!document.hidden) loadAccessories(); }, 20000);
+  if (location.hash === '#accessories') showView('accessories');
+  $('acc-list').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b) accChat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
+  $('acc-new').addEventListener('click', openAccessoryForm);
+  $('acc-form').addEventListener('submit', sendAccessoryRequest);
+}
+async function openAccessoryForm() {
+  $('acc-error').textContent = '';
+  $('acc-vehicle').innerHTML = state.vehicles.length ? state.vehicles.map(v => '<option value="' + v.id + '">' + esc(v.year) + ' ' + esc(v.type) + '</option>').join('') : '<option value="">Add a vehicle first</option>';
+  let data = { vendors: [] };
+  try { data = await api('/parts/vendors?kind=accessory'); } catch (err) { $('acc-error').textContent = err.message; }
+  $('acc-vendors').innerHTML = data.vendors.length ? data.vendors.map((v, i) => '<label class="vpick"><input type="radio" name="accvendor" value="' + v.id + '"' + (i === 0 ? ' checked' : '') + '><span><b>' + esc(v.name) + (v.nearYou ? '<em class="near">Near you</em>' : '') + '</b><small>' + esc(v.parish) + (v.about ? ' &middot; ' + esc(v.about.slice(0, 90)) : '') + '</small></span></label>').join('')
+    : '<p class="empty">No accessory sellers have joined yet. Check back soon.</p>';
+  openDlg('dlg-acc');
+}
+async function sendAccessoryRequest(e) {
+  e.preventDefault();
+  $('acc-error').textContent = '';
+  const pick = document.querySelector('#acc-vendors input:checked');
+  if (!pick) { $('acc-error').textContent = 'Choose a seller.'; return; }
+  $('acc-send').disabled = true;
+  try {
+    const o = await api('/parts/orders', { method: 'POST', body: { kind: 'accessory', install: $('acc-fit').value, vendorId: Number(pick.value), vehicleId: Number($('acc-vehicle').value), part: $('acc-name').value, message: $('acc-note').value } });
+    $('acc-name').value = ''; $('acc-note').value = '';
+    closeDlg('dlg-acc');
+    goView('accessories');
+    await loadAccessories();
+    accChat.open(o.id).catch(() => {});
+  } catch (err) { $('acc-error').textContent = err.message; }
+  finally { $('acc-send').disabled = false; }
 }
 
 // --- Rentals: find a vehicle from a rental company and book it ---
