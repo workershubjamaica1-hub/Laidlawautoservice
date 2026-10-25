@@ -126,6 +126,7 @@
       </div>
       <h3 style="margin:22px 0 8px" id="partsHead">All part orders</h3>
       <div id="partsOrders" class="card flush"></div>
+      <div id="rentReview" hidden></div>
       <h3 style="margin:22px 0 8px" id="rentHead" hidden>All rental bookings</h3>
       <div id="rentBookings" class="card flush" hidden></div>
     </div>
@@ -179,7 +180,7 @@
     </div>
     </div>
   </main>
-  <footer class="legal-foot"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a></footer>
+  <footer class="legal-foot"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a> &middot; <a href="/agreements.html">Agreements</a></footer>
 </div>
 
 <script src="/parts.js"></script>
@@ -457,6 +458,7 @@ async function setupParts() {
   $('rentHead').hidden = !rentChat; $('rentBookings').hidden = !rentChat;
   $('partsOrders').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b && partsChat) partsChat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
   $('rentBookings').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b && rentChat) rentChat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
+  $('rentReview').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b && rentChat) rentChat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
 }
 async function loadParts() {
   if (!partsChat && !rentChat && !jobsLedger) return;
@@ -499,7 +501,15 @@ async function loadParts() {
     }
     $('ledgerBody').replaceChildren(...(rows.length ? rows : [el('tr', {}, el('td', { colSpan: 7, textContent: 'Nothing completed yet.' }))]));
     if (partsChat) partsChat.renderList($('partsOrders'), await api('/parts/orders'), 'No part orders yet.');
-    if (rentChat) rentChat.renderList($('rentBookings'), await api('/rentals/bookings'), 'No rental bookings yet.');
+    if (rentChat) {
+      rentChat.renderList($('rentBookings'), await api('/rentals/bookings'), 'No rental bookings yet.');
+      const rv = await api('/rentals/review'), box = $('rentReview');
+      const row = (b, text) => '<div class="review-row"><div><b>' + PartsChat.esc(b.vehicle.title) + '</b><p>' + text + '</p></div><button class="btn small" type="button" data-booking="' + b.id + '">Open</button></div>';
+      box.hidden = !(rv.disputes.length || rv.lateFees.length);
+      box.innerHTML = '<h3 style="margin:22px 0 8px">Rental returns to review</h3>' +
+        rv.disputes.map(b => row(b, 'Dispute: customer ' + PartsChat.esc(b.customer.name) + ' (' + PartsChat.esc(b.customerPhone || 'no phone') + '), vendor ' + PartsChat.esc(b.vendor.name) + ' (' + PartsChat.esc(b.vendorPhone || 'no phone') + '). Contact both, then record the decision.')).join('') +
+        rv.lateFees.map(b => row(b, 'Late fee due: ' + PartsChat.jmd(b.late.fee) + ' for ' + b.late.days + ' extra day' + (b.late.days > 1 ? 's' : '') + ' (' + PartsChat.esc(b.customer.name) + ').')).join('');
+    }
   } catch (err) { $('appError').textContent = err.message; }
 }
 

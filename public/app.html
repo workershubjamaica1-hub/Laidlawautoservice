@@ -226,7 +226,7 @@
     </div>
   </div>
 </main>
-<footer class="legal-foot"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a></footer>
+<footer class="legal-foot"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a> &middot; <a href="/agreements.html">Agreements</a></footer>
 
 <nav class="bottom-nav" aria-label="Main">
   <a href="#overview" data-view="overview" style="--i: var(--i-home)">Home</a>
@@ -324,6 +324,7 @@
       <p class="hint-line">Needed once. Only the rental company whose booking is accepted can see it.</p>
     </div>
     <label class="agree"><input type="checkbox" id="rent-confirm"> <span>I hold a valid driver's licence and meet the requirements shown.</span></label>
+    <label class="agree"><input type="checkbox" id="rent-late"> <span>I agree to the <a href="/agreements.html#renter" target="_blank" rel="noopener">Rental Agreement</a>: the deposit may be held or taken as the vendor and I agree, <strong>each extra day I keep the vehicle is charged at the daily rate</strong>, and if we do not both agree it came back in the same condition, AutoAid 24/7 will contact us both and review it.</span></label>
     <label class="agree"><input type="checkbox" id="rent-damage"> <span>I agree the vendor may charge me for any damage or loss to the vehicle, up to the deposit, using the card or deposit I give at pick-up.</span></label>
     <button class="btn" id="rent-send" type="submit">Send rental request</button>
     <p class="error" id="rent-error" role="alert"></p>
@@ -1372,7 +1373,7 @@ async function openRent(id) {
   $('rent-reqs').innerHTML = reqs.join('<br>'); $('rent-reqs').hidden = !reqs.length;
   $('rent-start').min = todayStr(); $('rent-end').min = todayStr();
   $('rent-start').value = $('rf-start').value; $('rent-end').value = $('rf-end').value;
-  $('rent-confirm').checked = false; $('rent-damage').checked = false; $('rent-licence').value = '';
+  $('rent-confirm').checked = false; $('rent-damage').checked = false; $('rent-late').checked = false; $('rent-licence').value = '';
   try { hasLicence = (await api('/rentals/licence')).hasLicence; } catch (_) { hasLicence = false; }
   $('rent-licence-row').hidden = hasLicence;
   rentTotal();
@@ -1395,7 +1396,7 @@ async function sendRentRequest(e) {
       await api('/rentals/licence', { method: 'POST', body: { image: await RentalChat.prepareImage(f) } });
       hasLicence = true;
     }
-    const b = await api('/rentals/bookings', { method: 'POST', body: { vehicleId: rentalVehicle.id, start: $('rent-start').value, end: $('rent-end').value, note: $('rent-note').value, hasLicenceConfirmed: $('rent-confirm').checked, damageAuthorized: $('rent-damage').checked } });
+    const b = await api('/rentals/bookings', { method: 'POST', body: { vehicleId: rentalVehicle.id, start: $('rent-start').value, end: $('rent-end').value, note: $('rent-note').value, hasLicenceConfirmed: $('rent-confirm').checked, damageAuthorized: $('rent-damage').checked, lateChargeAuthorized: $('rent-late').checked } });
     $('rent-note').value = '';
     closeDlg('dlg-rent');
     goView('rentals');

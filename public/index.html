@@ -110,7 +110,7 @@
         <button type="button" class="show" id="show" aria-controls="pw">Show</button>
       </div>
       <p class="hint" id="pwHint" hidden>At least 8 characters.</p>
-      <label class="agree" id="agreeRow" hidden><input type="checkbox" id="agree"> <span>I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a> and the <a href="/privacy.html" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
+      <label class="agree" id="agreeRow" hidden><input type="checkbox" id="agree"> <span id="agreeText">I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a> and the <a href="/privacy.html" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
       <button class="btn" id="submit" type="submit">Sign in</button>
       <p class="error" id="error" role="alert"></p>
       <p class="hint resend-row" id="forgotRow"><button type="button" class="linkbtn" id="forgotLink">Forgot your password?</button></p>
@@ -145,7 +145,7 @@
       <h3>Application received</h3>
       <p style="margin:0">Thank you. An admin will review your details and approve your account. Once approved, come back here and sign in with the email and password you just chose.</p>
     </div>
-    <p class="legal-links"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a></p>
+    <p class="legal-links"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a> &middot; <a href="/agreements.html">Agreements</a></p>
   </div>
 </main>
 <script>
@@ -228,6 +228,24 @@ const COPY = {
   vendor:   { title: 'Join as a business', sub: 'Sell auto parts, rent out vehicles, or both. Customers collect from you and pay you directly.', button: 'Submit application' },
   tech:     { title: 'Join as a service provider', sub: 'Mechanics, tire, electrical, roadside and towing professionals: apply to take jobs in your parish.', button: 'Submit application' }
 };
+// the agreements this person is accepting depend on who they are signing up as
+const AG = (id, label) => '<a href="/agreements.html#' + id + '" target="_blank" rel="noopener">' + label + '</a>';
+function updateAgree() {
+  const list = [];
+  if (mode === 'register') list.push(AG('customer', 'Customer Agreement'));
+  if (mode === 'tech') list.push(AG('technician', 'Service Provider Agreement'), 'the schedule for each department I choose');
+  if (mode === 'vendor') {
+    const on = v => { const i = document.querySelector('#offers input[value="' + v + '"]'); return !!i && i.checked && !i.closest('label').hidden; };
+    if (on('parts')) list.push(AG('parts', 'Parts Vendor Agreement'));
+    if (on('accessories')) list.push(AG('accessories', 'Accessories Seller and Installer Agreement'));
+    if (on('rentals')) list.push(AG('rental-owner', 'Rental Company Agreement'));
+    if (!list.length) list.push(AG('basics', 'Agreements'));
+  }
+  const extra = list.length ? ', the ' + list.join(', the ').replace(/, the the /g, ', the ') : '';
+  $('agreeText').innerHTML = 'I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a>, the <a href="/privacy.html" target="_blank" rel="noopener">Privacy Notice</a>' + extra + '.';
+}
+document.addEventListener('change', e => { if (e.target.closest && e.target.closest('#offers')) updateAgree(); });
+
 function setMode(m) {
   mode = m;
   const creating = m === 'register' || m === 'tech' || m === 'vendor';
@@ -241,6 +259,7 @@ function setMode(m) {
   $('nameRow').hidden = !creating;
   $('pwHint').hidden = !creating;
   $('agreeRow').hidden = !creating;
+  updateAgree();
   $('pw').autocomplete = creating ? 'new-password' : 'current-password';
   $('tab-login').setAttribute('aria-selected', m === 'login');
   $('tab-create').setAttribute('aria-selected', m !== 'login');
@@ -400,7 +419,7 @@ $('form').addEventListener('submit', async e => {
   let image = null;
   $('submit').disabled = true;
   try {
-    if (mode !== 'login' && !$('agree').checked) throw new Error('Please agree to the Terms of Use and the Privacy Notice.');
+    if (mode !== 'login' && !$('agree').checked) throw new Error('Please agree to the Terms of Use, the Privacy Notice and the agreements shown.');
     if (mode === 'vendor') {
       Object.assign(body, { agreed: true, name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value,
         businessName: $('vbusiness').value, experience: $('vstock').value,

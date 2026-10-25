@@ -498,7 +498,11 @@ const parts = require('./partsRoutes')({ supabase, handle, auth });
 app.use(parts.router);
 
 // --- Vehicle rentals: rental companies list vehicles, customers book them (rentalRoutes.js). Off until RENTALS_ENABLED=true. ---
-const rentals = require('./rentalRoutes')({ supabase, handle, auth });
+const rentals = require('./rentalRoutes')({ supabase, handle, auth, push });
+if (process.env.PUSH_FAKE === '1') {   // tests only: move a booking's dates back, and run the overdue / auto-agree check now
+  app.post('/_rentals_backdate/:id', handle(async (req, res) => { const { error } = await supabase.from('rental_bookings').update({ start_date: req.body.start, end_date: req.body.end, ...(req.body.returnedAt ? { returned_at: req.body.returnedAt } : {}) }).eq('id', Number(req.params.id)); if (error) throw error; res.json({ ok: true }); }));
+  app.post('/_rentals_sweep', handle(async (req, res) => res.json(await rentals.sweep())));
+}
 app.use(rentals.router);
 
 // Typical prices the shop has set, shown while booking (nothing is shown for a department until the admin sets a range)

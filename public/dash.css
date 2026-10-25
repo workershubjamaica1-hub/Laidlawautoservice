@@ -409,3 +409,6 @@ main.dash { display: block; max-width: 1312px; margin: 0 auto; padding: 44px 48p
 .acct-checks label:has(input:checked) { border-color: var(--brand); background: var(--brand-50); }
 .acct-checks input { width: auto; min-height: 0; }
 .page-head .welcome-sub a { display: inline-block; padding: 6px 4px; }
+
+.deal.late { background: #FFF1F0; border-color: #F2B5B1; }
+.deal.late b { color: #8E211A; }

@@ -94,3 +94,10 @@
 .acct-checks label:has(input:checked) { border-color: var(--brand); background: var(--brand-50); }
 .acct-checks input { width: auto; min-height: 0; }
 .page-head .welcome-sub a { display: inline-block; padding: 6px 4px; }
+
+/* rentals: overdue and dispute notices, and the admin's list of returns to review */
+.deal.late { background: #FFF1F0; border-color: #F2B5B1; }
+.deal.late b { color: #8E211A; }
+.review-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 8px 0; padding: 12px 14px; background: #fff; border: 1px solid #F4D27A; border-left: 5px solid #E8A317; border-radius: 14px; }
+.review-row p { margin: 4px 0 0; font-size: 13.5px; color: var(--ink-soft, #55657B); }
+.review-row .btn { margin: 0; flex: none; }

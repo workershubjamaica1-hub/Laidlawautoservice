@@ -29,13 +29,15 @@ const commissionPercent = (() => {
 const money = n => Math.round(Number(n) * 100) / 100;
 const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 const DAY = 86400000;
+const AGREEMENT_VERSION = '2026-10-25';   // bump when the Rental Agreement changes
+const AUTO_AGREE_MS = 3 * DAY;           // a customer who never answers the return check is taken to agree after 3 days
 
 const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) && !Number.isNaN(Date.parse(s + 'T00:00:00Z')) && new Date(s + 'T00:00:00Z').toISOString().slice(0, 10) === s;
 const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / DAY) + 1;   // both days count
 const overlaps = (a1, a2, b1, b2) => a1 <= b2 && b1 <= a2;
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Jamaica' });   // YYYY-MM-DD in Jamaica
 
-module.exports = function rentalRoutes({ supabase, handle, auth }) {
+module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
   const router = express.Router();
   const enabled = (req, res, next) => (auth.RENTALS.enabled ? next() : res.status(404).json({ error: 'Vehicle rentals are not switched on yet.' }));
   const customerOnly = [enabled, ...auth.requireRole('customer')];
@@ -72,7 +74,19 @@ module.exports = function rentalRoutes({ supabase, handle, auth }) {
     } catch (e) { console.error('Could not send a rental notification:', e.message); }
   };
   const OPEN = ['requested', 'accepted', 'picked_up'];
-  const isClosed = b => !OPEN.includes(b.status);
+  // A returned booking stays open for chat while the condition check is waiting or a dispute is not yet settled
+  const reviewing = b => b.status === 'returned' && (b.return_check === 'waiting_customer' || (b.return_check === 'disputed' && !b.dispute_resolved_at));
+  const isClosed = b => !OPEN.includes(b.status) && !reviewing(b);
+  // How late a rental is: whole days after the return date, charged at the daily rate
+  const lateOf = (b, asOf) => { const t = asOf || today(); const days = t > b.end_date ? daysBetween(b.end_date, t) - 1 : 0; return { days, fee: money(days * Number(b.daily_rate)) }; };
+  async function alertAdmins(subject, text, url) {
+    try {
+      const { data } = await supabase.from('users').select('id, name, email').eq('role', 'admin').eq('active', true);
+      if (!data || !data.length) return;
+      if (push) { await push.notify(data.map(a => a.id), { title: subject, body: text.slice(0, 140), url: url || '/admin.html', tag: 'rental-review', urgent: false }).catch(() => {}); await push.email(data, subject, text).catch(() => {}); }
+      else if (mailer.ready()) for (const a of data) if (a.email) mailer.sendMail({ to: a.email, subject, text }).catch(() => {});
+    } catch (e) { console.error('Could not alert the admin about a rental:', e.message); }
+  }
 
   // Dates a vehicle is not free: accepted or picked-up bookings, and blocks the vendor added
   async function busyRanges(vehicleIds, exceptBookingId) {
@@ -140,6 +154,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth }) {
     const b = req.body || {};
     if (b.hasLicenceConfirmed !== true) return res.status(400).json({ error: 'Please confirm that you hold a valid driver\'s licence.' });
     if (b.damageAuthorized !== true) return res.status(400).json({ error: 'Please agree that the vendor may charge you for any damage or loss, up to the deposit, with the card or deposit you give at pick-up.' });
+    if (b.lateChargeAuthorized !== true) return res.status(400).json({ error: 'Please agree to the Rental Agreement: the deposit, extra days charged for late returns, and how condition disputes are handled.' });
     if (!req.user.licence_photo_path) return res.status(400).json({ error: 'Upload a photo of your driver\'s licence first.', code: 'licence_required' });
     if (!isDate(b.start) || !isDate(b.end)) return res.status(400).json({ error: 'Choose a pick-up date and a return date.' });
     if (b.start < today()) return res.status(400).json({ error: 'The pick-up date cannot be in the past.' });
@@ -166,7 +181,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth }) {
     const { data, error } = await supabase.from('rental_bookings').insert({
       vehicle_id: v.data.id, vehicle_title: v.data.title, customer_id: req.user.id, vendor_id: v.data.vendor_id,
       start_date: b.start, end_date: b.end, days, daily_rate: rate, total, deposit: Number(v.data.deposit || 0), note: note || null,
-      status: 'requested', damage_authorized_at: new Date().toISOString(), customer_unread: false, vendor_unread: true
+      status: 'requested', damage_authorized_at: new Date().toISOString(), late_charge_authorized_at: new Date().toISOString(), agreement_version: AGREEMENT_VERSION, customer_unread: false, vendor_unread: true
     }).select().single();
     if (error) throw error;
     await addMessage(data.id, req.user.id, 'system', 'Rental requested: ' + v.data.title + ', ' + b.start + ' to ' + b.end + ' (' + days + ' day' + (days > 1 ? 's' : '') + '), ' + jmd(total) + '.' + (note ? ' Note: ' + note : ''));
@@ -186,7 +201,13 @@ module.exports = function rentalRoutes({ supabase, handle, auth }) {
       customer: c ? { name: c.name, ...(deal && !isCustomer ? { phone: c.phone || '', parish: c.parish || '', hasLicence: !!c.licence_photo_path } : {}) } : { name: 'Removed customer' },
       vendor: v ? { id: v.id, name: vendorName(v), parish: v.parish || '', ...(deal && !isVendor ? { address: v.address || '', phone: v.phone || '' } : {}) } : { name: 'Removed vendor' },
       ...(!isCustomer && b.commission_amount != null ? { commission: { percent: Number(b.commission_percent), amount: Number(b.commission_amount), settled: !!b.commission_settled_at } } : {}),
-      rating: b.rating || null, review: b.review || '',
+      rating: b.rating || null, review: b.review || '', open: !isClosed(b),
+      lateChargeAuthorized: !!b.late_charge_authorized_at, agreementVersion: b.agreement_version || null,
+      returnCheck: b.status === 'returned' ? (b.return_check || 'none') : 'none',
+      ...(b.status === 'returned' ? { returnReport: { vendorOk: b.return_vendor_ok, vendorNote: b.return_vendor_note || '', customerOk: b.return_customer_ok, customerNote: b.return_customer_note || '' } } : {}),
+      ...(b.dispute_at ? { dispute: { at: b.dispute_at, resolvedAt: b.dispute_resolved_at || null, outcome: b.dispute_outcome || '' } } : {}),
+      ...(b.status === 'picked_up' && today() > b.end_date ? { overdue: lateOf(b) } : {}),
+      ...(b.status === 'returned' && Number(b.late_days) > 0 ? { late: { days: b.late_days, fee: Number(b.late_fee), status: b.late_fee_status, note: b.late_fee_note || '' } } : {}),
       unread: isCustomer ? !!b.customer_unread : isVendor ? !!b.vendor_unread : false,
       createdAt: b.created_at, updatedAt: b.updated_at, returnedAt: b.returned_at || null, lastMessage: last || ''
     };
@@ -287,11 +308,103 @@ module.exports = function rentalRoutes({ supabase, handle, auth }) {
     const b = await loadBooking(req, res); if (!b) return;
     if (!mineAsVendor(b, req)) return res.status(404).json({ error: 'Booking not found.' });
     if (b.status !== 'picked_up') return res.status(409).json({ error: 'Only a vehicle that is out can be marked returned.' });
-    await update(b, { status: 'returned', returned_at: new Date().toISOString(), customer_unread: true });
-    const note = String((req.body && req.body.note) || '').trim().slice(0, 400);
-    await addMessage(b.id, req.user.id, 'system', 'The vehicle was returned.' + (note ? ' Vendor note: ' + note : '') + ' Thank you!');
+    const condition = String((req.body && req.body.condition) || 'good');
+    if (!['good', 'problem'].includes(condition)) return res.status(400).json({ error: 'Say whether the vehicle came back in the same condition, or with a problem.' });
+    const note = String((req.body && req.body.note) || '').trim().slice(0, 600);
+    if (condition === 'problem' && note.length < 5) return res.status(400).json({ error: 'Describe the problem (damage, missing items, fuel, dirt) so AutoAid can look into it.' });
+    const late = lateOf(b);
+    const patch = { status: 'returned', returned_at: new Date().toISOString(), customer_unread: true, return_vendor_ok: condition === 'good', return_vendor_note: note || null, return_check_at: new Date().toISOString(),
+      return_check: condition === 'good' ? 'waiting_customer' : 'disputed', ...(condition === 'problem' ? { dispute_at: new Date().toISOString() } : {}),
+      late_days: late.days, late_fee: late.fee, late_fee_status: late.days > 0 ? 'due' : 'none' };
+    await update(b, patch);
+    await addMessage(b.id, req.user.id, 'system', 'The vendor marked the vehicle as returned' + (condition === 'good' ? ' in the same condition.' : ' WITH A PROBLEM: ' + note) + (condition === 'good' && note ? ' Vendor note: ' + note : '') +
+      (late.days > 0 ? ' It was ' + late.days + ' day' + (late.days > 1 ? 's' : '') + ' late: ' + jmd(late.fee) + ' is due for the extra day' + (late.days > 1 ? 's' : '') + ' (' + jmd(b.daily_rate) + ' a day), as agreed in the Rental Agreement.' : '') +
+      (condition === 'good' ? ' Customer: please confirm that you agree the vehicle came back in the same condition.' : ' A dispute has been filed. AutoAid 24/7 will contact the customer and the vendor.'));
+    if (condition === 'problem') {
+      notify(b.customer_id, 'A problem was reported with your rental return', 'The vendor reported a problem when ' + b.vehicle_title + ' came back: ' + note + ' AutoAid 24/7 will contact you. You can add your side in the chat.');
+      alertAdmins('Rental dispute to review', 'The vendor reported a problem with the return of ' + b.vehicle_title + ' (booking #' + b.id + '): ' + note + '. Contact the customer and the vendor.', '/admin.html');
+    } else notify(b.customer_id, 'Please confirm your rental return', 'The vendor says ' + b.vehicle_title + ' came back in the same condition. Open AutoAid 24/7 to confirm you agree.');
+    res.json({ ok: true, lateDays: late.days, lateFee: late.fee });
+  }));
+
+  // ---------- the customer answers the condition check ----------
+  router.post('/rentals/bookings/:id/return-check', ...customerOnly, handle(async (req, res) => {
+    const b = await loadBooking(req, res); if (!b) return;
+    if (b.customer_id !== req.user.id) return res.status(404).json({ error: 'Booking not found.' });
+    if (b.status !== 'returned' || b.return_check !== 'waiting_customer') return res.status(409).json({ error: 'There is nothing to confirm on this booking.' });
+    const agree = !!(req.body && req.body.agree === true);
+    const note = String((req.body && req.body.note) || '').trim().slice(0, 600);
+    if (!agree && note.length < 5) return res.status(400).json({ error: 'Tell us what you disagree with (a few words) so AutoAid can look into it.' });
+    if (agree) {
+      await update(b, { return_check: 'agreed', return_customer_ok: true, return_customer_note: note || null, return_check_at: new Date().toISOString(), vendor_unread: true });
+      await addMessage(b.id, req.user.id, 'system', 'The customer agrees the vehicle came back in the same condition. Both sides agree, so this rental is complete.');
+    } else {
+      await update(b, { return_check: 'disputed', return_customer_ok: false, return_customer_note: note, dispute_at: new Date().toISOString(), return_check_at: new Date().toISOString(), vendor_unread: true });
+      await addMessage(b.id, req.user.id, 'system', 'The customer DOES NOT AGREE with the return report: ' + note + ' A dispute has been filed. AutoAid 24/7 will contact the customer and the vendor.');
+      notify(b.vendor_id, 'A rental return is disputed', 'The customer does not agree with the return report for ' + b.vehicle_title + ': ' + note + ' AutoAid 24/7 will contact you.');
+      alertAdmins('Rental dispute to review', 'The customer does not agree with the vendor\'s return report for ' + b.vehicle_title + ' (booking #' + b.id + '): ' + note + '. Contact the customer and the vendor.', '/admin.html');
+    }
     res.json({ ok: true });
   }));
+
+  // ---------- admin: returns in dispute and late fees waiting ----------
+  router.get('/rentals/review', ...adminOnly, handle(async (req, res) => {
+    const { data, error } = await supabase.from('rental_bookings').select('*').eq('status', 'returned');
+    if (error) throw error;
+    const list = data.filter(b => (b.dispute_at && !b.dispute_resolved_at) || b.late_fee_status === 'due');
+    const users = await usersById(list.flatMap(b => [b.customer_id, b.vendor_id]));
+    const shaped = list.map(b => {
+      const c = users.get(b.customer_id), v = users.get(b.vendor_id);
+      return { ...shapeBooking(b, req.user, users, ''), customerPhone: c ? c.phone || '' : '', vendorPhone: v ? v.phone || '' : '', deposit: Number(b.deposit || 0) };
+    });
+    res.json({ disputes: shaped.filter(b => b.dispute && !b.dispute.resolvedAt), lateFees: shaped.filter(b => b.late && b.late.status === 'due') });
+  }));
+  router.post('/rentals/bookings/:id/resolve', ...adminOnly, handle(async (req, res) => {
+    const b = await loadBooking(req, res); if (!b) return;
+    if (b.status !== 'returned' || !b.dispute_at || b.dispute_resolved_at) return res.status(409).json({ error: 'There is no open dispute on this booking.' });
+    const outcome = String((req.body && req.body.outcome) || '').trim().slice(0, 800);
+    if (outcome.length < 5) return res.status(400).json({ error: 'Write what was decided (and what each side will be charged or refunded, if anything).' });
+    await update(b, { dispute_resolved_at: new Date().toISOString(), dispute_outcome: outcome, customer_unread: true, vendor_unread: true });
+    await addMessage(b.id, req.user.id, 'system', 'AutoAid 24/7 reviewed this dispute. Decision: ' + outcome);
+    notify(b.customer_id, 'Your rental dispute was decided', outcome); notify(b.vendor_id, 'The rental dispute was decided', outcome);
+    res.json({ ok: true });
+  }));
+  router.post('/rentals/bookings/:id/late-fee', ...adminOnly, handle(async (req, res) => {
+    const b = await loadBooking(req, res); if (!b) return;
+    if (b.late_fee_status !== 'due') return res.status(409).json({ error: 'No late fee is waiting on this booking.' });
+    const status = req.body && req.body.status;
+    if (!['charged', 'waived'].includes(status)) return res.status(400).json({ error: 'Choose charged or waived.' });
+    const note = String((req.body && req.body.note) || '').trim().slice(0, 300);
+    await update(b, { late_fee_status: status, late_fee_note: note || null, customer_unread: true, vendor_unread: true });
+    await addMessage(b.id, req.user.id, 'system', 'Late fee of ' + jmd(b.late_fee) + ' (' + b.late_days + ' extra day' + (b.late_days > 1 ? 's' : '') + '): ' + (status === 'charged' ? 'charged to the customer.' : 'waived.') + (note ? ' ' + note : ''));
+    res.json({ ok: true });
+  }));
+
+  // ---------- housekeeping: tell people when a rental is overdue; take silence on the return check as agreement after 3 days ----------
+  async function sweep() {
+    const out = { overdue: 0, autoAgreed: 0 };
+    try {
+      const { data, error } = await supabase.from('rental_bookings').select('*').in('status', ['picked_up', 'returned']);
+      if (error) throw error;
+      const t = today();
+      for (const b of data) {
+        if (b.status === 'picked_up' && t > b.end_date && b.overdue_notified_on !== t) {
+          const late = lateOf(b);
+          await update(b, { overdue_notified_on: t, customer_unread: true, vendor_unread: true });
+          await addMessage(b.id, null, 'system', 'OVERDUE: this vehicle was due back on ' + b.end_date + '. Each extra day is charged at ' + jmd(b.daily_rate) + ', as agreed in the Rental Agreement. So far: ' + late.days + ' day' + (late.days > 1 ? 's' : '') + ', ' + jmd(late.fee) + '. Please return it now or talk to the vendor.');
+          notify(b.customer_id, 'Your rental is overdue', b.vehicle_title + ' was due back on ' + b.end_date + '. Extra days are charged at ' + jmd(b.daily_rate) + ' a day (' + jmd(late.fee) + ' so far). Please return it now or talk to the vendor.');
+          notify(b.vendor_id, 'A rental is overdue', b.vehicle_title + ' was due back on ' + b.end_date + ' (' + late.days + ' day' + (late.days > 1 ? 's' : '') + ' late).');
+          out.overdue++;
+        } else if (b.status === 'returned' && b.return_check === 'waiting_customer' && b.returned_at && Date.now() - Date.parse(b.returned_at) > AUTO_AGREE_MS) {
+          await update(b, { return_check: 'agreed', return_check_at: new Date().toISOString(), vendor_unread: true });
+          await addMessage(b.id, null, 'system', 'The customer did not answer the return check within 3 days, so the return is taken as agreed.');
+          out.autoAgreed++;
+        }
+      }
+    } catch (e) { console.error('Rental sweep failed:', e.message); }
+    return out;
+  }
+  setTimeout(sweep, 2 * 60 * 1000).unref(); setInterval(sweep, 30 * 60 * 1000).unref();
 
   // ---------- cancel: customer or vendor, until the vehicle is handed over ----------
   router.post('/rentals/bookings/:id/cancel', ...anyParty, handle(async (req, res) => {
@@ -463,5 +576,5 @@ module.exports = function rentalRoutes({ supabase, handle, auth }) {
     res.json({ settled: data.length });
   }));
 
-  return { router, commissionPercent };
+  return { router, commissionPercent, sweep };
 };

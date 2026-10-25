@@ -7,6 +7,9 @@
   const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
   const STATUS = { requested: 'Requested', accepted: 'Accepted', picked_up: 'Out on rental', returned: 'Returned', declined: 'Declined', cancelled: 'Cancelled' };
   const PILL = { requested: 'pending', accepted: 'in-progress', picked_up: 'in-progress', returned: 'completed', declined: 'cancelled', cancelled: 'cancelled' };
+  // the label on a booking: a returned vehicle that is waiting for the customer's answer, or in dispute, says so
+  const stateLabel = b => b.status === 'returned' && b.returnCheck === 'waiting_customer' ? 'Return check' : b.status === 'returned' && b.returnCheck === 'disputed' && b.dispute && !b.dispute.resolvedAt ? 'Dispute' : (STATUS[b.status] || b.status);
+  const statePill = b => b.status === 'returned' && (b.returnCheck === 'waiting_customer' || (b.returnCheck === 'disputed' && b.dispute && !b.dispute.resolvedAt)) ? 'pending' : PILL[b.status];
   const when = iso => new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const day = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const range = b => day(b.startDate) + ' to ' + day(b.endDate) + ' · ' + b.days + ' day' + (b.days > 1 ? 's' : '');
@@ -61,6 +64,32 @@
       '<div class="offer-total"><small>Rent</small><b>' + jmd(b.total) + '</b></div></div>';
     const stars = n => '<span class="rated">' + '★'.repeat(n) + '☆'.repeat(5 - n) + '</span>';
 
+    // overdue notice, late fee, and the condition check when the vehicle comes back
+    function returnPanel(b) {
+      const parts = [];
+      const s = n => n + ' day' + (n > 1 ? 's' : '');
+      if (b.overdue) parts.push('<div class="deal late"><b>Overdue by ' + s(b.overdue.days) + '</b><p>Each extra day is charged at ' + jmd(b.dailyRate) + ' (so far ' + jmd(b.overdue.fee) + '), as agreed in the Rental Agreement. ' + (role === 'customer' ? 'Please return the vehicle now or talk to the vendor.' : '') + '</p></div>');
+      if (b.status !== 'returned') return parts.join('');
+      const r = b.returnReport || {};
+      if (b.late) parts.push('<p class="th-hint">Late return: ' + s(b.late.days) + ' extra, <strong>' + jmd(b.late.fee) + '</strong> &middot; ' + ({ due: 'due (AutoAid 24/7 will arrange the charge)', charged: 'charged', waived: 'waived' }[b.late.status] || '') + (b.late.note ? ' &middot; ' + esc(b.late.note) : '') + '</p>');
+      if (b.returnCheck === 'waiting_customer') {
+        parts.push(role === 'customer'
+          ? '<div class="deal"><b>Please confirm the return</b><p>The vendor says the vehicle came back in the same condition' + (r.vendorNote ? ': &ldquo;' + esc(r.vendorNote) + '&rdquo;' : '') + '. Do you agree?</p><div class="th-actions"><button class="btn" type="button" data-act="check-agree">Yes, same condition</button><button class="btn ghost" type="button" data-act="check-disagree">No, I disagree</button></div></div>'
+          : '<p class="th-hint">Waiting for the customer to confirm the vehicle came back in the same condition (taken as agreed after 3 days).</p>');
+      }
+      if (b.returnCheck === 'agreed') parts.push('<p class="th-hint">Both sides agree the vehicle came back in the same condition.</p>');
+      if (b.returnCheck === 'disputed') {
+        const resolved = b.dispute && b.dispute.resolvedAt;
+        parts.push('<div class="deal late"><b>' + (resolved ? 'Dispute decided' : 'Dispute filed') + '</b>' +
+          (r.vendorOk === false ? '<p>Vendor reported a problem: ' + esc(r.vendorNote) + '</p>' : '') +
+          (r.customerOk === false ? '<p>Customer disagrees: ' + esc(r.customerNote) + '</p>' : '') +
+          '<p>' + (resolved ? 'Decision: ' + esc(b.dispute.outcome) : 'AutoAid 24/7 will contact the customer and the vendor. You can add details in the chat below.') + '</p></div>');
+        if (role === 'admin' && !resolved) parts.push('<div class="th-actions"><button class="btn" type="button" data-act="resolve">Record the decision</button></div>');
+      }
+      if (role === 'admin' && b.late && b.late.status === 'due') parts.push('<div class="th-actions"><button class="btn" type="button" data-act="late-charged">Late fee charged</button><button class="btn ghost" type="button" data-act="late-waived">Waive the late fee</button></div>');
+      return parts.join('');
+    }
+
     function panel(b) {
       const out = [summary(b)];
       if (role === 'customer') {
@@ -77,21 +106,22 @@
         if (role === 'vendor') {
           if (b.status === 'requested') out.push('<div class="th-actions"><button class="btn" type="button" data-act="accept">Accept booking</button><button class="btn ghost" type="button" data-act="decline">Decline</button></div>');
           if (b.status === 'accepted') out.push('<div class="th-actions"><button class="btn" type="button" data-act="pickup">Mark handed over</button></div>');
-          if (b.status === 'picked_up') out.push('<div class="th-actions"><button class="btn" type="button" data-act="return">Mark returned</button></div>');
+          if (b.status === 'picked_up') out.push('<div class="th-actions"><button class="btn" type="button" data-act="return-good">Returned in the same condition</button><button class="btn ghost" type="button" data-act="return-problem">Returned with a problem</button></div>');
         }
         if (b.commission) out.push('<p class="th-hint">AutoAid commission (' + b.commission.percent + '% of the rent): ' + jmd(b.commission.amount) + (b.status === 'returned' ? (b.commission.settled ? ' &middot; settled' : ' &middot; due') : ' &middot; counted once the vehicle is returned') + '.</p>');
         if (b.status === 'returned' && b.rating) out.push('<p class="th-hint">Customer rating ' + stars(b.rating) + (b.review ? ' "' + esc(b.review) + '"' : '') + '</p>');
       }
+      out.push(returnPanel(b));
       if (b.status === 'declined' || b.status === 'cancelled') out.push('<p class="th-hint">This booking was ' + b.status + '.</p>');
       return out.join('');
     }
 
     function draw(data, keepScroll) {
       const b = data.order;
-      const closed = !['requested', 'accepted', 'picked_up'].includes(b.status);
+      const closed = b.open === false;
       $('th-title').textContent = b.vehicle.title;
       $('th-sub').textContent = (role === 'customer' ? b.vendor.name : b.customer.name + (role === 'admin' ? ' with ' + b.vendor.name : '')) + ' · ' + range(b);
-      $('th-pill').innerHTML = '<span class="pill st-' + PILL[b.status] + '">' + esc(STATUS[b.status] || b.status) + '</span>';
+      $('th-pill').innerHTML = '<span class="pill st-' + statePill(b) + '">' + esc(stateLabel(b)) + '</span>';
       $('th-panel').innerHTML = panel(b);
       const log = $('th-log');
       const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
@@ -144,7 +174,13 @@
       if (a === 'accept') act('/accept');
       else if (a === 'decline') { const why = prompt('Reason for declining (optional):'); if (why !== null) act('/decline', { reason: why }); }
       else if (a === 'pickup') { if (confirm('Mark the vehicle as handed over to the customer?')) act('/pickup'); }
-      else if (a === 'return') { const note = prompt('Any note on the condition or fuel level? (optional)'); if (note !== null) act('/return', { note }); }
+      else if (a === 'return-good') { const note = prompt('Any note on the fuel level or condition? (optional)'); if (note !== null) act('/return', { condition: 'good', note }); }
+      else if (a === 'return-problem') { const note = prompt('Describe the problem (damage, missing items, fuel, dirt). AutoAid 24/7 will contact both of you.'); if (note) act('/return', { condition: 'problem', note }); }
+      else if (a === 'check-agree') { if (confirm('Do you agree the vehicle came back in the same condition it was given to you?')) act('/return-check', { agree: true }); }
+      else if (a === 'check-disagree') { const note = prompt('What do you disagree with? AutoAid 24/7 will contact both of you.'); if (note) act('/return-check', { agree: false, note }); }
+      else if (a === 'resolve') { const outcome = prompt('Record the decision (what was decided, and what each side is charged or refunded):'); if (outcome) act('/resolve', { outcome }); }
+      else if (a === 'late-charged') { const note = prompt('Note (optional), e.g. the card payment reference:'); if (note !== null) act('/late-fee', { status: 'charged', note }); }
+      else if (a === 'late-waived') { const note = prompt('Why is it waived? (optional)'); if (note !== null) act('/late-fee', { status: 'waived', note }); }
       else if (a === 'rate') { const box = btn.closest('.rate'); act('/rating', { rating: Number(box.dataset.value), review: box.querySelector('.rate-note').value }); }
       else if (a === 'licence') {
         try { const r = await api('/rentals/bookings/' + cur.id + '/licence'); window.open(r.url, '_blank', 'noopener'); }
@@ -170,7 +206,7 @@
         '<span class="p-main"><b>' + esc(b.vehicle.title) + (b.unread ? '<i class="dot-new" title="New message"></i>' : '') + '</b>' +
           '<small>' + esc(role === 'customer' ? b.vendor.name : b.customer.name + (role === 'admin' ? ' with ' + b.vendor.name : '')) + ' &middot; ' + esc(range(b)) + '</small>' +
           '<small class="p-last">' + esc(b.lastMessage || '').replace(/\n/g, ' ') + '</small></span>' +
-        '<span class="p-side"><span class="pill st-' + PILL[b.status] + '">' + esc(STATUS[b.status] || b.status) + '</span><b>' + jmd(b.total) + '</b></span></button>').join('');
+        '<span class="p-side"><span class="pill st-' + statePill(b) + '">' + esc(stateLabel(b)) + '</span><b>' + jmd(b.total) + '</b></span></button>').join('');
     }
     return { renderList, open, close: () => dlg.close() };
   }

@@ -72,7 +72,7 @@ const VERIFY = {
 const PARTS = { enabled: String(process.env.PARTS_ENABLED || '').toLowerCase() === 'true' };
 const RENTALS = { enabled: String(process.env.RENTALS_ENABLED || '').toLowerCase() === 'true' };
 const BUSINESS = process.env.BUSINESS_NAME || 'AutoAid 24/7';
-const TERMS_VERSION = '2026-10-26';   // bump when the Terms or Privacy Notice change in a way people should agree to again
+const TERMS_VERSION = '2026-10-25';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';
 const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
@@ -655,9 +655,10 @@ module.exports = function createAuth({ supabase, handle }) {
     const side = u.role === 'vendor' ? 'vendor_id' : 'customer_id';
     if (u.role === 'customer' || u.role === 'vendor') {
       const parts = await rows(supabase.from('part_orders').select('id, status, commission_amount, commission_settled_at').eq(side, u.id)).catch(() => []);
-      const rents = await rows(supabase.from('rental_bookings').select('id, status, commission_amount, commission_settled_at').eq(side, u.id)).catch(() => []);
+      const rents = await rows(supabase.from('rental_bookings').select('id, status, commission_amount, commission_settled_at, return_check, dispute_at, dispute_resolved_at, late_fee_status').eq(side, u.id)).catch(() => []);
       if (parts.some(o => o.status === 'accepted')) blocked.push('a parts order that is accepted and waiting to be collected');
       if (rents.some(b => b.status === 'accepted' || b.status === 'picked_up')) blocked.push('a rental that is confirmed or out on the road');
+      if (rents.some(b => b.status === 'returned' && (b.return_check === 'waiting_customer' || (b.dispute_at && !b.dispute_resolved_at) || b.late_fee_status === 'due'))) blocked.push('a rental return that is being checked, in dispute, or has a late fee waiting');
       if (u.role === 'vendor') {
         const owedParts = parts.filter(o => o.status === 'completed' && o.commission_amount && !o.commission_settled_at).length;
         const owedRents = rents.filter(b => b.status === 'returned' && b.commission_amount && !b.commission_settled_at).length;

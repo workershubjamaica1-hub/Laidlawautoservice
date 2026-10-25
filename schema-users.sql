@@ -384,6 +384,28 @@ alter table part_orders add constraint part_orders_kind_check check (kind in ('p
 alter table part_orders drop constraint if exists part_orders_install_check;
 alter table part_orders add constraint part_orders_install_check check (install_mode is null or install_mode in ('none', 'shop', 'mobile'));
 
+-- Rentals: late-return charge consent, the condition check when the vehicle comes back, disputes, late fees
+alter table rental_bookings add column if not exists late_charge_authorized_at timestamptz;
+alter table rental_bookings add column if not exists agreement_version text;
+alter table rental_bookings add column if not exists return_check text not null default 'none';
+alter table rental_bookings add column if not exists return_vendor_ok boolean;
+alter table rental_bookings add column if not exists return_vendor_note text;
+alter table rental_bookings add column if not exists return_customer_ok boolean;
+alter table rental_bookings add column if not exists return_customer_note text;
+alter table rental_bookings add column if not exists return_check_at timestamptz;
+alter table rental_bookings add column if not exists dispute_at timestamptz;
+alter table rental_bookings add column if not exists dispute_resolved_at timestamptz;
+alter table rental_bookings add column if not exists dispute_outcome text;
+alter table rental_bookings add column if not exists late_days integer not null default 0;
+alter table rental_bookings add column if not exists late_fee numeric(12, 2) not null default 0;
+alter table rental_bookings add column if not exists late_fee_status text not null default 'none';
+alter table rental_bookings add column if not exists late_fee_note text;
+alter table rental_bookings add column if not exists overdue_notified_on date;
+alter table rental_bookings drop constraint if exists rental_bookings_return_check_check;
+alter table rental_bookings add constraint rental_bookings_return_check_check check (return_check in ('none', 'waiting_customer', 'agreed', 'disputed'));
+alter table rental_bookings drop constraint if exists rental_bookings_late_fee_status_check;
+alter table rental_bookings add constraint rental_bookings_late_fee_status_check check (late_fee_status in ('none', 'due', 'charged', 'waived'));
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users
