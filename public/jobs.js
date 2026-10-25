@@ -138,6 +138,17 @@
   }
   const mapsLink = o => o.hasCoords || o.latitude != null ? 'https://www.google.com/maps?q=' + o.latitude + ',' + o.longitude : 'https://www.google.com/maps/search/' + encodeURIComponent(o.locationText + ', ' + o.parish + ', Jamaica');
 
+  // The technician's profile card the customer sees: verified badge, stars, jobs done, and where they are right now
+  function techCard(o) {
+    const t = o.technician; if (!t) return '';
+    const stars = t.rating ? '<span class="tc-stars">' + '\u2605'.repeat(Math.round(t.rating)) + '</span> <b>' + t.rating.toFixed(1) + '</b> (' + t.ratings + ')' : 'New on AutoAid';
+    const loc = o.techLocation ? '<p class="tc-loc">\u{1F4CD} <a href="https://www.google.com/maps?q=' + o.techLocation.latitude + ',' + o.techLocation.longitude + '" target="_blank" rel="noopener">See where ' + esc(t.name) + ' is now</a> <small>(updated ' + Math.max(0, Math.round((Date.now() - Date.parse(o.techLocation.at)) / 1000)) + 's ago)</small></p>' : '';
+    return '<div class="techcard"><div><b>' + esc(t.name) + '</b> ' + (t.verified ? '<span class="tc-badge">ID verified</span>' : '') + '</div><div class="tc-line">' + stars + (t.jobsDone ? ' &middot; ' + t.jobsDone + ' job' + (t.jobsDone > 1 ? 's' : '') + ' done' : '') + '</div>' + loc + '</div>';
+  }
+  // Technician: share live position with the customer while on the way (only when they choose to)
+  let shareWatch = null, shareJob = 0, shareLast = 0;
+  function stopShare() { if (shareWatch != null && navigator.geolocation) navigator.geolocation.clearWatch(shareWatch); shareWatch = null; shareJob = 0; }
+
   function create({ api, role, shopPhone: shopPhoneOpt, onChange }) {
     const shopPhone = () => (typeof shopPhoneOpt === 'function' ? shopPhoneOpt() : shopPhoneOpt) || '';
     let dlg = document.getElementById('dlg-jthread');
@@ -188,6 +199,8 @@
 
     function panel(o, dept) {
       const out = [];
+      if (isCustomer && o.technician && o.stage !== 'cancelled') out.push(techCard(o));
+      if (!isCustomer && role !== 'admin' && ['matched', 'quoted', 'agreed'].includes(o.stage)) out.push('<div class="th-actions"><button class="btn ghost small" type="button" data-act="share-loc">' + (shareJob === o.id ? '\u{1F4CD} Sharing your location (tap to stop)' : '\u{1F4CD} Share my live location with the customer') + '</button></div>');
       const phone = isCustomer ? (o.technician && o.technician.phone) : (o.customer && o.customer.phone);
       if (isCustomer) {
         if (o.stage === 'searching') {
@@ -257,6 +270,7 @@
       $('th-form').hidden = !chatOpen || role === 'admin';
       if (isCustomer && lastStage && lastStage !== o.stage && ['matched', 'quoted', 'done_pending'].includes(o.stage)) JobAlerts.chime();
       lastStage = o.stage;
+      if (shareJob === o.id && !['matched', 'quoted', 'agreed'].includes(o.stage)) stopShare();
       cur = { id: o.id, order: o, last: data.messages.length ? data.messages[data.messages.length - 1].id : 0 };
       countdowns();
       const offer = dlg.querySelector('#push-offer'); if (offer && JobPush.supported()) JobPush.state().then(st => { if (st === 'off') JobPush.mountCard(offer, { api, audience: 'customer', compact: true }); });
@@ -308,6 +322,17 @@
       else if (a === 'dispute') { const note = prompt('What went wrong? (The payment is held while we look into it.)'); if (note) act('/dispute', { note }); }
       else if (a === 'confirm') { if (confirm('Confirm that the job is complete?')) act('/confirm'); }
       else if (a === 'release') { if (confirm(cur && cur.order && cur.order.paid ? 'Step back? The job ends and the customer is refunded.' : 'Step back from this job? It goes out to other technicians.')) act('/release'); }
+      else if (a === 'share-loc') {
+        const id = cur && cur.id; if (!id) return;
+        if (shareJob === id) { stopShare(); draw({ order: cur.order, messages: [] }, true).catch(() => {}); return; }
+        if (!navigator.geolocation) { alert('This phone cannot share its location.'); return; }
+        stopShare(); shareJob = id;
+        shareWatch = navigator.geolocation.watchPosition(pos => {
+          if (Date.now() - shareLast < 15000) return; shareLast = Date.now();
+          api('/jobs/' + id + '/location', { method: 'POST', body: { latitude: pos.coords.latitude, longitude: pos.coords.longitude } }).catch(() => {});
+        }, () => { stopShare(); alert('Location is blocked. Allow it in your browser settings to share it.'); }, { enableHighAccuracy: true, maximumAge: 10000 });
+        btn.textContent = '\u{1F4CD} Sharing your location (tap to stop)';
+      }
       else if (a === 'arrived') act('/arrived');
       else if (a === 'done') { if (confirm('Mark this job as done?')) act('/done'); }
       else if (a === 'rate') { const box = btn.closest('.rate'); act('/service-request/' + cur.id + '/rating', { rating: Number(box.dataset.value), review: box.querySelector('.rate-note').value }); }

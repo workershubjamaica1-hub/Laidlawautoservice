@@ -81,7 +81,7 @@ const publicUser = u => ({
   id: u.id, name: u.name, email: u.email, role: u.role, active: u.active, createdAt: u.created_at,
   phone: u.phone || '', address: u.address || '', parish: u.parish || '',
   hasChassisPhoto: !!u.chassis_photo_path, hasAvatar: !!u.avatar_path,
-  approved: u.approved !== false,
+  approved: u.approved !== false, proVerified: !!u.pro_verified,
   emailVerified: u.email_verified !== false,
   subscriptionPaidUntil: u.subscription_paid_until || null,
   termsAcceptedAt: u.terms_accepted_at || null,   // when they agreed to the Terms and Privacy Notice
@@ -174,7 +174,7 @@ module.exports = function createAuth({ supabase, handle }) {
     if (error) throw error;
     return data;
   };
-  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience, termsAcceptedAt, emailVerified, vendorOffers }) {
+  async function createUser({ name, email, password, role, phone, address, parish, approved, specialties, businessName, experience, termsAcceptedAt, emailVerified, vendorOffers, proVerified }) {
     const { data, error } = await supabase.from('users')
       .insert({
         name, email, password_hash: hashPassword(password), role,
@@ -183,6 +183,7 @@ module.exports = function createAuth({ supabase, handle }) {
         business_name: businessName || null, experience: experience || null,
         ...(vendorOffers ? { vendor_offers: vendorOffers } : {}),
         email_verified: emailVerified !== false,
+        ...(proVerified ? { pro_verified: true } : {}),
         terms_accepted_at: termsAcceptedAt || null, terms_version: termsAcceptedAt ? TERMS_VERSION : null
       })
       .select().single();
@@ -230,7 +231,7 @@ module.exports = function createAuth({ supabase, handle }) {
     if (adminPassword) accounts.push({ name: 'Administrator', email: adminEmail, password: adminPassword, role: 'admin' });
     else console.warn('ADMIN_PASSWORD is not set: no admin account will be created.');
     if (!IS_PRODUCTION) {
-      accounts.push({ name: 'Demo Staff', email: 'staff@laidlaw.local', password: 'staff123', role: 'staff', parish: 'Kingston', phone: '876-555-0100' });
+      accounts.push({ name: 'Demo Staff', email: 'staff@laidlaw.local', password: 'staff123', role: 'staff', parish: 'Kingston', phone: '876-555-0100', proVerified: true });
       accounts.push({ name: 'Demo Customer', email: 'customer@laidlaw.local', password: 'customer123', role: 'customer',
         phone: '876-555-0123', address: '1 Hope Road, Kingston', parish: 'Kingston' });
     }

@@ -368,6 +368,13 @@ create table if not exists push_subscriptions (
 create index if not exists push_subscriptions_user_idx on push_subscriptions(user_id);
 alter table push_subscriptions enable row level security;
 
+-- Technician ID check (emergencies), live technician location, unanswered-emergency alert
+alter table users add column if not exists pro_verified boolean not null default false;
+alter table service_requests add column if not exists tech_lat double precision;
+alter table service_requests add column if not exists tech_lng double precision;
+alter table service_requests add column if not exists tech_loc_at timestamptz;
+alter table service_requests add column if not exists escalated_at timestamptz;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

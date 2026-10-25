@@ -15,6 +15,11 @@
 .push-card p { margin: 4px 0 8px; font-size: 13.5px; color: var(--ink-soft, #55657B); }
 .push-card .push-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .push-card .btn { margin: 0; }
+.techcard { padding: 12px 14px; border-radius: 14px; background: #F4F7FB; border: 1px solid var(--line, #E3E9F2); margin: 0 0 10px; }
+.techcard .tc-line { font-size: 13.5px; color: var(--ink-soft, #55657B); margin-top: 2px; }
+.techcard .tc-stars { color: #E8A317; letter-spacing: 1px; }
+.techcard .tc-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; background: #E3F5EE; color: #11805A; font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.techcard .tc-loc { margin: 8px 0 0; font-size: 14px; }
 .countdown { font-variant-numeric: tabular-nums; font-size: 1.15em; }
 .countdown.late { color: #C93B2B; }
 

@@ -34,6 +34,8 @@ const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigit
 const STATUS_OF = { searching: 'pending', matched: 'pending', quoted: 'pending', agreed: 'in-progress', working: 'in-progress', done_pending: 'in-progress', closed: 'completed', cancelled: 'cancelled' };
 
 const LABEL = { diagnostics: 'Diagnostics', mechanical: 'Mechanical', tire: 'Tire', electrical: 'Electrical', maintenance: 'Maintenance', bodywork: 'Auto body repairs', roadside: 'Roadside assistance', towing: 'Wrecker / towing', other: 'Repair' };
+const TECH_LOC_FRESH_MS = 3 * 60 * 1000;   // a shared position older than this is not shown
+const ESCALATE_AFTER_MS = (Number(process.env.ESCALATE_AFTER_SECONDS) || 300) * 1000;   // an emergency nobody took in this time is reported to the admin
 const PUSH_WINDOW_MS = 12 * 60 * 60 * 1000;   // a technician who switched Online and has phone alerts on is still reachable for 12 hours
 
 module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
@@ -47,6 +49,8 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   const isFresh = u => !!u.online && !!u.online_at && Date.now() - Date.parse(u.online_at) < ONLINE_WINDOW_MS;
   const specialtiesOf = u => String(u.specialties || '').split(',').filter(Boolean);
   const handles = (u, category) => category === 'other' || specialtiesOf(u).includes(category);
+  // Emergencies put a technician at a stranger's roadside, so only technicians whose ID the shop has checked receive them
+  const canTake = (u, row) => handles(u, row.category) && (!row.urgent || !!u.pro_verified);
   const touch = patch => ({ ...patch, updated_at: new Date().toISOString() });
 
   async function rows(q) { const { data, error } = await q; if (error) throw error; return data; }
@@ -58,7 +62,14 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   async function usersById(ids) {
     const list = [...new Set(ids.filter(Boolean))];
     if (!list.length) return new Map();
-    return new Map((await rows(supabase.from('users').select('id, name, phone, parish, avatar_path, business_name').in('id', list))).map(u => [u.id, u]));
+    const map = new Map((await rows(supabase.from('users').select('id, name, phone, parish, avatar_path, business_name, pro_verified').in('id', list))).map(u => [u.id, u]));
+    // star rating and number of finished jobs, shown on a technician's profile card
+    const done = await rows(supabase.from('service_requests').select('technician_id, rating, stage').in('technician_id', list).eq('stage', 'closed'));
+    for (const u of map.values()) {
+      const mine = done.filter(d => d.technician_id === u.id), rated = mine.filter(d => d.rating);
+      u.stats = { jobs: mine.length, ratings: rated.length, average: rated.length ? Math.round(rated.reduce((s, d) => s + Number(d.rating), 0) / rated.length * 10) / 10 : null };
+    }
+    return map;
   }
   async function addMessage(jobId, senderId, kind, body) {
     const { error } = await supabase.from('job_messages').insert({ job_id: jobId, sender_id: senderId, kind, body });
@@ -85,9 +96,9 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   async function alertNewJob(row) {
     if (!push) return;
     try {
-      const techs = await rows(supabase.from('users').select('id, name, email, specialties, parish, online, online_at, approved, active').eq('role', 'staff'));
-      const eligible = techs.filter(t => t.active !== false && t.approved !== false && t.online && t.online_at && Date.now() - Date.parse(t.online_at) < PUSH_WINDOW_MS && handles(t, row.category));
-      if (!eligible.length) return;
+      const techs = await rows(supabase.from('users').select('id, name, email, specialties, parish, online, online_at, approved, active, pro_verified').eq('role', 'staff'));
+      const eligible = techs.filter(t => t.active !== false && t.approved !== false && t.online && t.online_at && Date.now() - Date.parse(t.online_at) < PUSH_WINDOW_MS && canTake(t, row));
+      if (!eligible.length) { escalate(row, 'No verified technician is online for this job.'); return; }
       const label = LABEL[row.category] || 'Repair';
       const where = row.location_text || row.parish || '';
       const title = row.urgent ? '\u{1F6A8} URGENT: ' + label : 'New job: ' + label;
@@ -96,6 +107,20 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     } catch (err) { console.error('New job alert failed:', err.message); }
   }
   events.on('new-job', row => { alertNewJob(row); });
+  // An emergency nobody has taken: tell the admins by email so the customer is never left waiting alone
+  async function escalate(row, why) {
+    try {
+      const fresh = (await rows(supabase.from('service_requests').select('id, stage, escalated_at, technician_id').eq('id', row.id)))[0];
+      if (!fresh || fresh.stage !== 'searching' || fresh.escalated_at) return;
+      await supabase.from('service_requests').update({ escalated_at: new Date().toISOString() }).eq('id', row.id);
+      const admins = await rows(supabase.from('users').select('id, name, email').eq('role', 'admin').eq('active', true));
+      if (push) {
+        const where = row.location_text || row.parish || 'location not given';
+        await push.notify(admins.map(a => a.id), { title: '\u{1F6A8} Emergency not answered', body: (LABEL[row.category] || 'Job') + ' at ' + where + '. ' + why, url: '/admin.html?job=' + row.id, tag: 'escalate-' + row.id, urgent: true });
+        await push.email(admins, 'Emergency not answered yet', (LABEL[row.category] || 'A job') + ' request #' + row.id + ' (' + where + ') has no technician. ' + why + ' Phone the customer' + (row.contact_phone ? ' on ' + row.contact_phone : '') + ' or send someone yourself.');
+      }
+    } catch (e) { console.error('Escalation failed:', e.message); }
+  }
   async function setJob(row, patch) {
     const stage = patch.stage || row.stage;
     const { data, error } = await supabase.from('service_requests').update(touch({ ...patch, ...(patch.stage ? { status: STATUS_OF[patch.stage] } : {}) })).eq('id', row.id).select().single();
@@ -112,6 +137,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     try {
       const open = await rows(supabase.from('service_requests').select('*').in('stage', ['searching', 'done_pending']));
       for (const r of open) {
+        if (r.stage === 'searching' && r.urgent && !r.escalated_at && Date.now() - Date.parse(r.created_at) > ESCALATE_AFTER_MS) await escalate(r, 'Nobody has accepted it after 5 minutes.');
         if (r.stage === 'searching' && Date.now() - Date.parse(r.created_at) > (r.urgent ? EXPIRE_URGENT_MS : EXPIRE_AFTER_MS)) {
           await setJob(r, { stage: 'cancelled' });
           await addMessage(r.id, null, 'system', 'No technician was available in time, so this request was closed. You can post it again.');
@@ -160,7 +186,8 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
       quote: r.quote_amount == null ? null : { amount: Number(r.quote_amount), etaMinutes: r.quote_eta_minutes, note: r.quote_note || '' },
       agreedAt: r.agreed_at || null, etaDeadline: r.eta_deadline || null, arrivedAt: r.arrived_at || null, doneAt: r.done_at || null, completedAt: r.completed_at || null,
       amount: r.amount == null ? null : Number(r.amount), rating: r.rating || null, review: r.review || '',
-      technician: t ? { id: t.id, name: t.name, ...(sharePhones || !isCustomer ? { phone: t.phone || '' } : {}) } : null,
+      technician: t ? { id: t.id, name: t.name, verified: !!t.pro_verified, rating: t.stats ? t.stats.average : null, ratings: t.stats ? t.stats.ratings : 0, jobsDone: t.stats ? t.stats.jobs : 0, ...(sharePhones || !isCustomer ? { phone: t.phone || '' } : {}) } : null,
+      ...(r.tech_lat != null && r.tech_loc_at && Date.now() - Date.parse(r.tech_loc_at) < TECH_LOC_FRESH_MS && ['matched', 'quoted', 'agreed'].includes(r.stage) ? { techLocation: { latitude: r.tech_lat, longitude: r.tech_lng, at: r.tech_loc_at } } : {}),
       customer: !isCustomer ? { name: c ? c.name : (veh ? veh.owner : ''), ...(sharePhones ? { phone: r.contact_phone || (c ? c.phone : '') || '' } : {}) } : { name: c ? c.name : '' },
       urgent: !!r.urgent,
       ...(!isCustomer && r.fee_amount != null ? { fee: { percent: Number(r.fee_percent), amount: Number(r.fee_amount), settled: !!r.fee_settled_at } } : {}),
@@ -211,14 +238,14 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     const mine = mineRows.filter(r => ACTIVE.includes(r.stage));
     let incoming = [];
     if (u.online) {
-      const open = (await rows(supabase.from('service_requests').select('*').eq('stage', 'searching'))).filter(r => !r.technician_id && handles(u, r.category));
+      const open = (await rows(supabase.from('service_requests').select('*').eq('stage', 'searching'))).filter(r => !r.technician_id && canTake(u, r));
       incoming = open.filter(r => !r.parish || r.parish === u.parish || Date.now() - Date.parse(r.created_at) >= (r.urgent ? WIDEN_URGENT_MS : WIDEN_AFTER_MS));
     }
     const mineAll = await rows(supabase.from('service_requests').select('fee_amount, fee_settled_at, stage, pay_mode, payout_amount, payout_settled_at').eq('technician_id', u.id));
     const ledger = mineAll.filter(r => r.stage === 'closed' && r.pay_mode !== 'platform' && r.fee_amount && !r.fee_settled_at);
     const payouts = mineAll.filter(r => r.stage === 'closed' && r.pay_mode === 'platform' && r.payout_amount != null && !r.payout_settled_at);
     res.json({
-      online: !!u.online, specialties: specialtiesOf(u), feePercent,
+      online: !!u.online, specialties: specialtiesOf(u), feePercent, emergenciesLocked: !u.pro_verified,
       incoming: await shapeMany(incoming.sort((a, b) => (Number(!!b.urgent) - Number(!!a.urgent)) || Date.parse(b.created_at) - Date.parse(a.created_at)), req.user, r => ({ inYourParish: !r.parish || r.parish === u.parish })),
       mine: await shapeMany(mine.sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at)), req.user),
       feesDue: money(ledger.reduce((s, r) => s + Number(r.fee_amount), 0)),
@@ -232,6 +259,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     const u = req.user;
     if (!isFresh(u)) return res.status(409).json({ error: 'Go online first to take jobs.' });
     if (!handles(u, j.row.category)) return res.status(403).json({ error: 'This job is for another department.' });
+    if (j.row.urgent && !u.pro_verified) return res.status(403).json({ error: 'Emergency jobs are given to technicians whose ID AutoAid 24/7 has checked. Contact us to get verified.' });
     if ((await rows(supabase.from('service_requests').select('id, stage').eq('technician_id', u.id))).filter(r => ACTIVE.includes(r.stage)).length >= MAX_ACTIVE_PER_TECH) {
       return res.status(409).json({ error: 'You have a lot of jobs open. Finish one first.' });
     }
@@ -242,6 +270,17 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     if (!data) return res.status(409).json({ error: 'Another technician just took this job.' });
     await addMessage(data.id, u.id, 'system', u.name + (data.urgent ? ' accepted your emergency request. Their phone number is showing so you can call them. They will send you a price and an arrival time here.' : ' accepted your request. Say hello and describe the problem. They will send you a price and an arrival time.'));
     res.json({ ok: true, id: data.id });
+  }));
+
+  // The technician shares where they are so the customer can see them coming
+  router.post('/jobs/:id(\\d+)/location', ...techOnly, handle(async (req, res) => {
+    const j = await loadJob(req, res, 'tech'); if (!j) return;
+    if (!['matched', 'quoted', 'agreed'].includes(j.row.stage)) return res.status(409).json({ error: 'Sharing location is only for jobs on the way.' });
+    const lat = Number(req.body && req.body.latitude), lng = Number(req.body && req.body.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return res.status(400).json({ error: 'That position is not valid.' });
+    const { error } = await supabase.from('service_requests').update({ tech_lat: lat, tech_lng: lng, tech_loc_at: new Date().toISOString() }).eq('id', j.row.id);
+    if (error) throw error;
+    res.json({ ok: true });
   }));
 
   router.post('/jobs/:id(\\d+)/quote', ...techOnly, handle(async (req, res) => {
@@ -361,10 +400,10 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     const users = await usersById([row.technician_id, ...[...vehicles.values()].map(v => v.user_id), ...msgs.map(m => m.sender_id)]);
     let onlineTechs = null;
     if (row.stage === 'searching') {
-      const all = await rows(supabase.from('users').select('id, specialties, online, online_at, approved, active').eq('role', 'staff'));
+      const all = await rows(supabase.from('users').select('id, specialties, online, online_at, approved, active, pro_verified').eq('role', 'staff'));
       const subscribed = push ? await push.withSubscriptions(all.map(t => t.id)) : new Set();
       const reachable = t => isFresh(t) || (!!t.online && subscribed.has(t.id) && !!t.online_at && Date.now() - Date.parse(t.online_at) < PUSH_WINDOW_MS);
-      onlineTechs = all.filter(t => t.active !== false && t.approved !== false && reachable(t) && handles(t, row.category)).length;
+      onlineTechs = all.filter(t => t.active !== false && t.approved !== false && reachable(t) && canTake(t, row)).length;
     }
     res.json({
       feePercent, onlinePayment: onlinePayment(),

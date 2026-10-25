@@ -302,7 +302,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     const contact = auth.checkContact({ phone: req.body.phone || undefined, address: req.body.address || undefined, parish: req.body.parish || undefined }, false);
     if (contact.error) return res.status(400).json({ error: contact.error });
     if (await auth.findByEmail(email)) return res.status(409).json({ error: 'An account with this email already exists.' });
-    res.status(201).json(auth.publicUser(await auth.createUser({ name, email, password, role, ...contact.value })));
+    res.status(201).json(auth.publicUser(await auth.createUser({ name, email, password, role, proVerified: role === 'staff', ...contact.value })));
   }));
 
   // Change role, active (disable/enable) or reset the password. Admins cannot demote or disable themselves.
@@ -314,6 +314,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
       update.role = req.body.role;
     }
     if (req.body.active !== undefined) update.active = !!req.body.active;
+    if (req.body.proVerified !== undefined) update.pro_verified = !!req.body.proVerified;   // the shop has checked this technician's ID
     if (req.body.approved !== undefined) update.approved = !!req.body.approved; // approve a service member's application
     if (req.body.password !== undefined) {
       if (String(req.body.password).length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });

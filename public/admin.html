@@ -62,7 +62,7 @@
     <div class="panel" id="jobsPanel" hidden>
       <div class="jobs-top" id="jobsTop">
         <label class="switch" aria-label="Online: receive new jobs"><input type="checkbox" id="onlineToggle" role="switch"><span class="slider"></span></label>
-        <div class="grow"><b id="onlineLabel">You are offline</b><small id="onlineHint">Switch on to receive new jobs for your departments. Keep this page open and your sound on.</small></div>
+        <div class="grow"><b id="onlineLabel">You are offline</b><small id="lockNote" hidden style="color:#B4322A;font-weight:700">Emergency jobs (roadside and towing) are sent to technicians whose ID AutoAid 24/7 has checked. Contact the shop to get verified.</small><small id="onlineHint">Switch on to receive new jobs for your departments. Keep this page open and your sound on.</small></div>
         <button class="btn ghost small" id="soundTest" type="button">Test the alert sound</button>
       </div>
       <div id="pushCard"></div>
@@ -344,6 +344,7 @@ async function pollJobs() {
   try { feed = await api('/jobs/feed'); } catch (_) { return; }
   lastFeed = feed;
   setOnlineUI(feed.online);
+  $('lockNote').hidden = !feed.emergenciesLocked;
   if (!window.__linked) { window.__linked = true; const linked = Number(new URLSearchParams(location.search).get('job')); if (linked) { $('jobsTab').click(); jchat.open(linked).catch(() => {}); } }
   const fresh = feed.incoming.filter(j => !seenIncoming.has(j.id));
   seenIncoming = new Set(feed.incoming.map(j => j.id));
@@ -979,6 +980,8 @@ function renderUsers() {
       });
       addDays.replaceWith(box, ' ', ok); box.focus();
     });
+    const idBtn = el('button', { className: 'btn ghost small', textContent: u.proVerified ? 'Remove ID check' : 'Mark ID checked', hidden: u.role !== 'staff' });
+    idBtn.addEventListener('click', () => patchUser(u.id, { proVerified: !u.proVerified }));
     const verifyBtn = el('button', { className: 'btn ghost small', textContent: 'Verify email', hidden: u.emailVerified !== false });
     verifyBtn.addEventListener('click', () => markVerified(u.id));
     const jobsBtn = el('button', { className: 'btn ghost small', textContent: 'Jobs & photos', hidden: u.role !== 'staff' });
@@ -987,12 +990,13 @@ function renderUsers() {
     photo.addEventListener('click', () => openPhoto(u.id));
     return el('tr', {},
       el('td', {}, el('strong', { textContent: u.name + (isMe ? ' (you)' : '') }), el('br'), el('small', { textContent: 'Joined ' + fmtDate(u.createdAt) }),
-        u.emailVerified === false ? el('br') : null, u.emailVerified === false ? el('span', { className: 'badge off', textContent: 'Email not verified' }) : null),
+        u.emailVerified === false ? el('br') : null, u.emailVerified === false ? el('span', { className: 'badge off', textContent: 'Email not verified' }) : null,
+        u.role === 'staff' ? el('br') : null, u.role === 'staff' ? el('span', { className: u.proVerified ? 'badge completed' : 'badge off', textContent: u.proVerified ? 'ID checked' : 'ID not checked: no emergencies' }) : null),
       el('td', {}, el('span', { className: 'who', textContent: u.email }), u.phone ? el('span', { className: 'who', textContent: u.phone }) : null, u.address ? el('small', { className: 'who', textContent: u.address }) : null),
       el('td', {}, role),
       el('td', {}, parish),
       el('td', {}, el('span', { className: u.active ? 'badge completed' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), (subText || premText) ? el('br') : null, (subText || premText) ? el('small', { textContent: subText || premText }) : null),
-      el('td', { className: 'act' }, verifyBtn, ' ', addPremium, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
+      el('td', { className: 'act' }, idBtn, ' ', verifyBtn, ' ', addPremium, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }
 async function patchUser(id, body) {

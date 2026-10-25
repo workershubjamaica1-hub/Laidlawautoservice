@@ -491,6 +491,21 @@ app.use('/admin', require('./adminRoutes')({ supabase, handle, auth, subs, toVeh
 // Streaming chat with the mechanic assistant (ai.js). The older /ai-assist above is kept for simple one-shot use.
 app.post('/ai-chat', ...noVendor, handle(require('./ai')({ supabase, diagnose, isCustomer })));
 
+// Health check for uptime monitors (UptimeRobot and similar): answers 200 only when the database responds
+app.get('/health', async (req, res) => {
+  try {
+    const { error } = await supabase.from('users').select('id').limit(1);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (e) { res.status(503).json({ ok: false }); }
+});
+
+// A friendly page for mistyped links (API paths keep their plain JSON answer)
+app.use((req, res, next) => {
+  if (req.method === 'GET' && String(req.headers.accept || '').includes('text/html')) return res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+  res.status(404).json({ error: 'Not found.' });
+});
+
 const PORT = process.env.PORT || 3000;
 const BUSINESS_NAME = process.env.BUSINESS_NAME || 'AutoAid 24/7';
 // Last resort for errors that happen before a route runs (oversized or malformed request bodies)
