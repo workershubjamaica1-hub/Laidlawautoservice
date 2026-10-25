@@ -109,7 +109,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     id: v.id, title: v.title, year: v.year, category: v.category, seats: v.seats, transmission: v.transmission,
     dailyRate: Number(v.daily_rate), deposit: Number(v.deposit || 0), minDays: v.min_days || MIN_DAYS,
     requirements: v.requirements || '', description: v.description || '', parish: v.parish || (vendor && vendor.parish) || '',
-    vendorName: vendorName(vendor), vendorRequirements: (vendor && vendor.rental_requirements) || '', active: v.active !== false, photoUrl: url, ...extra
+    vendorName: vendorName(vendor), vendorRequirements: (vendor && vendor.rental_requirements) || '', rules: v.rules || '', vendorRules: (vendor && vendor.rental_rules) || '', active: v.active !== false, photoUrl: url, ...extra
   });
 
   // ---------- customer: browse ----------
@@ -122,7 +122,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     if (auth.PARISHES.includes(q.parish)) query = query.eq('parish', q.parish);
     const { data, error } = await query;
     if (error) throw error;
-    const vend = await supabase.from('users').select('id, name, business_name, parish, approved, active, email_verified, vendor_offers, rental_requirements')
+    const vend = await supabase.from('users').select('id, name, business_name, parish, approved, active, email_verified, vendor_offers, rental_requirements, rental_rules')
       .in('id', [...new Set(data.map(v => v.vendor_id))].concat(0));
     if (vend.error) throw vend.error;
     const users = new Map(vend.data.filter(u => u.approved !== false && u.active !== false && u.email_verified !== false && String(u.vendor_offers || '').split(',').includes('rentals')).map(u => [u.id, u]));
@@ -169,6 +169,9 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     if (vendor.error) throw vendor.error;
     const vd = vendor.data;
     if (!vd || vd.approved === false || vd.active === false || vd.email_verified === false || !String(vd.vendor_offers || '').split(',').includes('rentals')) return res.status(400).json({ error: 'That vehicle is not available to rent.' });
+    const vendorRules = await supabase.from('users').select('rental_rules').eq('id', v.data.vendor_id).maybeSingle();
+    const rulesText = [vendorRules.data && vendorRules.data.rental_rules, v.data.rules].filter(Boolean).join('\n').trim();
+    if (rulesText && b.rulesAccepted !== true) return res.status(400).json({ error: 'Please read the rental rules and tick the box to say you will follow them.', code: 'rules_required' });
     const minDays = Math.max(MIN_DAYS, v.data.min_days || MIN_DAYS);
     if (days < minDays) return res.status(400).json({ error: 'This vehicle is rented for at least ' + minDays + ' days.' });
     const busy = await busyRanges([v.data.id]);
@@ -181,7 +184,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const { data, error } = await supabase.from('rental_bookings').insert({
       vehicle_id: v.data.id, vehicle_title: v.data.title, customer_id: req.user.id, vendor_id: v.data.vendor_id,
       start_date: b.start, end_date: b.end, days, daily_rate: rate, total, deposit: Number(v.data.deposit || 0), note: note || null,
-      status: 'requested', damage_authorized_at: new Date().toISOString(), late_charge_authorized_at: new Date().toISOString(), agreement_version: AGREEMENT_VERSION, customer_unread: false, vendor_unread: true
+      status: 'requested', damage_authorized_at: new Date().toISOString(), late_charge_authorized_at: new Date().toISOString(), agreement_version: AGREEMENT_VERSION, rules_snapshot: rulesText || null, rules_accepted_at: rulesText ? new Date().toISOString() : null, customer_unread: false, vendor_unread: true
     }).select().single();
     if (error) throw error;
     await addMessage(data.id, req.user.id, 'system', 'Rental requested: ' + v.data.title + ', ' + b.start + ' to ' + b.end + ' (' + days + ' day' + (days > 1 ? 's' : '') + '), ' + jmd(total) + '.' + (note ? ' Note: ' + note : ''));
@@ -202,7 +205,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
       vendor: v ? { id: v.id, name: vendorName(v), parish: v.parish || '', ...(deal && !isVendor ? { address: v.address || '', phone: v.phone || '' } : {}) } : { name: 'Removed vendor' },
       ...(!isCustomer && b.commission_amount != null ? { commission: { percent: Number(b.commission_percent), amount: Number(b.commission_amount), settled: !!b.commission_settled_at } } : {}),
       rating: b.rating || null, review: b.review || '', open: !isClosed(b),
-      lateChargeAuthorized: !!b.late_charge_authorized_at, agreementVersion: b.agreement_version || null,
+      lateChargeAuthorized: !!b.late_charge_authorized_at, agreementVersion: b.agreement_version || null, rules: b.rules_snapshot || '', rulesAccepted: !!b.rules_accepted_at,
       returnCheck: b.status === 'returned' ? (b.return_check || 'none') : 'none',
       ...(b.status === 'returned' ? { returnReport: { vendorOk: b.return_vendor_ok, vendorNote: b.return_vendor_note || '', customerOk: b.return_customer_ok, customerNote: b.return_customer_note || '' } } : {}),
       ...(b.dispute_at ? { dispute: { at: b.dispute_at, resolvedAt: b.dispute_resolved_at || null, outcome: b.dispute_outcome || '' } } : {}),
@@ -437,6 +440,16 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     res.json({ url: await auth.signedPhotoUrl(u.licence_photo_path) });
   }));
 
+  // ---------- vendor: the rules for how every vehicle of this company is used ----------
+  router.get('/rentals/my-rules', ...rentalVendor, (req, res) => res.json({ rules: req.user.rental_rules || '' }));
+  router.put('/rentals/my-rules', ...rentalVendor, handle(async (req, res) => {
+    const text = String((req.body && req.body.rules) || '').trim();
+    if (text.length > 1200) return res.status(400).json({ error: 'Keep your rules under 1200 characters.' });
+    const { error } = await supabase.from('users').update({ rental_rules: text || null }).eq('id', req.user.id);
+    if (error) throw error;
+    res.json({ rules: text });
+  }));
+
   // ---------- vendor: the requirements that apply to every renter of this company ----------
   router.get('/rentals/my-requirements', ...rentalVendor, (req, res) => res.json({ requirements: req.user.rental_requirements || '' }));
   router.put('/rentals/my-requirements', ...rentalVendor, handle(async (req, res) => {
@@ -460,6 +473,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     if (has('deposit')) { const p = auth.parseAmount(b.deposit); if (p.error) return { error: 'Enter the deposit in Jamaican dollars (or leave it blank).' }; v.deposit = p.value || 0; }
     if (has('minDays')) { const m = b.minDays === '' || b.minDays == null ? MIN_DAYS : Number(b.minDays); if (!Number.isInteger(m) || m < MIN_DAYS || m > 30) return { error: 'The minimum rental is ' + MIN_DAYS + ' to 30 days.' }; v.min_days = m; }
     if (has('requirements')) v.requirements = String(b.requirements || '').trim().slice(0, 300) || null;
+    if (has('rules')) v.rules = String(b.rules || '').trim().slice(0, 400) || null;
     if (has('description')) v.description = String(b.description || '').trim().slice(0, 600) || null;
     if (has('parish')) { const p = b.parish || (vendor && vendor.parish); if (!auth.PARISHES.includes(p)) return { error: 'Choose the parish the vehicle is collected in.' }; v.parish = p; }
     if (b.active !== undefined) v.active = !!b.active;

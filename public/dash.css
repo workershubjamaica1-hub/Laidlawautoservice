@@ -412,3 +412,11 @@ main.dash { display: block; max-width: 1312px; margin: 0 auto; padding: 44px 48p
 
 .deal.late { background: #FFF1F0; border-color: #F2B5B1; }
 .deal.late b { color: #8E211A; }
+
+.rule-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.rule-chips .chip { padding: 7px 12px; font-size: 12.5px; }
+.rules-box ul { margin: 6px 0 0; padding-left: 20px; }
+.rules-box li { margin: 3px 0; }
+.rules-agreed { margin: 8px 0; padding: 10px 14px; border: 1px solid var(--line, #E3E9F2); border-radius: 14px; background: #fff; font-size: 13.5px; }
+.rules-agreed summary { cursor: pointer; font-weight: 700; }
+.rules-agreed ul { margin: 8px 0 0; padding-left: 20px; }

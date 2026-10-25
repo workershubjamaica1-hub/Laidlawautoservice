@@ -406,6 +406,12 @@ alter table rental_bookings add constraint rental_bookings_return_check_check ch
 alter table rental_bookings drop constraint if exists rental_bookings_late_fee_status_check;
 alter table rental_bookings add constraint rental_bookings_late_fee_status_check check (late_fee_status in ('none', 'due', 'charged', 'waived'));
 
+-- Rental rules the company sets (no smoking, no pets, fuel, mileage...), kept on each booking as the renter agreed them
+alter table users add column if not exists rental_rules text;
+alter table rental_vehicles add column if not exists rules text;
+alter table rental_bookings add column if not exists rules_snapshot text;
+alter table rental_bookings add column if not exists rules_accepted_at timestamptz;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

@@ -92,6 +92,7 @@
 
     function panel(b) {
       const out = [summary(b)];
+      if (b.rules) out.push('<details class="rules-agreed"' + (['requested', 'accepted', 'picked_up'].includes(b.status) ? '' : '') + '><summary>Rental rules ' + (role === 'customer' ? 'you agreed to' : 'the renter agreed to') + '</summary><ul>' + b.rules.split(/\n+/).map(l => '<li>' + esc(l) + '</li>').join('') + '</ul></details>');
       if (role === 'customer') {
         if (b.status === 'requested') out.push('<p class="th-hint">Waiting for ' + esc(b.vendor.name) + ' to accept. You can chat with them meanwhile. Nothing is charged online: you pay the vendor in person.</p>');
         if (b.status === 'accepted') out.push('<div class="deal"><b>Your rental is confirmed</b><p>Collect it on <strong>' + esc(day(b.startDate)) + '</strong> from ' + esc(b.vendor.name) + (b.vendor.address ? ', ' + esc(b.vendor.address) : '') + (b.vendor.phone ? '<br>Phone: <a href="tel:' + tel(b.vendor.phone) + '">' + esc(b.vendor.phone) + '</a>' : '') + '</p><p>Bring your driver\'s licence. Pay the vendor <strong>' + jmd(b.total) + '</strong>' + (b.deposit ? ' plus the <strong>' + jmd(b.deposit) + '</strong> deposit' : '') + ' in person.</p><p>You agreed the vendor may charge you for any damage or loss' + (b.deposit ? ', up to the deposit,' : '') + ' using the card or deposit you give at pick-up.</p></div>');

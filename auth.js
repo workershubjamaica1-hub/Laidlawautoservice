@@ -697,7 +697,7 @@ module.exports = function createAuth({ supabase, handle }) {
 
     const { error } = await supabase.from('users').update({
       name: 'Deleted user', email: `deleted-${u.id}-${Date.now()}@deleted.invalid`, password_hash: hashPassword(crypto.randomBytes(24).toString('hex')),
-      phone: null, address: null, parish: null, business_name: null, experience: null, specialties: null, rental_requirements: null,
+      phone: null, address: null, parish: null, business_name: null, experience: null, specialties: null, rental_requirements: null, rental_rules: null,
       chassis_photo_path: null, avatar_path: null, licence_photo_path: null, active: false, deleted_at: now,
       verify_code_hash: null, reset_code_hash: null
     }).eq('id', u.id);

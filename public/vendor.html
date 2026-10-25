@@ -88,6 +88,23 @@
         <textarea id="req-text" rows="3" maxlength="600" placeholder="e.g. Age 25 or older. Driver's licence held for 2 years. Valid ID. Card or cash deposit at pick-up. No off-road driving. Return with the same fuel level."></textarea>
         <button class="btn small" type="submit" id="req-save">Save requirements</button> <span class="th-hint" id="req-status"></span>
       </form>
+      <form class="card" id="rules-form" novalidate style="margin-bottom:20px">
+        <h3 style="margin:0 0 4px">Your rental rules</h3>
+        <p class="hint-line" style="margin:0 0 10px">How your vehicles may be used. Every renter reads these before booking and must tick that they will follow them. They are kept with each booking, so changing them later does not change a rental already agreed. If breaking a rule costs money (for example a smoking or cleaning fee), say the amount here so it is clear in advance.</p>
+        <div class="rule-chips" id="rule-chips" aria-label="Add a common rule">
+          <button type="button" class="chip act" data-rule="No smoking or vaping in the vehicle.">No smoking</button>
+          <button type="button" class="chip act" data-rule="No pets in the vehicle.">No pets</button>
+          <button type="button" class="chip act" data-rule="No off-road driving.">No off-road</button>
+          <button type="button" class="chip act" data-rule="Return the vehicle with the same fuel level as at pick-up.">Same fuel level</button>
+          <button type="button" class="chip act" data-rule="Mileage limit: 150 km a day. Extra kilometres are charged at J$ per km.">Mileage limit</button>
+          <button type="button" class="chip act" data-rule="Only the renter and any driver approved by us may drive.">Approved drivers only</button>
+          <button type="button" class="chip act" data-rule="Return the vehicle clean. A cleaning fee of J$ applies if it comes back very dirty.">Return clean</button>
+          <button type="button" class="chip act" data-rule="No towing, racing, or carrying more people or load than the vehicle allows.">No towing or overloading</button>
+          <button type="button" class="chip act" data-rule="Report any accident or breakdown to us straight away.">Report accidents</button>
+        </div>
+        <textarea id="rules-text" rows="5" maxlength="1200" placeholder="Your rules, one on each line. Tap a button above to add a common one, then edit it."></textarea>
+        <button class="btn small" type="submit" id="rules-save">Save rules</button> <span class="th-hint" id="rules-status"></span>
+      </form>
       <div class="hdr-row"><h2>My vehicles</h2><button class="btn" id="veh-add" type="button"><span class="ic" style="--m: var(--d-plus)"></span>Add a vehicle</button></div>
       <div class="rgrid" id="veh-grid"><p class="empty">Loading...</p></div>
     </div>
@@ -141,6 +158,8 @@
     <button class="linkbtn" type="button" id="v-dep-day">Use one day's rate as the deposit</button>
     <label for="v-req">Renter requirements (optional)</label>
     <input id="v-req" maxlength="300" placeholder="e.g. Age 25+, licence held for 2 years">
+    <label for="v-rules">Rules for this vehicle only (optional)</label>
+    <input id="v-rules" maxlength="400" placeholder="e.g. No luggage on the roof. Diesel only.">
     <label for="v-desc">Description (optional)</label>
     <textarea id="v-desc" rows="2" maxlength="600" placeholder="Condition, fuel, air conditioning, insurance included..."></textarea>
     <label for="v-photo">Photo of the vehicle</label>
@@ -230,6 +249,17 @@ async function loadBookings() { if (!offersRentals) return; try { bookings = awa
 // ---------- my rental vehicles ----------
 const CAT = { car: 'Car', suv: 'SUV', truck: 'Truck', van: 'Van', minibus: 'Minibus', other: 'Other' };
 const shortDay = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+$('rule-chips').addEventListener('click', (e) => {
+  const c = e.target.closest('[data-rule]'); if (!c) return;
+  const t = $('rules-text'), line = c.dataset.rule;
+  if (!t.value.includes(line)) t.value = (t.value.trim() ? t.value.trim() + '\n' : '') + line;
+});
+$('rules-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('rules-status').textContent = '';
+  try { await api('/rentals/my-rules', { method: 'PUT', body: { rules: $('rules-text').value } }); $('rules-status').textContent = 'Saved.'; }
+  catch (err) { $('rules-status').textContent = err.message; }
+});
 $('req-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   $('req-status').textContent = '';
@@ -239,6 +269,7 @@ $('req-form').addEventListener('submit', async (e) => {
 async function loadVehicles() {
   if (!offersRentals) return;
   try { $('req-text').value = (await api('/rentals/my-requirements')).requirements; } catch (_) {}
+  try { $('rules-text').value = (await api('/rentals/my-rules')).rules; } catch (_) {}
   try { vehicles = (await api('/rentals/my-vehicles')).vehicles; } catch (err) { $('veh-grid').innerHTML = '<p class="error">' + esc(err.message) + '</p>'; return; }
   $('veh-grid').innerHTML = vehicles.length ? vehicles.map(v => '<article class="rcard">' +
     '<div class="rphoto">' + (v.photoUrl ? '<img src="' + esc(v.photoUrl) + '" alt="' + esc(v.title) + '" loading="lazy" onerror="this.remove()">' : '') + '<span class="ic" style="--m: var(--d-car)"></span></div>' +
@@ -260,7 +291,7 @@ function openVehicleForm(v) {
   $('v-cat').value = v ? v.category : 'car'; $('v-seats').value = v ? v.seats || '' : '';
   $('v-trans').value = v ? v.transmission || 'automatic' : 'automatic'; $('v-parish').value = v ? v.parish : (me.parish || parishes[0]);
   $('v-rate').value = v ? v.dailyRate : ''; $('v-min').value = v ? v.minDays : 3;
-  $('v-dep').value = v ? (v.deposit || '') : ''; $('v-req').value = v ? v.requirements : ''; $('v-desc').value = v ? v.description : ''; $('v-photo').value = '';
+  $('v-dep').value = v ? (v.deposit || '') : ''; $('v-req').value = v ? v.requirements : ''; $('v-rules').value = v ? (v.rules || '') : ''; $('v-desc').value = v ? v.description : ''; $('v-photo').value = '';
   $('dlg-veh').showModal();
 }
 $('veh-add').addEventListener('click', () => openVehicleForm(null));
@@ -271,7 +302,7 @@ $('veh-form').addEventListener('submit', async (e) => {
   $('veh-save').disabled = true;
   try {
     const body = { title: $('v-title').value, year: Number($('v-year').value), category: $('v-cat').value, seats: Number($('v-seats').value), transmission: $('v-trans').value,
-      parish: $('v-parish').value, dailyRate: $('v-rate').value, minDays: Number($('v-min').value), deposit: $('v-dep').value, requirements: $('v-req').value, description: $('v-desc').value };
+      parish: $('v-parish').value, dailyRate: $('v-rate').value, minDays: Number($('v-min').value), deposit: $('v-dep').value, requirements: $('v-req').value, rules: $('v-rules').value, description: $('v-desc').value };
     const photo = $('v-photo').files[0];
     const image = photo ? await RentalChat.prepareImage(photo) : null;
     const v = editing ? await api('/rentals/my-vehicles/' + editing.id, { method: 'PATCH', body }) : await api('/rentals/my-vehicles', { method: 'POST', body });

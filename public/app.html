@@ -316,6 +316,7 @@
     </div>
     <p class="th-hint" id="rent-total"></p>
     <div class="rreq-box" id="rent-reqs" hidden></div>
+    <div class="rreq-box rules-box" id="rent-rules" hidden></div>
     <label for="rent-note">Anything the vendor should know? (optional)</label>
     <textarea id="rent-note" rows="2" maxlength="500" placeholder="e.g. airport pick-up, or the time you plan to collect"></textarea>
     <div id="rent-licence-row">
@@ -323,6 +324,7 @@
       <input id="rent-licence" type="file" accept="image/*">
       <p class="hint-line">Needed once. Only the rental company whose booking is accepted can see it.</p>
     </div>
+    <label class="agree" id="rent-rules-row" hidden><input type="checkbox" id="rent-rules-ok"> <span>I have read the rental rules above and I will follow them.</span></label>
     <label class="agree"><input type="checkbox" id="rent-confirm"> <span>I hold a valid driver's licence and meet the requirements shown.</span></label>
     <label class="agree"><input type="checkbox" id="rent-late"> <span>I agree to the <a href="/agreements.html#renter" target="_blank" rel="noopener">Rental Agreement</a>: the deposit may be held or taken as the vendor and I agree, <strong>each extra day I keep the vehicle is charged at the daily rate</strong>, and if we do not both agree it came back in the same condition, AutoAid 24/7 will contact us both and review it.</span></label>
     <label class="agree"><input type="checkbox" id="rent-damage"> <span>I agree the vendor may charge me for any damage or loss to the vehicle, up to the deposit, using the card or deposit I give at pick-up.</span></label>
@@ -1358,6 +1360,7 @@ async function searchRentals() {
     '<div class="rbody"><h3>' + esc(v.title) + (v.year ? ' <small>' + esc(v.year) + '</small>' : '') + '</h3>' +
     '<p class="rmeta">' + esc(CAT_LABEL[v.category] || v.category) + (v.seats ? ' &middot; ' + v.seats + ' seats' : '') + (v.transmission ? ' &middot; ' + esc(v.transmission) : '') + '</p>' +
     '<p class="rmeta">' + esc(v.vendorName) + ' &middot; ' + esc(v.parish) + '</p>' +
+    ((v.vendorRules || v.rules) ? '<p class="rmeta rreq"><b>Rules:</b> ' + esc([v.vendorRules, v.rules].filter(Boolean).join(' \u00b7 ').replace(/\s*\n\s*/g, ' \u00b7 ')) + '</p>' : '') +
     ((v.vendorRequirements || v.requirements) ? '<p class="rmeta rreq"><b>Requirements:</b> ' + esc([v.vendorRequirements, v.requirements].filter(Boolean).join(' \u00b7 ')) + '</p>' : '') +
     '<div class="rprice"><b>' + jmd(v.dailyRate) + '</b><span>a day</span>' + (v.deposit ? '<small>Deposit ' + jmd(v.deposit) + '</small>' : '') + '<small>Min. ' + v.minDays + ' days</small></div>' +
     (v.available === false ? '<span class="pill st-cancelled">Not free on those dates</span>' : '') +
@@ -1371,6 +1374,9 @@ async function openRent(id) {
   $('rent-info').innerHTML = esc(rentalVehicle.vendorName) + ' &middot; ' + esc(rentalVehicle.parish) + ' &middot; <strong>' + jmd(rentalVehicle.dailyRate) + '</strong> a day, minimum ' + rentalVehicle.minDays + ' days' + (rentalVehicle.deposit ? ', deposit ' + jmd(rentalVehicle.deposit) : '');
   const reqs = [rentalVehicle.vendorRequirements && ('<b>' + esc(rentalVehicle.vendorName) + ' asks of every renter:</b> ' + esc(rentalVehicle.vendorRequirements)), rentalVehicle.requirements && ('<b>For this vehicle:</b> ' + esc(rentalVehicle.requirements))].filter(Boolean);
   $('rent-reqs').innerHTML = reqs.join('<br>'); $('rent-reqs').hidden = !reqs.length;
+  const rules = [rentalVehicle.vendorRules, rentalVehicle.rules].filter(Boolean).join('\n').trim();
+  $('rent-rules').innerHTML = rules ? '<b>' + esc(rentalVehicle.vendorName) + '\'s rental rules</b><ul>' + rules.split(/\n+/).map(l => '<li>' + esc(l) + '</li>').join('') + '</ul>' : '';
+  $('rent-rules').hidden = !rules; $('rent-rules-row').hidden = !rules; $('rent-rules-ok').checked = false;
   $('rent-start').min = todayStr(); $('rent-end').min = todayStr();
   $('rent-start').value = $('rf-start').value; $('rent-end').value = $('rf-end').value;
   $('rent-confirm').checked = false; $('rent-damage').checked = false; $('rent-late').checked = false; $('rent-licence').value = '';
@@ -1396,7 +1402,7 @@ async function sendRentRequest(e) {
       await api('/rentals/licence', { method: 'POST', body: { image: await RentalChat.prepareImage(f) } });
       hasLicence = true;
     }
-    const b = await api('/rentals/bookings', { method: 'POST', body: { vehicleId: rentalVehicle.id, start: $('rent-start').value, end: $('rent-end').value, note: $('rent-note').value, hasLicenceConfirmed: $('rent-confirm').checked, damageAuthorized: $('rent-damage').checked, lateChargeAuthorized: $('rent-late').checked } });
+    const b = await api('/rentals/bookings', { method: 'POST', body: { vehicleId: rentalVehicle.id, start: $('rent-start').value, end: $('rent-end').value, note: $('rent-note').value, hasLicenceConfirmed: $('rent-confirm').checked, damageAuthorized: $('rent-damage').checked, lateChargeAuthorized: $('rent-late').checked, rulesAccepted: $('rent-rules-ok').checked } });
     $('rent-note').value = '';
     closeDlg('dlg-rent');
     goView('rentals');
