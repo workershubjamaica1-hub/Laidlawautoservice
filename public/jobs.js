@@ -54,6 +54,66 @@
     return { unlock: audio, start, stop, siren, chime, notify, askPermission, ringing: () => !!ringTimer, isReady: () => !!ctx && ctx.state === 'running' };
   })();
 
+  // ------------------------------------------------------------ phone notifications (web push)
+  const JobPush = (function () {
+    const supported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    const ios = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const standalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    const b64 = (s) => { const pad = '='.repeat((4 - (s.length % 4)) % 4), raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...raw].map(c => c.charCodeAt(0))); };
+    async function state() {
+      if (!supported()) return ios() && !standalone() ? 'ios-install' : 'unsupported';
+      if (Notification.permission === 'denied') return 'denied';
+      const reg = await navigator.serviceWorker.getRegistration('/');
+      const sub = reg && await reg.pushManager.getSubscription();
+      return sub && Notification.permission === 'granted' ? 'on' : 'off';
+    }
+    async function enable(api) {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') throw new Error('Notifications were not allowed. You can allow them in your browser or phone settings.');
+      const reg = (await navigator.serviceWorker.getRegistration('/')) || await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+      const k = await api('/push/key');
+      if (!k.enabled) throw new Error('Notifications are not available right now. Try again later.');
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(k.publicKey) });
+      await api('/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON() } });
+    }
+    async function disable(api) {
+      const reg = await navigator.serviceWorker.getRegistration('/');
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (sub) { await api('/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }).catch(() => {}); await sub.unsubscribe(); }
+    }
+    const COPY = {
+      technician: { on: 'Phone alerts are ON. New jobs, and above all URGENT emergencies, will wake this phone even when this page is closed.', off: 'Turn on phone alerts so new jobs and URGENT emergencies reach you even when this page is closed.' },
+      customer: { on: 'Notifications are ON. We will tell you when a technician accepts, sends a price, arrives or finishes.', off: 'Get a notification when a technician accepts, sends a price, arrives or finishes, even if you close this page.' }
+    };
+    async function mountCard(el, { api, audience = 'customer', compact = false }) {
+      async function draw() {
+        const st = await state(), c = COPY[audience];
+        let body = '', actions = '';
+        if (st === 'on') { body = c.on; actions = '<button class="btn ghost small" type="button" data-push="test">Send a test</button> <button class="btn ghost small" type="button" data-push="off">Turn off</button>'; }
+        else if (st === 'off') { body = c.off; actions = '<button class="btn small" type="button" data-push="on">Turn on notifications</button>'; }
+        else if (st === 'denied') body = 'Notifications are blocked for this site. Allow them in your browser or phone settings (Site settings, then Notifications), then come back and try again.';
+        else if (st === 'ios-install') body = 'On iPhone: tap the Share button, choose Add to Home Screen, then open AutoAid from your home screen and turn notifications on from there.';
+        else body = 'This browser cannot show phone notifications. On Android use Chrome; on iPhone use Safari and add AutoAid to your Home Screen.';
+        el.innerHTML = '<div class="push-card' + (compact ? ' compact' : '') + (st === 'on' ? ' on' : '') + '">' + (compact ? '' : '<b>Phone notifications</b>') + '<p>' + esc(body) + '</p>' + (actions ? '<div class="push-actions">' + actions + '</div>' : '') + '<p class="error" data-push-error role="alert"></p></div>';
+      }
+      el.onclick = async (e) => {
+        const b = e.target.closest('[data-push]'); if (!b) return;
+        const err = el.querySelector('[data-push-error]'); err.textContent = ''; b.disabled = true;
+        try {
+          if (b.dataset.push === 'on') await enable(api);
+          else if (b.dataset.push === 'off') await disable(api);
+          else { await api('/push/test', { method: 'POST' }); b.textContent = 'Sent. Check your notifications.'; return; }
+          await draw();
+        } catch (ex) { err.textContent = ex.message; b.disabled = false; }
+      };
+      if (!supported() && !ios()) { await draw(); return; }
+      await draw();
+    }
+    return { state, enable, disable, mountCard, supported };
+  })();
+
   // ------------------------------------------------------------ the job window
   const STAGE = { searching: 'Finding a technician', matched: 'Chatting', quoted: 'Price sent', agreed: 'Booked', working: 'Working', done_pending: 'Please confirm', closed: 'Completed', cancelled: 'Cancelled' };
   const PILL = { searching: 'pending', matched: 'pending', quoted: 'pending', agreed: 'in-progress', working: 'in-progress', done_pending: 'in-progress', closed: 'completed', cancelled: 'cancelled' };
@@ -135,7 +195,7 @@
             '<p>Waiting <span data-since="' + esc(o.createdAt) + '">0:00</span>. The first available technician will accept and chat with you here. ' + (o.urgent ? 'Stay somewhere safe and keep your phone on. ' : '') + 'Keep this window open.</p>' +
             '<p class="th-hint">' + (o.onlineTechs > 0 ? '<strong>' + o.onlineTechs + '</strong> technician' + (o.onlineTechs > 1 ? 's are' : ' is') + ' online for this department right now.' :
               'No technician is online for this department at the moment. We will keep looking.' + (shopPhone() ? ' You can also call the shop: <a href="tel:' + tel(shopPhone()) + '">' + esc(shopPhone()) + '</a>.' : '')) + '</p></div></div>');
-          out.push(summary(o, dept)); out.push('<div class="th-actions"><button class="btn ghost" type="button" data-act="cancel">Cancel request</button></div>');
+          out.push(summary(o, dept)); out.push('<div id="push-offer"></div>'); out.push('<div class="th-actions"><button class="btn ghost" type="button" data-act="cancel">Cancel request</button></div>');
         }
         if (o.stage === 'matched') { out.push(summary(o, dept)); out.push('<p class="th-hint"><strong>' + esc(o.technician.name) + '</strong> accepted your request.' + (o.urgent && o.technician.phone ? ' Call them now: <a href="tel:' + tel(o.technician.phone) + '">' + esc(o.technician.phone) + '</a>.' : ' Chat below and describe the problem.') + ' They will send you a price and an arrival time.</p><div class="th-actions"><button class="btn ghost small" type="button" data-act="change">Ask for a different technician</button></div>'); }
         if (o.stage === 'quoted') {
@@ -199,6 +259,7 @@
       lastStage = o.stage;
       cur = { id: o.id, order: o, last: data.messages.length ? data.messages[data.messages.length - 1].id : 0 };
       countdowns();
+      const offer = dlg.querySelector('#push-offer'); if (offer && JobPush.supported()) JobPush.state().then(st => { if (st === 'off') JobPush.mountCard(offer, { api, audience: 'customer', compact: true }); });
       const fee = dlg.querySelector('#q-fee'), amt = dlg.querySelector('#q-amount');
       if (fee && amt) { const upd = () => { const v = Number(String(amt.value).replace(/[,\sJ$]/g, '')); fee.textContent = v > 0 && !o.premiumPerk ? 'AutoAid fee ' + (data.feePercent || 5) + '%: ' + jmd(Math.round(v * (data.feePercent || 5)) / 100) + ' (you keep ' + jmd(v - Math.round(v * (data.feePercent || 5)) / 100) + ').' + (data.onlinePayment ? ' The customer pays online first, and you are paid after they confirm.' : ' The customer pays you in person.') : ''; }; amt.addEventListener('input', upd); upd(); }
     }
@@ -288,5 +349,6 @@
   }
 
   window.JobAlerts = JobAlerts;
+  window.JobPush = JobPush;
   window.JobChat = { create, STAGE, PILL, jmd, esc, mmss, catLabel, prepareImage };
 })();

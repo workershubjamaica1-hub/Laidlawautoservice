@@ -4,8 +4,7 @@ When this is switched on, **customers and service providers** get a 6-digit code
 They type it in to prove the email is theirs:
 
 * **Customers** are signed in as soon as the code is right.
-* **Service providers** must verify their email first, then their application waits for admin approval as before. The admin
-  only sees an application in the approval list once its email is verified.
+* **Service providers** (technicians and vendors) are approved automatically as soon as they enter the code, so verifying the email is the only step. Without `VERIFY_EMAIL`, they still wait for the admin to approve them.
 * Anyone who signed up but never verified is sent to the code screen the next time they try to sign in, and can ask for a new code.
 * **Everyone who already has an account counts as verified**, so nothing changes for them.
 

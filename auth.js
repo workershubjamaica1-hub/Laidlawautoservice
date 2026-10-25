@@ -428,10 +428,9 @@ module.exports = function createAuth({ supabase, handle }) {
       return wrong(VERIFY.maxAttempts - used - 1);
     }
     const { data, error } = await supabase.from('users')
-      .update({ email_verified: true, verify_code_hash: null, verify_expires_at: null, verify_attempts: 0 }).eq('id', user.id).select().single();
+      .update({ email_verified: true, approved: true, verify_code_hash: null, verify_expires_at: null, verify_attempts: 0 }).eq('id', user.id).select().single();   // a verified email approves the account
     if (error) throw error;
     verifyLimit.clear(req.ip);
-    if (data.role === 'staff' || data.role === 'vendor' || data.approved === false) return res.json({ verified: true, pending: data.approved === false });   // providers wait for approval
     if (!data.active) return res.status(403).json({ error: 'This account has been disabled. Contact the shop.' });
     res.json({ verified: true, token: makeToken(data.id), user: publicUser(data) });
   }));
@@ -692,6 +691,7 @@ module.exports = function createAuth({ supabase, handle }) {
     await supabase.from('part_messages').update({ body: '[message removed]' }).eq('sender_id', u.id).eq('kind', 'text').then(() => {}, () => {});
     await supabase.from('rental_messages').update({ body: '[message removed]' }).eq('sender_id', u.id).eq('kind', 'text').then(() => {}, () => {});
     for (const p of [u.chassis_photo_path, u.avatar_path, u.licence_photo_path]) await removePhoto(p).catch(() => {});
+    await supabase.from('push_subscriptions').delete().eq('user_id', u.id).then(() => {}, () => {});
 
     const { error } = await supabase.from('users').update({
       name: 'Deleted user', email: `deleted-${u.id}-${Date.now()}@deleted.invalid`, password_hash: hashPassword(crypto.randomBytes(24).toString('hex')),

@@ -188,6 +188,7 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
       await supabase.from('service_requests').delete().eq('id', ins.data.id);
       return res.status(409).json({ error: 'That free service was already booked.' });
     }
+    require('./jobEvents').emit('new-job', ins.data);   // alerts the technicians (see jobRoutes.js)
     res.status(201).json({ id: ins.data.id, perk, status: ins.data.status });
   }));
 

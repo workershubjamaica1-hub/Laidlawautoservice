@@ -79,6 +79,7 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
       parish, contact_phone: phoneCheck.value.phone
     }).select().single();
     if (error) throw error;
+    require('./jobEvents').emit('new-job', data);   // alerts the technicians (see jobRoutes.js)
     res.status(201).json({ id: data.id, kind: b.kind, stage: data.stage || 'searching', status: data.status || 'pending', urgent: true, createdAt: data.created_at });
   }));
 

@@ -6,6 +6,11 @@
 <meta name="robots" content="noindex">
 <title>Admin | AutoAid 24/7</title>
 <link rel="icon" type="image/png" href="/favicon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0B2545">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="description" content="AutoAid 24/7: vehicle repairs, roadside assistance, towing, parts and rentals in Jamaica.">
+<script src="/pwa.js" defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
@@ -60,6 +65,7 @@
         <div class="grow"><b id="onlineLabel">You are offline</b><small id="onlineHint">Switch on to receive new jobs for your departments. Keep this page open and your sound on.</small></div>
         <button class="btn ghost small" id="soundTest" type="button">Test the alert sound</button>
       </div>
+      <div id="pushCard"></div>
       <div class="alert-banner" id="alertBanner" hidden role="alert"><span id="alertText">New job!</span><button class="btn small" id="silence" type="button">Silence</button></div>
       <p class="sound-note" id="soundNote" hidden>Tap anywhere on this page once so your browser allows the alert sound.</p>
       <h3 style="margin:18px 0 0">New jobs for you <span id="incomingCount"></span></h3>
@@ -324,6 +330,7 @@ const jobAgo = iso => { const s = Math.max(0, Math.floor((Date.now() - Date.pars
 function startJobs() {
   if (jobsStarted) return; jobsStarted = true;
   document.addEventListener('click', () => { JobAlerts.unlock(); $('soundNote').hidden = JobAlerts.isReady(); }, { once: false });
+  JobPush.mountCard($('pushCard'), { api, audience: 'technician' });
   pollJobs(); jobsTimer = setInterval(pollJobs, 4000);
 }
 function setOnlineUI(on) {
@@ -337,6 +344,7 @@ async function pollJobs() {
   try { feed = await api('/jobs/feed'); } catch (_) { return; }
   lastFeed = feed;
   setOnlineUI(feed.online);
+  if (!window.__linked) { window.__linked = true; const linked = Number(new URLSearchParams(location.search).get('job')); if (linked) { $('jobsTab').click(); jchat.open(linked).catch(() => {}); } }
   const fresh = feed.incoming.filter(j => !seenIncoming.has(j.id));
   seenIncoming = new Set(feed.incoming.map(j => j.id));
   if (feed.online && fresh.length) {

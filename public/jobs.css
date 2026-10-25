@@ -9,6 +9,12 @@
 .jphoto { display: block; max-width: 100%; max-height: 240px; border-radius: 14px; border: 1px solid var(--line, #E3E9F2); margin: 8px 0; object-fit: cover; }
 .photo-add { display: inline-flex; cursor: pointer; margin: 6px 0; }
 .jobcard .jthumb { width: 84px; height: 84px; border-radius: 12px; object-fit: cover; border: 1px solid var(--line, #E3E9F2); }
+.push-card { padding: 14px 16px; border-radius: 14px; background: #F4F7FB; border: 1px solid var(--line, #E3E9F2); margin: 10px 0; }
+.push-card.on { background: #F3FBF7; border-color: #BFE3D2; }
+.push-card.compact { padding: 10px 12px; margin: 8px 0; }
+.push-card p { margin: 4px 0 8px; font-size: 13.5px; color: var(--ink-soft, #55657B); }
+.push-card .push-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.push-card .btn { margin: 0; }
 .countdown { font-variant-numeric: tabular-nums; font-size: 1.15em; }
 .countdown.late { color: #C93B2B; }
 

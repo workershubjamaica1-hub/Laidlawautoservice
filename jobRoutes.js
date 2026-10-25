@@ -14,6 +14,7 @@
 //     and after the customer confirms the job it owes the technician price minus fee (a "payout"). A cancelled paid job is refunded,
 //     and a complaint holds the payout until the admin decides.
 const express = require('express');
+const events = require('./jobEvents');
 const bigJson = express.json({ limit: '6mb' });
 
 const feePercent = (() => {
@@ -32,7 +33,10 @@ const money = n => Math.round(Number(n) * 100) / 100;
 const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 const STATUS_OF = { searching: 'pending', matched: 'pending', quoted: 'pending', agreed: 'in-progress', working: 'in-progress', done_pending: 'in-progress', closed: 'completed', cancelled: 'cancelled' };
 
-module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
+const LABEL = { diagnostics: 'Diagnostics', mechanical: 'Mechanical', tire: 'Tire', electrical: 'Electrical', maintenance: 'Maintenance', bodywork: 'Auto body repairs', roadside: 'Roadside assistance', towing: 'Wrecker / towing', other: 'Repair' };
+const PUSH_WINDOW_MS = 12 * 60 * 60 * 1000;   // a technician who switched Online and has phone alerts on is still reachable for 12 hours
+
+module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   const router = express.Router();
   const onlinePayment = () => process.env.JOBS_ONLINE_PAYMENT === 'true' && !!subs && subs.gatewayReady();
   const techOnly = [auth.requireWorker, (req, res, next) => (req.user.role === 'staff' ? next() : res.status(403).json({ error: 'Only technicians can do this.' }))];
@@ -59,7 +63,39 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
   async function addMessage(jobId, senderId, kind, body) {
     const { error } = await supabase.from('job_messages').insert({ job_id: jobId, sender_id: senderId, kind, body });
     if (error) throw error;
+    tellOthers(jobId, senderId, kind, body).catch(() => {});   // phone notification; never holds up the request
   }
+  // Wakes the other person's phone: a chat message, or a step in the job (accepted, price, agreed, arrived, done...)
+  async function tellOthers(jobId, senderId, kind, body) {
+    if (!push) return;
+    const row = (await rows(supabase.from('service_requests').select('id, technician_id, customer_id, vehicle_id, category, urgent').eq('id', jobId)))[0];
+    if (!row) return;
+    let customerId = row.customer_id;
+    if (!customerId && row.vehicle_id) { const v = (await vehiclesById([row.vehicle_id])).get(row.vehicle_id); customerId = v && v.user_id; }
+    const people = [{ id: row.technician_id, url: '/admin.html?job=' + jobId }, { id: customerId, url: '/app.html?job=' + jobId }].filter(p => p.id && p.id !== senderId);
+    if (!people.length) return;
+    let who = '';
+    if (kind === 'text' && senderId) who = ((await usersById([senderId])).get(senderId) || {}).name || '';
+    const label = LABEL[row.category] || 'your job';
+    const title = kind === 'text' ? 'New message: ' + label : (row.urgent ? '\u{1F6A8} ' : '') + 'AutoAid 24/7: ' + label;
+    const text = kind === 'text' ? (who ? who + ': ' : '') + String(body).slice(0, 90) : String(body).slice(0, 120);
+    for (const p of people) await push.notify([p.id], { title, body: text, url: p.url, tag: 'job-' + jobId });
+  }
+  // A new job exists: alert the technicians who handle that department (phone notification, and an email for emergencies)
+  async function alertNewJob(row) {
+    if (!push) return;
+    try {
+      const techs = await rows(supabase.from('users').select('id, name, email, specialties, parish, online, online_at, approved, active').eq('role', 'staff'));
+      const eligible = techs.filter(t => t.active !== false && t.approved !== false && t.online && t.online_at && Date.now() - Date.parse(t.online_at) < PUSH_WINDOW_MS && handles(t, row.category));
+      if (!eligible.length) return;
+      const label = LABEL[row.category] || 'Repair';
+      const where = row.location_text || row.parish || '';
+      const title = row.urgent ? '\u{1F6A8} URGENT: ' + label : 'New job: ' + label;
+      await push.notify(eligible.map(t => t.id), { title, body: [where, row.description].filter(Boolean).join(' \u00b7 ').slice(0, 140), url: '/admin.html?job=' + row.id, tag: 'new-job-' + row.id, urgent: !!row.urgent });
+      if (row.urgent) await push.email(eligible, 'URGENT ' + label + ' job' + (row.parish ? ' in ' + row.parish : ''), 'A customer needs help now' + (where ? ': ' + where : '') + '.\n' + row.description);
+    } catch (err) { console.error('New job alert failed:', err.message); }
+  }
+  events.on('new-job', row => { alertNewJob(row); });
   async function setJob(row, patch) {
     const stage = patch.stage || row.stage;
     const { data, error } = await supabase.from('service_requests').update(touch({ ...patch, ...(patch.stage ? { status: STATUS_OF[patch.stage] } : {}) })).eq('id', row.id).select().single();
@@ -326,7 +362,9 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs }) {
     let onlineTechs = null;
     if (row.stage === 'searching') {
       const all = await rows(supabase.from('users').select('id, specialties, online, online_at, approved, active').eq('role', 'staff'));
-      onlineTechs = all.filter(t => t.active !== false && t.approved !== false && isFresh(t) && handles(t, row.category)).length;
+      const subscribed = push ? await push.withSubscriptions(all.map(t => t.id)) : new Set();
+      const reachable = t => isFresh(t) || (!!t.online && subscribed.has(t.id) && !!t.online_at && Date.now() - Date.parse(t.online_at) < PUSH_WINDOW_MS);
+      onlineTechs = all.filter(t => t.active !== false && t.approved !== false && reachable(t) && handles(t, row.category)).length;
     }
     res.json({
       feePercent, onlinePayment: onlinePayment(),

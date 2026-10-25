@@ -349,6 +349,25 @@ create index if not exists service_requests_customer_idx on service_requests(cus
 alter table service_requests add column if not exists photo_path text;
 alter table service_requests add column if not exists photo_at timestamptz;
 
+-- Phone notifications (web push). push_subscriptions holds each browser's notification address; app_settings holds the site's own push keys.
+create table if not exists app_settings (
+  key        text primary key,
+  value      jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table app_settings enable row level security;
+create table if not exists push_subscriptions (
+  id         bigint generated always as identity primary key,
+  user_id    bigint not null references users(id) on delete cascade,
+  endpoint   text not null unique,
+  p256dh     text not null,
+  auth       text not null,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx on push_subscriptions(user_id);
+alter table push_subscriptions enable row level security;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

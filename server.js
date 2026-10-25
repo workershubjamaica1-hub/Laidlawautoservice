@@ -323,6 +323,7 @@ app.post('/service-request', ...noVendor, handle(async (req, res) => {
     // status defaults to 'pending' in the database
   }).select().single();
   if (error) throw error;
+  require('./jobEvents').emit('new-job', data);   // alerts the technicians (see jobRoutes.js)
   res.status(201).json(toRequest(data));
 }));
 
@@ -452,8 +453,12 @@ app.post('/ai-assist', ...noVendor, handle(async (req, res) => {
   res.json({ question, vehicleCategory: vehicleCategory || null, ...diagnose(question, vehicleCategory) });
 }));
 
+// --- Phone notifications and alert emails (pushRoutes.js) ---
+const push = require('./pushRoutes')({ supabase, handle, auth, app });
+app.use(push.router);
+
 // --- Live jobs: online technicians, department alerts, chat, price and arrival time (jobRoutes.js) ---
-const jobs = require('./jobRoutes')({ supabase, handle, auth, subs });
+const jobs = require('./jobRoutes')({ supabase, handle, auth, subs, push });
 app.use(jobs.router);
 
 // --- Emergency requests: roadside assistance and wrecker (emergencyRoutes.js) ---
