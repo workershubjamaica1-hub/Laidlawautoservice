@@ -162,8 +162,14 @@
     <input id="v-rules" maxlength="400" placeholder="e.g. No luggage on the roof. Diesel only.">
     <label for="v-desc">Description (optional)</label>
     <textarea id="v-desc" rows="2" maxlength="600" placeholder="Condition, fuel, air conditioning, insurance included..."></textarea>
-    <label for="v-photo">Photo of the vehicle</label>
-    <input id="v-photo" type="file" accept="image/*">
+    <fieldset class="angles"><legend>Photos of the vehicle: all four sides are needed</legend>
+      <p class="hint-line">Customers only see a vehicle once all four photos are added. They show the condition renters agree to, and we keep them with each booking in case of a dispute. Take them in daylight, with the whole vehicle in the picture.</p>
+      <div class="angle-grid">
+        <label>Front<span class="angle-prev" id="ap-front"></span><input id="v-photo-front" type="file" accept="image/*"></label>
+        <label>Back<span class="angle-prev" id="ap-back"></span><input id="v-photo-back" type="file" accept="image/*"></label>
+        <label>Left side<span class="angle-prev" id="ap-left"></span><input id="v-photo-left" type="file" accept="image/*"></label>
+        <label>Right side<span class="angle-prev" id="ap-right"></span><input id="v-photo-right" type="file" accept="image/*"></label>
+      </div></fieldset>
     <p class="hint-line">Customers also give you a card or the deposit at pick-up, and agree you may charge them for damage up to the deposit.</p>
     <button class="btn" id="veh-save" type="submit">Save vehicle</button>
     <p class="error" id="veh-error" role="alert"></p>
@@ -273,7 +279,8 @@ async function loadVehicles() {
   try { vehicles = (await api('/rentals/my-vehicles')).vehicles; } catch (err) { $('veh-grid').innerHTML = '<p class="error">' + esc(err.message) + '</p>'; return; }
   $('veh-grid').innerHTML = vehicles.length ? vehicles.map(v => '<article class="rcard">' +
     '<div class="rphoto">' + (v.photoUrl ? '<img src="' + esc(v.photoUrl) + '" alt="' + esc(v.title) + '" loading="lazy" onerror="this.remove()">' : '') + '<span class="ic" style="--m: var(--d-car)"></span></div>' +
-    '<div class="rbody"><h3>' + esc(v.title) + (v.year ? ' <small>' + esc(v.year) + '</small>' : '') + ' <span class="pill st-' + (v.active ? 'completed' : 'cancelled') + '">' + (v.active ? 'Listed' : 'Paused') + '</span></h3>' +
+    '<div class="rbody"><h3>' + esc(v.title) + (v.year ? ' <small>' + esc(v.year) + '</small>' : '') + ' <span class="pill st-' + (v.photosComplete === false ? 'pending' : v.active ? 'completed' : 'cancelled') + '">' + (v.photosComplete === false ? 'Needs photos' : v.active ? 'Listed' : 'Paused') + '</span></h3>' +
+    (v.photosComplete === false ? '<p class="rmeta" style="color:#B4322A;font-weight:700">Customers cannot see this vehicle yet. Add the ' + v.missingPhotos.join(', ') + ' photo' + (v.missingPhotos.length > 1 ? 's' : '') + ' (Edit).</p>' : '') +
     '<p class="rmeta">' + esc(CAT[v.category] || v.category) + (v.seats ? ' &middot; ' + v.seats + ' seats' : '') + (v.transmission ? ' &middot; ' + esc(v.transmission) : '') + ' &middot; ' + esc(v.parish) + '</p>' +
     '<div class="rprice"><b>' + jmd(v.dailyRate) + '</b><span>a day</span><small>Min. ' + v.minDays + ' days' + (v.deposit ? ' &middot; deposit ' + jmd(v.deposit) : ' &middot; no deposit') + '</small></div>' +
     (v.blocks.length ? '<div class="blocks">' + v.blocks.map(b => '<span>' + esc(shortDay(b.start)) + (b.end !== b.start ? ' to ' + esc(shortDay(b.end)) : '') + (b.note ? ' (' + esc(b.note) + ')' : '') + '<button type="button" data-unblock="' + b.id + '" aria-label="Remove block">&times;</button></span>').join('') + '</div>' : '') +
@@ -291,7 +298,8 @@ function openVehicleForm(v) {
   $('v-cat').value = v ? v.category : 'car'; $('v-seats').value = v ? v.seats || '' : '';
   $('v-trans').value = v ? v.transmission || 'automatic' : 'automatic'; $('v-parish').value = v ? v.parish : (me.parish || parishes[0]);
   $('v-rate').value = v ? v.dailyRate : ''; $('v-min').value = v ? v.minDays : 3;
-  $('v-dep').value = v ? (v.deposit || '') : ''; $('v-req').value = v ? v.requirements : ''; $('v-rules').value = v ? (v.rules || '') : ''; $('v-desc').value = v ? v.description : ''; $('v-photo').value = '';
+  $('v-dep').value = v ? (v.deposit || '') : ''; $('v-req').value = v ? v.requirements : ''; $('v-rules').value = v ? (v.rules || '') : ''; $('v-desc').value = v ? v.description : '';
+  for (const a of ['front', 'back', 'left', 'right']) { $('v-photo-' + a).value = ''; $('ap-' + a).innerHTML = v && v.photos && v.photos[a] ? '<img src="' + esc(v.photos[a]) + '" alt="Current ' + a + ' photo">' : '<em>Not added</em>'; }
   $('dlg-veh').showModal();
 }
 $('veh-add').addEventListener('click', () => openVehicleForm(null));
@@ -303,10 +311,13 @@ $('veh-form').addEventListener('submit', async (e) => {
   try {
     const body = { title: $('v-title').value, year: Number($('v-year').value), category: $('v-cat').value, seats: Number($('v-seats').value), transmission: $('v-trans').value,
       parish: $('v-parish').value, dailyRate: $('v-rate').value, minDays: Number($('v-min').value), deposit: $('v-dep').value, requirements: $('v-req').value, rules: $('v-rules').value, description: $('v-desc').value };
-    const photo = $('v-photo').files[0];
-    const image = photo ? await RentalChat.prepareImage(photo) : null;
+    const ANG = ['front', 'back', 'left', 'right'], NAMES = { front: 'front', back: 'back', left: 'left side', right: 'right side' };
+    const chosen = ANG.filter(a => $('v-photo-' + a).files[0]);
+    const missing = ANG.filter(a => !$('v-photo-' + a).files[0] && !(editing && editing.photos && editing.photos[a]));
+    if (missing.length) throw new Error('Add a photo of the ' + missing.map(a => NAMES[a]).join(', ') + ' of the vehicle. All four sides are needed.');
+    const images = {}; for (const a of chosen) images[a] = await RentalChat.prepareImage($('v-photo-' + a).files[0]);
     const v = editing ? await api('/rentals/my-vehicles/' + editing.id, { method: 'PATCH', body }) : await api('/rentals/my-vehicles', { method: 'POST', body });
-    if (image) await api('/rentals/my-vehicles/' + v.id + '/photo', { method: 'POST', body: { image } });
+    for (const a of chosen) await api('/rentals/my-vehicles/' + v.id + '/photos/' + a, { method: 'POST', body: { image: images[a] } });
     $('dlg-veh').close();
     await loadVehicles();
   } catch (err) { $('veh-error').textContent = err.message; }

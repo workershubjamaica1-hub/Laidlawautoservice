@@ -57,6 +57,17 @@
     </div>
   </section>
 
+  <section class="safe-card" id="safe-card" aria-labelledby="safe-h">
+    <button class="safe-x" id="safe-x" type="button" aria-label="Hide this tip">&times;</button>
+    <h2 id="safe-h">Going through the app is the safest way</h2>
+    <ul>
+      <li><b>Book, chat and agree inside AutoAid 24/7.</b> Everything is recorded, so we can help if something goes wrong. We cannot help with anything arranged outside the app.</li>
+      <li><b>Pay only the way the job shows</b>, in person or through the payment link in the app. Be careful if someone asks you to pay another way or to move the chat to another app.</li>
+      <li><b>Check who is coming.</b> Technicians shown as &ldquo;ID verified&rdquo; have had their ID checked. For emergencies, stay somewhere safe and keep your phone on.</li>
+      <li><b>Never share</b> a card PIN, a password or a code you are sent, with anyone, even someone who says they are from AutoAid 24/7.</li>
+    </ul>
+  </section>
+
     <a class="nudge" id="profile-nudge" href="#profile" hidden><b>Finish your profile.</b> We need your phone, parish and a photo of your vehicle so a technician can reach you. <span>Open profile</span></a>
 
     <section class="stats" aria-label="Your account at a glance">
@@ -1268,6 +1279,10 @@ async function sendPartRequest(e) {
   finally { $('part-send').disabled = false; }
 }
 
+// The safety tip can be hidden, and stays hidden on this device
+try { if (localStorage.getItem('safeTipHidden') === '1') $('safe-card').hidden = true; } catch (_) {}
+$('safe-x').addEventListener('click', () => { $('safe-card').hidden = true; try { localStorage.setItem('safeTipHidden', '1'); } catch (_) {} });
+
 // --- Accessories: ask a seller for lights, covers, tint, cosmetics, with or without fitting ---
 let accChat = null, accStarted = false;
 async function loadAccessories() {
@@ -1357,6 +1372,7 @@ async function searchRentals() {
   try { rentalList = (await api('/rentals/vehicles?' + qs)).vehicles; } catch (err) { $('rf-error').textContent = err.message; return; }
   $('rental-grid').innerHTML = rentalList.length ? rentalList.map(v => '<article class="rcard">' +
     '<div class="rphoto">' + (v.photoUrl ? '<img src="' + esc(v.photoUrl) + '" alt="' + esc(v.title) + '" loading="lazy" onerror="this.remove()">' : '') + '<span class="ic" style="--m: var(--d-car)"></span></div>' +
+    (v.photos ? '<div class="angle-strip">' + [['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']].filter(x => v.photos[x[0]]).map(x => '<a href="' + esc(v.photos[x[0]]) + '" target="_blank" rel="noopener" title="' + x[1] + '"><img src="' + esc(v.photos[x[0]]) + '" alt="' + x[1] + ' of ' + esc(v.title) + '" loading="lazy"><span>' + x[1] + '</span></a>').join('') + '</div>' : '') +
     '<div class="rbody"><h3>' + esc(v.title) + (v.year ? ' <small>' + esc(v.year) + '</small>' : '') + '</h3>' +
     '<p class="rmeta">' + esc(CAT_LABEL[v.category] || v.category) + (v.seats ? ' &middot; ' + v.seats + ' seats' : '') + (v.transmission ? ' &middot; ' + esc(v.transmission) : '') + '</p>' +
     '<p class="rmeta">' + esc(v.vendorName) + ' &middot; ' + esc(v.parish) + '</p>' +

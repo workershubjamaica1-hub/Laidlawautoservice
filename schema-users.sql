@@ -412,6 +412,13 @@ alter table rental_vehicles add column if not exists rules text;
 alter table rental_bookings add column if not exists rules_snapshot text;
 alter table rental_bookings add column if not exists rules_accepted_at timestamptz;
 
+-- Rental vehicles need four photos (front, back, left, right); a booking keeps the photos as listed when it was made
+alter table rental_vehicles add column if not exists photo_front_path text;
+alter table rental_vehicles add column if not exists photo_back_path text;
+alter table rental_vehicles add column if not exists photo_left_path text;
+alter table rental_vehicles add column if not exists photo_right_path text;
+alter table rental_bookings add column if not exists photos_snapshot jsonb;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

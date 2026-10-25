@@ -47,6 +47,7 @@
         '<button class="modal-x" type="button" data-close aria-label="Close">&times;</button>' +
         '<div class="th-head"><div><h2 id="th-title"></h2><p class="th-sub" id="th-sub"></p></div><span id="th-pill"></span></div>' +
         '<div id="th-panel"></div>' +
+        '<p class="safe-tip"><b>Stay safe, stay in the app.</b> Your chat, agreement, rules and photos are recorded here, so AutoAid 24/7 can help if something goes wrong or you disagree. Keep everything about this rental in this window, and never share a card PIN or a code you are sent.</p>' +
         '<div class="th-log" id="th-log" role="log" aria-live="polite"></div>' +
         '<form id="th-form" novalidate><textarea id="th-text" rows="2" maxlength="1000" placeholder="Type a message. Enter to send, Shift+Enter for a new line." aria-label="Message"></textarea>' +
         '<button class="btn" id="th-send" type="submit">Send</button></form>' +
@@ -92,6 +93,7 @@
 
     function panel(b) {
       const out = [summary(b)];
+      if (b.listingPhotos) out.push('<details class="rules-agreed"><summary>Photos of the vehicle as listed</summary><div class="angle-strip big">' + [['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']].filter(x => b.listingPhotos[x[0]]).map(x => '<a href="' + esc(b.listingPhotos[x[0]]) + '" target="_blank" rel="noopener"><img src="' + esc(b.listingPhotos[x[0]]) + '" alt="' + x[1] + '" loading="lazy"><span>' + x[1] + '</span></a>').join('') + '</div><p class="th-hint">These are the photos the renter saw when booking. Take your own photos at pick-up and at return too.</p></details>');
       if (b.rules) out.push('<details class="rules-agreed"' + (['requested', 'accepted', 'picked_up'].includes(b.status) ? '' : '') + '><summary>Rental rules ' + (role === 'customer' ? 'you agreed to' : 'the renter agreed to') + '</summary><ul>' + b.rules.split(/\n+/).map(l => '<li>' + esc(l) + '</li>').join('') + '</ul></details>');
       if (role === 'customer') {
         if (b.status === 'requested') out.push('<p class="th-hint">Waiting for ' + esc(b.vendor.name) + ' to accept. You can chat with them meanwhile. Nothing is charged online: you pay the vendor in person.</p>');

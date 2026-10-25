@@ -18,6 +18,7 @@
         '<button class="modal-x" type="button" data-close aria-label="Close">&times;</button>' +
         '<div class="th-head"><div><h2 id="th-title"></h2><p class="th-sub" id="th-sub"></p></div><span id="th-pill"></span></div>' +
         '<div id="th-panel"></div>' +
+        '<p class="safe-tip"><b>Stay safe, stay in the app.</b> Your chat, offer and agreement are recorded here, so AutoAid 24/7 can help if something goes wrong. Agree the price here before you pay, and never share a card PIN or a code you are sent.</p>' +
         '<div class="th-log" id="th-log" role="log" aria-live="polite"></div>' +
         '<form id="th-form" novalidate><textarea id="th-text" rows="2" maxlength="1000" placeholder="Type a message. Enter to send, Shift+Enter for a new line." aria-label="Message"></textarea>' +
         '<button class="btn" id="th-send" type="submit">Send</button></form>' +

@@ -685,8 +685,8 @@ module.exports = function createAuth({ supabase, handle }) {
       await supabase.from('emergency_requests').update({ phone: '', location_text: null, note: null, latitude: null, longitude: null }).eq('user_id', u.id);
     }
     if (u.role === 'vendor') {
-      const vs = await rows(supabase.from('rental_vehicles').select('id, photo_path').eq('vendor_id', u.id)).catch(() => []);
-      for (const v of vs) await removePhoto(v.photo_path).catch(() => {});
+      const vs = await rows(supabase.from('rental_vehicles').select('id, photo_path, photo_front_path, photo_back_path, photo_left_path, photo_right_path').eq('vendor_id', u.id)).catch(() => []);
+      for (const v of vs) for (const p of [v.photo_path, v.photo_front_path, v.photo_back_path, v.photo_left_path, v.photo_right_path]) await removePhoto(p).catch(() => {});
       if (vs.length) await supabase.from('rental_vehicles').delete().eq('vendor_id', u.id);
     }
     // what they wrote in chats

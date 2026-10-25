@@ -29,6 +29,7 @@ const commissionPercent = (() => {
 const money = n => Math.round(Number(n) * 100) / 100;
 const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 const DAY = 86400000;
+const ANGLES = ['front', 'back', 'left', 'right'];   // every rental vehicle is shown from these four sides
 const AGREEMENT_VERSION = '2026-10-25';   // bump when the Rental Agreement changes
 const AUTO_AGREE_MS = 3 * DAY;           // a customer who never answers the return check is taken to agree after 3 days
 
@@ -104,7 +105,11 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
   const isFree = (ranges, s, e) => !ranges.some(([a, b]) => overlaps(s, e, a, b));
 
   // ---------- vehicle shaping ----------
-  const photoUrl = async v => { try { return v.photo_path ? await auth.signedPhotoUrl(v.photo_path) : null; } catch (_) { return null; } };
+  const signed = async p => { try { return p ? await auth.signedPhotoUrl(p) : null; } catch (_) { return null; } };
+  const photoUrl = v => signed(v.photo_front_path || v.photo_path);   // the cover picture is the front
+  const hasAllPhotos = v => ANGLES.every(a => !!v['photo_' + a + '_path']);
+  const anglePhotos = async v => { const o = {}; for (const a of ANGLES) o[a] = await signed(v['photo_' + a + '_path']); return o; };
+  const missingAngles = v => ANGLES.filter(a => !v['photo_' + a + '_path']);
   const shapeVehicle = (v, vendor, url, extra = {}) => ({
     id: v.id, title: v.title, year: v.year, category: v.category, seats: v.seats, transmission: v.transmission,
     dailyRate: Number(v.daily_rate), deposit: Number(v.deposit || 0), minDays: v.min_days || MIN_DAYS,
@@ -126,12 +131,12 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
       .in('id', [...new Set(data.map(v => v.vendor_id))].concat(0));
     if (vend.error) throw vend.error;
     const users = new Map(vend.data.filter(u => u.approved !== false && u.active !== false && u.email_verified !== false && String(u.vendor_offers || '').split(',').includes('rentals')).map(u => [u.id, u]));
-    const list = data.filter(v => users.has(v.vendor_id));
+    const list = data.filter(v => users.has(v.vendor_id) && hasAllPhotos(v));   // a vehicle without its four photos is not shown to customers
     const busy = await busyRanges(list.map(v => v.id));
     const out = [];
     for (const v of list) {
       const free = start ? isFree(busy.get(v.id) || [], start, end) : null;
-      out.push(shapeVehicle(v, users.get(v.vendor_id), await photoUrl(v), { available: free }));
+      out.push(shapeVehicle(v, users.get(v.vendor_id), await photoUrl(v), { available: free, photos: await anglePhotos(v) }));
     }
     out.sort((a, b) => ((b.available === true) - (a.available === true)) || ((req.user.parish === b.parish) - (req.user.parish === a.parish)) || a.dailyRate - b.dailyRate);
     res.json({ commissionPercent, vehicles: out });
@@ -169,6 +174,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     if (vendor.error) throw vendor.error;
     const vd = vendor.data;
     if (!vd || vd.approved === false || vd.active === false || vd.email_verified === false || !String(vd.vendor_offers || '').split(',').includes('rentals')) return res.status(400).json({ error: 'That vehicle is not available to rent.' });
+    if (!hasAllPhotos(v.data)) return res.status(400).json({ error: 'That vehicle is not available to rent.' });
     const vendorRules = await supabase.from('users').select('rental_rules').eq('id', v.data.vendor_id).maybeSingle();
     const rulesText = [vendorRules.data && vendorRules.data.rental_rules, v.data.rules].filter(Boolean).join('\n').trim();
     if (rulesText && b.rulesAccepted !== true) return res.status(400).json({ error: 'Please read the rental rules and tick the box to say you will follow them.', code: 'rules_required' });
@@ -184,7 +190,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const { data, error } = await supabase.from('rental_bookings').insert({
       vehicle_id: v.data.id, vehicle_title: v.data.title, customer_id: req.user.id, vendor_id: v.data.vendor_id,
       start_date: b.start, end_date: b.end, days, daily_rate: rate, total, deposit: Number(v.data.deposit || 0), note: note || null,
-      status: 'requested', damage_authorized_at: new Date().toISOString(), late_charge_authorized_at: new Date().toISOString(), agreement_version: AGREEMENT_VERSION, rules_snapshot: rulesText || null, rules_accepted_at: rulesText ? new Date().toISOString() : null, customer_unread: false, vendor_unread: true
+      status: 'requested', damage_authorized_at: new Date().toISOString(), late_charge_authorized_at: new Date().toISOString(), agreement_version: AGREEMENT_VERSION, photos_snapshot: Object.fromEntries(ANGLES.map(a => [a, v.data['photo_' + a + '_path']])), rules_snapshot: rulesText || null, rules_accepted_at: rulesText ? new Date().toISOString() : null, customer_unread: false, vendor_unread: true
     }).select().single();
     if (error) throw error;
     await addMessage(data.id, req.user.id, 'system', 'Rental requested: ' + v.data.title + ', ' + b.start + ' to ' + b.end + ' (' + days + ' day' + (days > 1 ? 's' : '') + '), ' + jmd(total) + '.' + (note ? ' Note: ' + note : ''));
@@ -248,8 +254,9 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const m = await supabase.from('rental_messages').select('*').eq('booking_id', b.id).order('id', { ascending: true });
     if (m.error) throw m.error;
     const users = await usersById([b.customer_id, b.vendor_id, ...m.data.map(x => x.sender_id)]);
+    const snap = b.photos_snapshot || null; const listingPhotos = {}; if (snap) for (const a of ANGLES) listingPhotos[a] = await signed(snap[a]);
     res.json({
-      order: shapeBooking(b, req.user, users, ''),
+      order: { ...shapeBooking(b, req.user, users, ''), ...(snap ? { listingPhotos } : {}) },
       messages: m.data.map(x => ({
         id: x.id, kind: x.kind, body: x.body, createdAt: x.created_at,
         from: x.kind === 'system' ? 'system' : x.sender_id === req.user.id ? 'me' : 'them',
@@ -494,7 +501,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const blocks = ids.length ? await supabase.from('rental_blocks').select('*').in('vehicle_id', ids) : { data: [] };
     if (blocks.error) throw blocks.error;
     const out = [];
-    for (const v of data) out.push(shapeVehicle(v, req.user, await photoUrl(v), { blocks: blocks.data.filter(x => x.vehicle_id === v.id).map(x => ({ id: x.id, start: x.start_date, end: x.end_date, note: x.note || '' })) }));
+    for (const v of data) out.push(shapeVehicle(v, req.user, await photoUrl(v), { photos: await anglePhotos(v), photosComplete: hasAllPhotos(v), missingPhotos: missingAngles(v), blocks: blocks.data.filter(x => x.vehicle_id === v.id).map(x => ({ id: x.id, start: x.start_date, end: x.end_date, note: x.note || '' })) }));
     res.json({ commissionPercent, vehicles: out });
   }));
   router.post('/rentals/my-vehicles', ...rentalVendor, handle(async (req, res) => {
@@ -523,10 +530,23 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const open = await supabase.from('rental_bookings').select('id, status').eq('vehicle_id', v.id);
     if (open.error) throw open.error;
     if (open.data.some(x => OPEN.includes(x.status))) return res.status(409).json({ error: 'This vehicle has bookings in progress. Pause it instead, or finish them first.' });
-    await auth.removePhoto(v.photo_path).catch(() => {});
+    for (const p of [v.photo_path, ...ANGLES.map(a => v['photo_' + a + '_path'])]) await auth.removePhoto(p).catch(() => {});
     const { error } = await supabase.from('rental_vehicles').delete().eq('id', v.id);
     if (error) throw error;
     res.json({ ok: true });
+  }));
+  router.post('/rentals/my-vehicles/:id/photos/:angle', ...rentalVendor, bigJson, handle(async (req, res) => {
+    const angle = String(req.params.angle);
+    if (!ANGLES.includes(angle)) return res.status(400).json({ error: 'Photo side must be front, back, left or right.' });
+    const v = await ownVehicle(req, res); if (!v) return;
+    const img = auth.readImage(req.body);
+    if (img.error) return res.status(img.status).json({ error: img.error });
+    // a new file name each time, so the photo a renter agreed to is never overwritten (it may matter in a dispute)
+    const path = 'rentals/vehicle-' + v.id + '-' + angle + '-' + Date.now();
+    await auth.storePhoto(path, img.buf, img.type);
+    const { error } = await supabase.from('rental_vehicles').update({ ['photo_' + angle + '_path']: path }).eq('id', v.id);
+    if (error) throw error;
+    res.json({ ok: true, complete: hasAllPhotos({ ...v, ['photo_' + angle + '_path']: path }) });
   }));
   router.post('/rentals/my-vehicles/:id/photo', ...rentalVendor, bigJson, handle(async (req, res) => {
     const v = await ownVehicle(req, res); if (!v) return;
