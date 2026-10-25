@@ -22,7 +22,7 @@
 <link rel="stylesheet" href="/jobs.css">
 <script src="/banner.js" defer></script>
 </head>
-<body class="hdr-right">
+<body class="hdr-right" data-tab="dashboard">
 
 <div id="app">
   <header>
@@ -131,6 +131,8 @@
     </div>
 
     <div class="panel" id="usersPanel" hidden>
+      <div class="seg" role="group" aria-label="Users sections"><button type="button" data-usec="people" aria-pressed="true">People</button><button type="button" data-usec="settings" aria-pressed="false">Settings</button></div>
+      <div id="usec-settings" hidden>
       <details class="emailcheck" id="emailCheck" style="margin-bottom:14px">
         <summary style="cursor:pointer;font-weight:700">Email check (sign-up and password reset codes)</summary>
         <p class="empty" style="margin:8px 0">Sends one test email and shows exactly what the email service replied. Use it if codes are not arriving.</p>
@@ -141,8 +143,11 @@
         <pre id="emailTestOut" style="white-space:pre-wrap;margin:10px 0 0;font:13px/1.5 inherit"></pre>
       </details>
       <div id="subBox" class="subinfo" hidden></div>
-      <div id="pendingBox" class="pending" hidden></div>
       <div id="guideBox" class="panel" hidden></div>
+      </div>
+      <div id="usec-people">
+      <div id="pendingBox" class="pending" hidden></div>
+      <details class="adduser"><summary>Add a person</summary>
       <form id="userForm" class="userform">
         <input id="uName" placeholder="Full name" aria-label="Full name" required>
         <input id="uEmail" type="email" placeholder="Email" aria-label="Email" required>
@@ -151,11 +156,14 @@
         <input id="uPhone" type="tel" placeholder="Phone (optional)" aria-label="Phone" autocomplete="off">
         <select id="uParish" aria-label="Parish"><option value="">Parish (technicians: set this)</option></select>
         <button class="btn safety" type="submit">Add user</button>
-      </form>
+      </form></details>
+      <div class="toolbar"><input id="uSearch" type="search" placeholder="Search by name, email or phone" aria-label="Search people"><select id="uRoleFilter" aria-label="Show"><option value="">Everyone</option><option value="customer">Customers</option><option value="staff">Technicians</option><option value="vendor">Vendors</option><option value="admin">Admins</option></select></div>
       <div class="table-wrap"><table>
         <thead><tr><th>Name</th><th>Contact</th><th>Role</th><th>Parish</th><th>Status</th><th></th></tr></thead>
         <tbody id="userBody"></tbody>
       </table></div>
+      <p class="empty" id="uEmpty" hidden>Nobody matches.</p>
+      </div>
     </div>
 
     <div class="panel" id="vehiclesPanel" hidden>
@@ -300,6 +308,8 @@ async function load() {
       $('who').textContent = me.name + ' (' + me.role + ')';
       $('who-dot').textContent = (me.name || '?').trim().charAt(0).toUpperCase();
       $('usersTab').hidden = me.role !== 'admin';
+      document.body.dataset.role = me.role;
+      if (me.role === 'admin') document.querySelector('.tabs button[data-tab="dashboard"]').textContent = 'Overview';
       $('portalTitle').textContent = (me.role === 'admin' ? 'Admin' : 'Technician portal');
       parishes = await api('/auth/parishes');
       for (const p of parishes) { $('parishFilter').append(new Option(p, p)); $('uParish').append(new Option(p, p)); }
@@ -329,17 +339,25 @@ async function load() {
 async function loadBiz() {
   try {
     const s = await api('/admin/business-stats');
-    const card = (n, label, alert) => '<div' + (alert ? ' class="alert"' : '') + '><b>' + n + '</b><span>' + label + '</span></div>';
-    $('bizBox').innerHTML = [
-      card(s.jobsToday, 'jobs today'), card(s.waitingNow, 'waiting for a technician', s.waitingNow > 0), card(s.emergenciesWaiting, 'emergencies waiting', s.emergenciesWaiting > 0),
-      card(s.activeNow, 'jobs in progress'), card(s.completedThisMonth, 'completed this month'), card('J$' + Number(s.feesThisMonth).toLocaleString(), 'AutoAid fees this month'),
-      card(s.averageMinutesToAccept == null ? '-' : s.averageMinutesToAccept + ' min', 'average wait for a technician (30 days)'),
-      card(s.unansweredLast30Days + ' of ' + s.jobsLast30Days, 'jobs nobody took (30 days)', s.unansweredLast30Days > 0),
-      card(s.techniciansOnline + ' of ' + s.techniciansTotal, 'technicians online'), card(s.techniciansNotIdChecked, 'technicians without an ID check', s.techniciansNotIdChecked > 0),
-      card(s.complaintsOpen, 'open complaints', s.complaintsOpen > 0), card(s.refundsDue, 'refunds to send', s.refundsDue > 0),
-      card(s.customersTotal, 'customers (' + s.newCustomersThisWeek + ' new this week)')
-    ].join('');
+    const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+    const attn = [];
+    if (s.emergenciesWaiting) attn.push(['requests', 'urgent', plural(s.emergenciesWaiting, 'emergency') + ' waiting for a technician', 'Open']);
+    if (s.waitingNow - s.emergenciesWaiting > 0) attn.push(['requests', 'warn', plural(s.waitingNow - s.emergenciesWaiting, 'job') + ' waiting for a technician', 'Open']);
+    if (s.complaintsOpen) attn.push(['parts', 'urgent', plural(s.complaintsOpen, 'customer complaint') + ' to decide (the payment is held)', 'Open']);
+    if (s.refundsDue) attn.push(['parts', 'warn', plural(s.refundsDue, 'refund') + ' to send', 'Open']);
+    if (s.techniciansNotIdChecked) attn.push(['users', 'warn', plural(s.techniciansNotIdChecked, 'technician') + ' without an ID check (cannot take emergencies)', 'Open']);
+    if (s.techniciansTotal && !s.techniciansOnline) attn.push(['', 'warn', 'No technician is online right now', '']);
+    const card = (n, label) => '<div><b>' + n + '</b><span>' + label + '</span></div>';
+    $('bizBox').innerHTML =
+      '<section class="attn"><h3>Needs your attention</h3>' + (attn.length
+        ? attn.map(a => '<div class="attn-row ' + a[1] + '"><span>' + a[2] + '</span>' + (a[0] ? '<button class="btn small" type="button" data-attn="' + a[0] + '">' + a[3] + '</button>' : '') + '</div>').join('')
+        : '<p class="attn-ok">All clear. Nothing needs you right now.</p>') + '</section>' +
+      '<h3 class="biz-h">Right now</h3><div class="biz">' + [card(s.waitingNow, 'waiting for a technician'), card(s.activeNow, 'jobs in progress'), card(s.techniciansOnline + ' of ' + s.techniciansTotal, 'technicians online'), card(s.jobsToday, 'jobs today')].join('') + '</div>' +
+      '<h3 class="biz-h">This month</h3><div class="biz">' + [card(s.completedThisMonth, 'jobs completed'), card('J$' + Number(s.feesThisMonth).toLocaleString(), 'AutoAid fees'),
+        card(s.averageMinutesToAccept == null ? '-' : s.averageMinutesToAccept + ' min', 'average wait for a technician (30 days)'), card(s.unansweredLast30Days + ' of ' + s.jobsLast30Days, 'jobs nobody took (30 days)'),
+        card(s.customersTotal, 'customers (' + s.newCustomersThisWeek + ' new this week)')].join('') + '</div>';
     $('bizBox').hidden = false;
+    $('bizBox').onclick = e => { const b = e.target.closest('[data-attn]'); if (b) document.querySelector('.tabs button[data-tab="' + b.dataset.attn + '"]').click(); };
   } catch (_) { $('bizBox').hidden = true; }
 }
 // --- Typical prices shown to customers while booking ---
@@ -548,6 +566,8 @@ function viewTechnician(id) {
 }
 
 async function loadDashboard() {
+  document.body.classList.toggle('viewing-tech', !!viewingTech);
+  if (me && me.role === 'admin' && !viewingTech) { $('dashPanel').replaceChildren(); return; }   // admins start on the overview above
   let d;
   try { d = await api('/admin/dashboard' + (viewingTech ? '?technicianId=' + viewingTech : '')); } catch (err) { $('dashPanel').replaceChildren(el('p', { className: 'error', textContent: err.message })); return; }
   const t = d.technician, tot = d.totals, rt = d.rating;
@@ -968,7 +988,10 @@ function renderUsers() {
   if (me.role !== 'admin') return;
   renderPending();
   renderSubBox();
-  $('userBody').replaceChildren(...users.filter(u => u.approved !== false).map(u => {
+  const q = $('uSearch').value.trim().toLowerCase(), roleOnly = $('uRoleFilter').value;
+  const shown = users.filter(u => u.approved !== false && (!roleOnly || u.role === roleOnly) && (!q || [u.name, u.email, u.phone].some(x => String(x || '').toLowerCase().includes(q))));
+  $('uEmpty').hidden = shown.length > 0;
+  $('userBody').replaceChildren(...shown.map(u => {
     const isMe = u.id === me.id;
     const role = el('select', { ariaLabel: 'Role', disabled: isMe },
       ...['customer', 'staff', 'admin', 'vendor'].map(r => el('option', { value: r, textContent: r, selected: r === u.role })));
@@ -1075,6 +1098,8 @@ $('emailTestForm').addEventListener('submit', async (e) => {
 
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  document.body.dataset.tab = b.dataset.tab;
+  try { b.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' }); } catch (_) {}
   $('dashPanel').hidden = b.dataset.tab !== 'dashboard';
   $('jobsPanel').hidden = b.dataset.tab !== 'jobs';
   $('emergPanel').hidden = b.dataset.tab !== 'emergencies';
@@ -1085,6 +1110,11 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   $('accountPanel').hidden = b.dataset.tab !== 'account';
   if (b.dataset.tab === 'parts') loadParts();
 }));
+document.querySelectorAll('[data-usec]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('[data-usec]').forEach(x => x.setAttribute('aria-pressed', x === b));
+  $('usec-people').hidden = b.dataset.usec !== 'people'; $('usec-settings').hidden = b.dataset.usec !== 'settings';
+}));
+$('uSearch').addEventListener('input', renderUsers); $('uRoleFilter').addEventListener('change', renderUsers);
 $('parishFilter').addEventListener('change', () => { renderRequests(); renderVehicles(); renderEmergencies(); });
 $('reqSearch').addEventListener('input', renderRequests);
 $('reqStatus').addEventListener('change', renderRequests);

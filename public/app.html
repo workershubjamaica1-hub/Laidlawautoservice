@@ -393,6 +393,7 @@ function showView(v) {
   document.querySelectorAll('.view').forEach(el => { el.hidden = el.dataset.view !== v; });
   document.querySelectorAll('[data-view]').forEach(a => { if (a.tagName === 'A') { a.classList.toggle('on', a.dataset.view === v); if (a.dataset.view === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); } });
   window.scrollTo(0, 0);
+  try { const on = document.querySelector('.top-links a.on'); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (_) {}
 }
 function goView(v) { if (location.hash === '#' + v) showView(v); else location.hash = v; }
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));

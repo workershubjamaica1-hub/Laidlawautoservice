@@ -33,11 +33,6 @@
 .due.warn { background: #FFF1D6; color: #8A5A00; }
 .due.bad { background: #FBE3E0; color: #B4322A; }
 .price-hint { margin: 6px 0 0; font-size: 13px; color: var(--ink-soft, #55657B); }
-.biz { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 16px; }
-.biz div { padding: 12px 14px; border-radius: 14px; background: #fff; border: 1px solid var(--line, #E3E9F2); }
-.biz b { display: block; font-size: 22px; }
-.biz span { font-size: 12.5px; color: var(--ink-soft, #55657B); }
-.biz .alert b { color: #B4322A; }
 .guide { display: grid; grid-template-columns: 1fr 110px 110px; gap: 8px; align-items: center; margin: 8px 0; }
 .guide input { padding: 7px 9px; border: 1px solid var(--line, #E3E9F2); border-radius: 10px; font: inherit; }
 .countdown { font-variant-numeric: tabular-nums; font-size: 1.15em; }
@@ -76,3 +71,8 @@
 .jobcard p { margin: 0; color: var(--ink-soft, #55657B); font-size: 13.5px; }
 .jobcard .btn { margin: 0; padding: 14px 22px; font-size: 16px; }
 @media (max-width: 640px) { .jobcard { grid-template-columns: 1fr; } .jobcard .btn { width: 100%; } }
+
+/* phones: the top menu scrolls sideways, so the right edge fades to show there is more */
+@media (max-width: 760px) {
+  .top-links { -webkit-mask-image: linear-gradient(90deg, #000 88%, transparent); mask-image: linear-gradient(90deg, #000 88%, transparent); padding-right: 24px; }
+}

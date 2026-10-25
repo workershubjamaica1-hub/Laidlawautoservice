@@ -164,3 +164,64 @@ td .btn { margin-top: 4px; }
   .userform { grid-template-columns: 1fr; }
   header h1#portalTitle { font-size: 13px; }
 }
+
+/* ------------------------------------------------------------------ one page at a time: the top-of-page boxes only appear where they matter */
+#bizBox { display: none; }
+body[data-tab="dashboard"]:not(.viewing-tech) #bizBox { display: block; }
+body:not([data-tab="requests"]) #stats { display: none; }
+body:not([data-tab="requests"]):not([data-tab="emergencies"]):not([data-tab="vehicles"]) .parishbar { display: none; }
+
+/* ------------------------------------------------------------------ admin overview */
+.biz-h { margin: 22px 0 10px; font: 800 13px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+#bizBox .biz { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 0; }
+#bizBox .biz div { padding: 14px 16px; border-radius: 16px; background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow-sm); }
+#bizBox .biz b { display: block; font: 800 26px/1.1 var(--display); letter-spacing: -.02em; }
+#bizBox .biz span { display: block; margin-top: 3px; font-size: 12.5px; color: var(--ink-soft); font-weight: 600; }
+.attn { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px; box-shadow: var(--shadow-sm); }
+.attn h3 { margin: 0 0 10px; font: 800 16px/1.3 var(--display); }
+.attn-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 14px; margin-top: 8px; border-radius: 12px; font-weight: 600; background: #FFF6DE; border: 1px solid #F4D27A; }
+.attn-row.urgent { background: #FFF1F0; border-color: #F2B5B1; color: #8E211A; }
+.attn-row .btn { margin: 0; flex: none; }
+.attn-ok { margin: 0; color: #11805A; font-weight: 700; }
+
+/* ------------------------------------------------------------------ users: People / Settings */
+.seg { display: inline-flex; gap: 4px; padding: 4px; margin: 0 0 16px; background: var(--bg); border: 1px solid var(--line); border-radius: 999px; }
+.seg button { border: 0; background: transparent; padding: 8px 18px; border-radius: 999px; font: 700 14px var(--display); color: var(--ink-soft); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: #fff; color: var(--brand-700); box-shadow: var(--shadow-sm); }
+.adduser { margin: 0 0 14px; padding: 12px 16px; background: #fff; border: 1px solid var(--line); border-radius: 16px; }
+.adduser summary { cursor: pointer; font-weight: 700; }
+.adduser form { margin: 14px 0 0; }
+
+/* ------------------------------------------------------------------ phone */
+@media (max-width: 900px) {
+  header .slides { display: none; }
+  header #who { display: none; }
+  header .sp .btn { white-space: nowrap; }
+  /* seven menu items cannot share a phone's width: the bar scrolls sideways and keeps the open tab in view */
+  .tabs { overflow-x: auto; justify-content: flex-start; scroll-snap-type: x proximity; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button { flex: 0 0 auto; min-width: 74px; scroll-snap-align: center; }
+}
+@media (max-width: 640px) {
+  /* tables become one card per row */
+  .table-wrap { border: 0; background: none; overflow: visible; }
+  table, thead, tbody, tr, td { display: block; width: 100%; min-width: 0; }
+  thead { display: none; }
+  tbody tr { margin: 0 0 12px; padding: 10px 12px; background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-sm); }
+  td { border: 0; padding: 6px 0; }
+  td.act { text-align: left; min-width: 0; padding-top: 10px; }
+  td.act .btn { margin: 3px 6px 3px 0; }
+  td select { width: 100%; }
+  #bizBox .biz { grid-template-columns: 1fr 1fr; gap: 8px; }
+  #bizBox .biz div { padding: 12px; }
+  #bizBox .biz b { font-size: 22px; }
+  .attn-row { flex-direction: column; align-items: flex-start; }
+  .seg { display: flex; } .seg button { flex: 1; }
+}
+@media (max-width: 640px) {
+  .jobs-top { display: grid !important; grid-template-columns: auto 1fr; gap: 10px 14px; align-items: center; }
+  .jobs-top .btn { grid-column: 1 / -1; justify-self: start; }
+}
+
+/* the summary tiles on the technician dashboard (parts.css also has a small icon square called .tile, so these are scoped) */
+.tiles .tile { display: block; width: auto; height: auto; place-items: normal; border-radius: 20px; background: #fff; color: var(--ink); }
