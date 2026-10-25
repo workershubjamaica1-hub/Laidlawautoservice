@@ -65,6 +65,32 @@
       '<div class="offer-total"><small>Rent</small><b>' + jmd(b.total) + '</b></div></div>';
     const stars = n => '<span class="rated">' + '★'.repeat(n) + '☆'.repeat(5 - n) + '</span>';
 
+    // photos at pick-up and at return: the owner's four sides are required, the renter's are optional but protect them
+    const SIDES = [['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']];
+    function photoSection(b, phase) {
+      const mine = role === 'vendor' ? 'vendor' : role === 'customer' ? 'renter' : null;
+      const can = !!mine && (phase === 'pickup' ? ['accepted', 'picked_up'].includes(b.status) : (b.status === 'picked_up' || (b.status === 'returned' && b.open)));
+      const list = (b.photos || []).filter(p => p.phase === phase);
+      if (!can && !list.length) return '';
+      const latest = (angle, side) => list.filter(p => p.angle === angle && p.side === side).slice(-1)[0];
+      const thumb = (p, who) => '<a href="' + esc(p.url || '#') + '" target="_blank" rel="noopener" class="shot-img"><img src="' + esc(p.url || '') + '" alt="' + esc(who) + ' photo" loading="lazy"><i>' + who + '</i></a>';
+      const cell = ([angle, label]) => {
+        const v = latest(angle, 'vendor'), c = latest(angle, 'renter');
+        return '<div class="shot"><b>' + label + '</b><div class="shot-imgs">' + (v ? thumb(v, 'Owner') : '') + (c ? thumb(c, 'Renter') : '') + (!v && !c ? '<span class="shot-none">None yet</span>' : '') + '</div>' +
+          (can ? '<label class="shot-add">' + (latest(angle, mine) ? 'Retake' : 'Add photo') + '<input type="file" accept="image/*" capture="environment" data-shot="' + phase + ':' + angle + '"></label>' : '') + '</div>';
+      };
+      const extras = list.filter(p => p.angle === 'extra');
+      const ownerReady = SIDES.every(([a]) => !!latest(a, 'vendor'));
+      const title = phase === 'pickup' ? 'Photos at pick-up' : 'Photos at return';
+      const hint = role === 'vendor'
+        ? (ownerReady ? 'All four sides added.' : 'Add all four sides before you ' + (phase === 'pickup' ? 'mark the vehicle handed over.' : 'mark the vehicle returned.'))
+        : role === 'customer' ? 'The owner adds theirs. Add your own too, and close-ups of any mark you see: it protects you if there is a disagreement.' : 'Photos from the owner and the renter.';
+      return '<details class="photo-sec"' + (can ? ' open' : '') + '><summary>' + title + ' <small>' + (ownerReady ? 'owner: 4 of 4' : 'owner: ' + SIDES.filter(([a]) => latest(a, 'vendor')).length + ' of 4') + (list.some(p => p.side === 'renter') ? ' &middot; renter added photos' : '') + '</small></summary>' +
+        '<p class="th-hint">' + hint + '</p><div class="shots">' + SIDES.map(cell).join('') + '</div>' +
+        (extras.length ? '<div class="shot-extras">' + extras.map(p => thumb(p, p.side === 'vendor' ? 'Owner' : 'Renter')).join('') + '</div>' : '') +
+        (can ? '<label class="btn ghost small shot-more">Add a close-up<input type="file" accept="image/*" capture="environment" data-shot="' + phase + ':extra"></label>' : '') + '</details>';
+    }
+
     // overdue notice, late fee, and the condition check when the vehicle comes back
     function returnPanel(b) {
       const parts = [];
@@ -93,6 +119,7 @@
 
     function panel(b) {
       const out = [summary(b)];
+      out.push(photoSection(b, 'pickup'), photoSection(b, 'return'));
       if (b.listingPhotos) out.push('<details class="rules-agreed"><summary>Photos of the vehicle as listed</summary><div class="angle-strip big">' + [['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']].filter(x => b.listingPhotos[x[0]]).map(x => '<a href="' + esc(b.listingPhotos[x[0]]) + '" target="_blank" rel="noopener"><img src="' + esc(b.listingPhotos[x[0]]) + '" alt="' + x[1] + '" loading="lazy"><span>' + x[1] + '</span></a>').join('') + '</div><p class="th-hint">These are the photos the renter saw when booking. Take your own photos at pick-up and at return too.</p></details>');
       if (b.rules) out.push('<details class="rules-agreed"' + (['requested', 'accepted', 'picked_up'].includes(b.status) ? '' : '') + '><summary>Rental rules ' + (role === 'customer' ? 'you agreed to' : 'the renter agreed to') + '</summary><ul>' + b.rules.split(/\n+/).map(l => '<li>' + esc(l) + '</li>').join('') + '</ul></details>');
       if (role === 'customer') {
@@ -162,6 +189,14 @@
       catch (err) { $('th-error').textContent = err.message; }
     }
 
+    dlg.addEventListener('change', async (e) => {
+      const inp = e.target.closest('input[data-shot]'); if (!inp || !inp.files[0]) return;
+      const [phase, angle] = inp.dataset.shot.split(':');
+      $('th-error').textContent = '';
+      const label = inp.closest('label'); const before = label.firstChild.textContent; label.firstChild.textContent = 'Sending...';
+      try { const image = await prepareImage(inp.files[0]); await api('/rentals/bookings/' + cur.id + '/photos', { method: 'POST', body: { phase, angle, image } }); await refresh(false); }
+      catch (err) { $('th-error').textContent = err.message; label.firstChild.textContent = before; }
+    });
     dlg.addEventListener('click', async (e) => {
       if (e.target === dlg || e.target.closest('[data-close]')) { dlg.close(); return; }
       const star = e.target.closest('.star');

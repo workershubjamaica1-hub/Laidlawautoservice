@@ -44,7 +44,7 @@ if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 
 // The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
 const smallJson = express.json();
-const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|jobs\/\d+\/photo|rentals\/(licence|my-vehicles\/\d+\/photo)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
+const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|jobs\/\d+\/photo|rentals\/(licence|my-vehicles\/\d+\/photos?(\/(front|back|left|right))?|bookings\/\d+\/photos)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
 app.use((req, res, next) => (bigBodyPaths.test(req.path) ? next() : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });

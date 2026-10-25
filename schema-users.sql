@@ -419,6 +419,20 @@ alter table rental_vehicles add column if not exists photo_left_path text;
 alter table rental_vehicles add column if not exists photo_right_path text;
 alter table rental_bookings add column if not exists photos_snapshot jsonb;
 
+-- Photos taken at pick-up and at return, by the owner and by the renter, kept as evidence
+create table if not exists rental_photos (
+  id          bigint generated always as identity primary key,
+  booking_id  bigint not null references rental_bookings(id) on delete cascade,
+  uploader_id bigint references users(id) on delete set null,
+  side        text not null check (side in ('vendor', 'renter')),
+  phase       text not null check (phase in ('pickup', 'return')),
+  angle       text not null check (angle in ('front', 'back', 'left', 'right', 'extra')),
+  path        text not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists rental_photos_booking_idx on rental_photos(booking_id, id);
+alter table rental_photos enable row level security;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

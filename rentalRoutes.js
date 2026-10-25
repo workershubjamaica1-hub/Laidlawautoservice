@@ -29,7 +29,9 @@ const commissionPercent = (() => {
 const money = n => Math.round(Number(n) * 100) / 100;
 const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 const DAY = 86400000;
-const ANGLES = ['front', 'back', 'left', 'right'];   // every rental vehicle is shown from these four sides
+const ANGLES = ['front', 'back', 'left', 'right'];
+const PHASES = ['pickup', 'return'];            // photos are taken when the vehicle is handed over and when it comes back
+const MAX_EXTRA_PHOTOS = 6;                       // close-ups of a mark or damage, on top of the four sides   // every rental vehicle is shown from these four sides
 const AGREEMENT_VERSION = '2026-10-25';   // bump when the Rental Agreement changes
 const AUTO_AGREE_MS = 3 * DAY;           // a customer who never answers the return check is taken to agree after 3 days
 
@@ -87,6 +89,23 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
       if (push) { await push.notify(data.map(a => a.id), { title: subject, body: text.slice(0, 140), url: url || '/admin.html', tag: 'rental-review', urgent: false }).catch(() => {}); await push.email(data, subject, text).catch(() => {}); }
       else if (mailer.ready()) for (const a of data) if (a.email) mailer.sendMail({ to: a.email, subject, text }).catch(() => {});
     } catch (e) { console.error('Could not alert the admin about a rental:', e.message); }
+  }
+
+  // ---------- photos at pick-up and at return ----------
+  const sideOf = (b, uid) => (b.vendor_id === uid ? 'vendor' : b.customer_id === uid ? 'renter' : null);
+  const photoRows = async bookingId => { const { data, error } = await supabase.from('rental_photos').select('*').eq('booking_id', bookingId).order('id', { ascending: true }); if (error) throw error; return data; };
+  // the owner must have all four sides for a phase before handing over or marking the return
+  const hasFourSides = (rows, phase) => ANGLES.every(a => rows.some(p => p.phase === phase && p.side === 'vendor' && p.angle === a));
+  const photosNeeded = phase => 'Add photos of all four sides (front, back, left, right) before you ' + (phase === 'pickup' ? 'mark the vehicle handed over' : 'mark the vehicle returned') + '. They protect you and the renter if there is ever a disagreement.';
+  async function shapePhotos(rows) {
+    // the newest photo of each side, by each person, for each phase; every close-up is kept
+    const latest = new Map(); const out = [];
+    for (const p of rows) { if (p.angle === 'extra') out.push(p); else latest.set(p.phase + '/' + p.angle + '/' + p.side, p); }
+    out.push(...latest.values());
+    out.sort((a, b) => a.id - b.id);
+    const list = [];
+    for (const p of out) list.push({ id: p.id, phase: p.phase, angle: p.angle, side: p.side, at: p.created_at, url: await signed(p.path) });
+    return list;
   }
 
   // Dates a vehicle is not free: accepted or picked-up bookings, and blocks the vendor added
@@ -255,8 +274,9 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     if (m.error) throw m.error;
     const users = await usersById([b.customer_id, b.vendor_id, ...m.data.map(x => x.sender_id)]);
     const snap = b.photos_snapshot || null; const listingPhotos = {}; if (snap) for (const a of ANGLES) listingPhotos[a] = await signed(snap[a]);
+    const shots = await shapePhotos(await photoRows(b.id));
     res.json({
-      order: { ...shapeBooking(b, req.user, users, ''), ...(snap ? { listingPhotos } : {}) },
+      order: { ...shapeBooking(b, req.user, users, ''), ...(snap ? { listingPhotos } : {}), photos: shots },
       messages: m.data.map(x => ({
         id: x.id, kind: x.kind, body: x.body, createdAt: x.created_at,
         from: x.kind === 'system' ? 'system' : x.sender_id === req.user.id ? 'me' : 'them',
@@ -310,6 +330,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const b = await loadBooking(req, res); if (!b) return;
     if (!mineAsVendor(b, req)) return res.status(404).json({ error: 'Booking not found.' });
     if (b.status !== 'accepted') return res.status(409).json({ error: 'Only an accepted booking can be handed over.' });
+    if (!hasFourSides(await photoRows(b.id), 'pickup')) return res.status(400).json({ error: photosNeeded('pickup'), code: 'photos_required' });
     await update(b, { status: 'picked_up', picked_up_at: new Date().toISOString(), customer_unread: true });
     await addMessage(b.id, req.user.id, 'system', 'The vehicle was handed over. Return it by ' + b.end_date + '.');
     res.json({ ok: true });
@@ -318,6 +339,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const b = await loadBooking(req, res); if (!b) return;
     if (!mineAsVendor(b, req)) return res.status(404).json({ error: 'Booking not found.' });
     if (b.status !== 'picked_up') return res.status(409).json({ error: 'Only a vehicle that is out can be marked returned.' });
+    if (!hasFourSides(await photoRows(b.id), 'return')) return res.status(400).json({ error: photosNeeded('return'), code: 'photos_required' });
     const condition = String((req.body && req.body.condition) || 'good');
     if (!['good', 'problem'].includes(condition)) return res.status(400).json({ error: 'Say whether the vehicle came back in the same condition, or with a problem.' });
     const note = String((req.body && req.body.note) || '').trim().slice(0, 600);
@@ -335,6 +357,28 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
       alertAdmins('Rental dispute to review', 'The vendor reported a problem with the return of ' + b.vehicle_title + ' (booking #' + b.id + '): ' + note + '. Contact the customer and the vendor.', '/admin.html');
     } else notify(b.customer_id, 'Please confirm your rental return', 'The vendor says ' + b.vehicle_title + ' came back in the same condition. Open AutoAid 24/7 to confirm you agree.');
     res.json({ ok: true, lateDays: late.days, lateFee: late.fee });
+  }));
+
+  // ---------- photos at pick-up and at return (the owner and the renter may both add them) ----------
+  router.post('/rentals/bookings/:id/photos', ...[enabled, ...auth.requireRole('customer', 'vendor')], bigJson, handle(async (req, res) => {
+    const b = await loadBooking(req, res); if (!b) return;
+    const side = sideOf(b, req.user.id); if (!side) return res.status(404).json({ error: 'Booking not found.' });
+    const phase = String((req.body && req.body.phase) || ''), angle = String((req.body && req.body.angle) || '');
+    if (!PHASES.includes(phase)) return res.status(400).json({ error: 'Say whether the photo is from pick-up or from return.' });
+    if (![...ANGLES, 'extra'].includes(angle)) return res.status(400).json({ error: 'Choose front, back, left, right, or a close-up.' });
+    const open = phase === 'pickup' ? ['accepted', 'picked_up'].includes(b.status) : (b.status === 'picked_up' || (b.status === 'returned' && !isClosed(b)));
+    if (!open) return res.status(409).json({ error: phase === 'pickup' ? 'Pick-up photos can be added from when the booking is accepted until the vehicle is returned.' : 'Return photos can be added when the vehicle is out, and until the return is settled.' });
+    const img = auth.readImage(req.body);
+    if (img.error) return res.status(img.status).json({ error: img.error });
+    const rows = await photoRows(b.id);
+    if (angle === 'extra' && rows.filter(p => p.side === side && p.phase === phase && p.angle === 'extra').length >= MAX_EXTRA_PHOTOS) return res.status(429).json({ error: 'That is enough close-ups for now (' + MAX_EXTRA_PHOTOS + ').' });
+    if (rows.length >= 60) return res.status(429).json({ error: 'This booking has plenty of photos already.' });
+    const path = 'rentals/booking-' + b.id + '-' + phase + '-' + angle + '-' + side + '-' + Date.now();
+    await auth.storePhoto(path, img.buf, img.type);
+    const ins = await supabase.from('rental_photos').insert({ booking_id: b.id, uploader_id: req.user.id, side, phase, angle, path });
+    if (ins.error) throw ins.error;
+    await update(b, side === 'renter' ? { vendor_unread: true } : { customer_unread: true });
+    res.status(201).json({ ok: true, ownerHasFourSides: hasFourSides([...rows, { phase, side, angle }], phase) });
   }));
 
   // ---------- the customer answers the condition check ----------
