@@ -8,6 +8,41 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
   const staffUp = auth.requireWorker;   // staff and admin; a provider with a lapsed subscription is stopped (402)
   const adminOnly = auth.requireRole('admin');
 
+  // --- How the business is doing (admin only) ---
+  router.get('/business-stats', adminOnly, handle(async (req, res) => {
+    const [jr, ur] = await Promise.all([
+      supabase.from('service_requests').select('stage, urgent, created_at, accepted_at, completed_at, fee_amount, refund_status, disputed_at, technician_id, pay_status, paid_amount'),
+      supabase.from('users').select('id, role, approved, active, created_at, online, online_at, pro_verified, deleted_at')
+    ]);
+    if (jr.error) throw jr.error; if (ur.error) throw ur.error;
+    const jobs = jr.data, users = ur.data.filter(u => !u.deleted_at);
+    const now = Date.now(), DAY = 86400000, startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
+    const ts = v => (v ? Date.parse(v) : 0);
+    const recent = jobs.filter(j => now - ts(j.created_at) < 30 * DAY);
+    const waits = recent.filter(j => j.accepted_at).map(j => (ts(j.accepted_at) - ts(j.created_at)) / 60000).filter(m => m >= 0);
+    const techs = users.filter(u => u.role === 'staff');
+    const sum = a => Math.round(a.reduce((s, n) => s + Number(n || 0), 0) * 100) / 100;
+    res.json({
+      jobsToday: jobs.filter(j => ts(j.created_at) >= startOfDay.getTime()).length,
+      waitingNow: jobs.filter(j => j.stage === 'searching').length,
+      emergenciesWaiting: jobs.filter(j => j.stage === 'searching' && j.urgent).length,
+      activeNow: jobs.filter(j => ['matched', 'quoted', 'agreed', 'working', 'done_pending'].includes(j.stage)).length,
+      completedThisMonth: jobs.filter(j => j.stage === 'closed' && ts(j.completed_at) >= monthStart.getTime()).length,
+      feesThisMonth: sum(jobs.filter(j => j.stage === 'closed' && ts(j.completed_at) >= monthStart.getTime()).map(j => j.fee_amount)),
+      averageMinutesToAccept: waits.length ? Math.round(waits.reduce((s, m) => s + m, 0) / waits.length * 10) / 10 : null,
+      unansweredLast30Days: recent.filter(j => j.stage === 'cancelled' && !j.technician_id).length,
+      jobsLast30Days: recent.length,
+      complaintsOpen: jobs.filter(j => j.disputed_at && j.stage === 'done_pending').length,
+      refundsDue: jobs.filter(j => j.refund_status === 'due').length,
+      techniciansOnline: techs.filter(t => t.online && t.online_at && now - ts(t.online_at) < 150000).length,
+      techniciansTotal: techs.filter(t => t.approved !== false && t.active !== false).length,
+      techniciansNotIdChecked: techs.filter(t => t.approved !== false && t.active !== false && !t.pro_verified).length,
+      customersTotal: users.filter(u => u.role === 'customer').length,
+      newCustomersThisWeek: users.filter(u => u.role === 'customer' && now - ts(u.created_at) < 7 * DAY).length
+    });
+  }));
+
   // --- Dashboard ---
   // Everything the dashboard needs in one call: all requests joined with their vehicles, plus counts
   router.get('/overview', staffUp, handle(async (req, res) => {

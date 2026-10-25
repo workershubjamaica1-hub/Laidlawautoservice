@@ -51,6 +51,7 @@
     <p class="error" id="appError" role="alert"></p>
     <div class="panel gate" id="gatePanel" hidden></div>
     <div class="subbar" id="subBanner" hidden></div>
+    <div class="biz" id="bizBox" hidden></div>
     <div class="stats" id="stats"></div>
 
     <div class="parishbar">
@@ -141,6 +142,7 @@
       </details>
       <div id="subBox" class="subinfo" hidden></div>
       <div id="pendingBox" class="pending" hidden></div>
+      <div id="guideBox" class="panel" hidden></div>
       <form id="userForm" class="userform">
         <input id="uName" placeholder="Full name" aria-label="Full name" required>
         <input id="uEmail" type="email" placeholder="Email" aria-label="Email" required>
@@ -314,13 +316,45 @@ async function load() {
       else if (me.role === 'staff') $('jobsTab').click();
     }
     await loadDashboard();
-    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); }
+    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); }
   } catch (err) {
     if (err.code !== 'subscription_required') $('appError').textContent = err.message;
     return;
   }
   render();
   renderUsers();
+}
+
+// --- How the business is doing (admin) ---
+async function loadBiz() {
+  try {
+    const s = await api('/admin/business-stats');
+    const card = (n, label, alert) => '<div' + (alert ? ' class="alert"' : '') + '><b>' + n + '</b><span>' + label + '</span></div>';
+    $('bizBox').innerHTML = [
+      card(s.jobsToday, 'jobs today'), card(s.waitingNow, 'waiting for a technician', s.waitingNow > 0), card(s.emergenciesWaiting, 'emergencies waiting', s.emergenciesWaiting > 0),
+      card(s.activeNow, 'jobs in progress'), card(s.completedThisMonth, 'completed this month'), card('J$' + Number(s.feesThisMonth).toLocaleString(), 'AutoAid fees this month'),
+      card(s.averageMinutesToAccept == null ? '-' : s.averageMinutesToAccept + ' min', 'average wait for a technician (30 days)'),
+      card(s.unansweredLast30Days + ' of ' + s.jobsLast30Days, 'jobs nobody took (30 days)', s.unansweredLast30Days > 0),
+      card(s.techniciansOnline + ' of ' + s.techniciansTotal, 'technicians online'), card(s.techniciansNotIdChecked, 'technicians without an ID check', s.techniciansNotIdChecked > 0),
+      card(s.complaintsOpen, 'open complaints', s.complaintsOpen > 0), card(s.refundsDue, 'refunds to send', s.refundsDue > 0),
+      card(s.customersTotal, 'customers (' + s.newCustomersThisWeek + ' new this week)')
+    ].join('');
+    $('bizBox').hidden = false;
+  } catch (_) { $('bizBox').hidden = true; }
+}
+// --- Typical prices shown to customers while booking ---
+async function loadGuide() {
+  const box = $('guideBox'); if (!box) return;
+  const [guide, cats] = await Promise.all([api('/price-guide'), api('/categories')]);
+  box.hidden = false;
+  box.innerHTML = '<h3>Typical prices shown to customers</h3><p class="hint">Fill in a range only for the work you can price fairly. Departments left empty show nothing. Customers are told the technician confirms the final price.</p>' +
+    cats.service.map(c => '<div class="guide"><span>' + JobChat.esc(c.label) + '</span><input type="number" min="0" step="100" placeholder="From J$" data-g="' + c.value + '" data-k="min" value="' + (guide[c.value] ? guide[c.value].min : '') + '"><input type="number" min="0" step="100" placeholder="To J$" data-g="' + c.value + '" data-k="max" value="' + (guide[c.value] ? guide[c.value].max : '') + '"></div>').join('') +
+    '<button class="btn safety small" type="button" id="guideSave">Save prices</button> <span id="guideMsg" role="status"></span>';
+  $('guideSave').addEventListener('click', async () => {
+    const out = {}; box.querySelectorAll('input[data-g]').forEach(i => { (out[i.dataset.g] = out[i.dataset.g] || {})[i.dataset.k] = i.value; });
+    try { await api('/admin/price-guide', { method: 'PUT', body: JSON.stringify({ guide: out }) }); $('guideMsg').textContent = 'Saved.'; }
+    catch (err) { $('guideMsg').textContent = err.message; }
+  });
 }
 
 // --- Live jobs: go online, hear the alert, accept, chat, price ---

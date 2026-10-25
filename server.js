@@ -60,7 +60,9 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SEC
 });
 
 // Database columns are snake_case; the API keeps camelCase for the frontend
-const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.category, year: r.year, vin: r.vin, createdAt: r.created_at });
+const dateOnly = v => (v ? String(v).slice(0, 10) : null);
+const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.category, year: r.year, vin: r.vin, createdAt: r.created_at,
+  reminders: { fitness: dateOnly(r.fitness_due), registration: dateOnly(r.registration_due), insurance: dateOnly(r.insurance_due), oil: dateOnly(r.oil_due) } });
 const toRequest = r => ({
   id: r.id, vehicleId: r.vehicle_id, category: r.category, description: r.description, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
   technicianId: r.technician_id || null, amount: r.amount == null ? null : Number(r.amount),
@@ -246,6 +248,29 @@ app.post('/vehicle', ...noVendor, handle(async (req, res) => {
   }).select().single();
   if (error) throw error;
   res.status(201).json(toVehicle(data));
+}));
+
+// Dates the customer wants to be reminded about (fitness, registration, insurance, next oil change)
+app.patch('/vehicle/:id(\\d+)/reminders', ...noVendor, handle(async (req, res) => {
+  if (req.user.role !== 'customer') return res.status(403).json({ error: 'Only the owner can set reminders.' });
+  const cols = { fitness: 'fitness_due', registration: 'registration_due', insurance: 'insurance_due', oil: 'oil_due' };
+  const patch = {}, b = req.body || {};
+  const thisYear = new Date().getFullYear();
+  for (const [key, col] of Object.entries(cols)) {
+    if (b[key] === undefined) continue;
+    const v = b[key] === null ? '' : String(b[key]).trim();
+    if (v === '') { patch[col] = null; continue; }
+    const t = Date.parse(v + 'T00:00:00Z');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || !Number.isFinite(t) || new Date(t).toISOString().slice(0, 10) !== v) return res.status(400).json({ error: 'Use a real date for the ' + key + ' reminder.' });
+    const y = Number(v.slice(0, 4));
+    if (y < thisYear - 1 || y > thisYear + 10) return res.status(400).json({ error: 'That ' + key + ' date does not look right.' });
+    patch[col] = v;
+  }
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to save.' });
+  const { data, error } = await supabase.from('vehicles').update(patch).eq('id', Number(req.params.id)).eq('user_id', req.user.id).select().maybeSingle();
+  if (error) throw error;
+  if (!data) return res.status(404).json({ error: 'Vehicle not found.' });
+  res.json(toVehicle(data));
 }));
 
 app.delete('/vehicle/:id', ...noVendor, handle(async (req, res) => {
@@ -457,6 +482,10 @@ app.post('/ai-assist', ...noVendor, handle(async (req, res) => {
 const push = require('./pushRoutes')({ supabase, handle, auth, app });
 app.use(push.router);
 
+// --- Reminders for fitness, registration, insurance and oil changes (reminders.js) ---
+const reminders = require('./reminders')({ supabase, push });
+if (process.env.PUSH_FAKE === '1') app.post('/_reminders_run', handle(async (req, res) => res.json({ sent: await reminders.run() })));   // tests only
+
 // --- Live jobs: online technicians, department alerts, chat, price and arrival time (jobRoutes.js) ---
 const jobs = require('./jobRoutes')({ supabase, handle, auth, subs, push });
 app.use(jobs.router);
@@ -471,6 +500,27 @@ app.use(parts.router);
 // --- Vehicle rentals: rental companies list vehicles, customers book them (rentalRoutes.js). Off until RENTALS_ENABLED=true. ---
 const rentals = require('./rentalRoutes')({ supabase, handle, auth });
 app.use(rentals.router);
+
+// Typical prices the shop has set, shown while booking (nothing is shown for a department until the admin sets a range)
+async function readPriceGuide() {
+  const { data } = await supabase.from('app_settings').select('value').eq('key', 'price_guide').maybeSingle();
+  return (data && data.value) || {};
+}
+app.get('/price-guide', handle(async (req, res) => res.json(await readPriceGuide())));
+app.put('/admin/price-guide', auth.requireRole('admin'), handle(async (req, res) => {
+  const input = (req.body && req.body.guide) || {}, guide = {};
+  for (const [cat, range] of Object.entries(input)) {
+    if (!isServiceCategory(cat)) return res.status(400).json({ error: 'Unknown department: ' + cat + '.' });
+    if (!range || range.min === '' || range.min == null) continue;
+    const min = Number(range.min), max = Number(range.max);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min < 0 || max < min || max > 10000000) return res.status(400).json({ error: 'Check the price range for ' + cat + '. The top price cannot be lower than the bottom price.' });
+    guide[cat] = { min: Math.round(min), max: Math.round(max) };
+  }
+  const had = await supabase.from('app_settings').select('key').eq('key', 'price_guide').maybeSingle();
+  const w = had.data ? await supabase.from('app_settings').update({ value: guide, updated_at: new Date().toISOString() }).eq('key', 'price_guide') : await supabase.from('app_settings').insert({ key: 'price_guide', value: guide });
+  if (w.error) throw w.error;
+  res.json(guide);
+}));
 
 // Public settings the pages need (the shop's phone number for the call buttons)
 const subCfg = require('./subscriptionConfig');

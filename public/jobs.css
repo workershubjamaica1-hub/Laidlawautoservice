@@ -20,6 +20,26 @@
 .techcard .tc-stars { color: #E8A317; letter-spacing: 1px; }
 .techcard .tc-badge { display: inline-block; padding: 2px 9px; border-radius: 999px; background: #E3F5EE; color: #11805A; font-size: 11px; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
 .techcard .tc-loc { margin: 8px 0 0; font-size: 14px; }
+.rem { margin: 10px 0 0; padding: 8px 0 0; border-top: 1px solid var(--line, #E3E9F2); font-size: 13.5px; }
+.rem summary { cursor: pointer; font-weight: 700; }
+.rem form { display: grid; gap: 8px; margin: 10px 0; }
+.rem label { display: grid; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft, #55657B); }
+.vgrid > *, .rem, .rem form, .rem label { min-width: 0; }
+.rem input[type=date] { width: 100%; box-sizing: border-box; min-width: 0; -webkit-appearance: none; appearance: none; padding: 8px 10px; border: 1px solid var(--line, #E3E9F2); border-radius: 10px; font: inherit; }
+.rem small { color: var(--ink-soft, #55657B); }
+.rem-msg { margin: 0; min-height: 1em; font-size: 12.5px; }
+.due { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 800; }
+.due.ok { background: #E3F5EE; color: #11805A; }
+.due.warn { background: #FFF1D6; color: #8A5A00; }
+.due.bad { background: #FBE3E0; color: #B4322A; }
+.price-hint { margin: 6px 0 0; font-size: 13px; color: var(--ink-soft, #55657B); }
+.biz { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 0 0 16px; }
+.biz div { padding: 12px 14px; border-radius: 14px; background: #fff; border: 1px solid var(--line, #E3E9F2); }
+.biz b { display: block; font-size: 22px; }
+.biz span { font-size: 12.5px; color: var(--ink-soft, #55657B); }
+.biz .alert b { color: #B4322A; }
+.guide { display: grid; grid-template-columns: 1fr 110px 110px; gap: 8px; align-items: center; margin: 8px 0; }
+.guide input { padding: 7px 9px; border: 1px solid var(--line, #E3E9F2); border-radius: 10px; font: inherit; }
 .countdown { font-variant-numeric: tabular-nums; font-size: 1.15em; }
 .countdown.late { color: #C93B2B; }
 

@@ -240,6 +240,7 @@
         <div>
           <label for="category">Department</label>
           <select id="category" name="category" required></select>
+          <p class="price-hint" id="price-hint" hidden></p>
         </div>
       </div>
       <label for="description">What's happening?</label>
@@ -455,7 +456,7 @@ async function load() {
     const [vehicles, requests, categories, catalog] = await Promise.all([
       api('/vehicles'), api('/service-requests'), api('/categories'), api('/vehicle-catalog')
     ]);
-    Object.assign(state, { vehicles, requests, categories, catalog });
+    Object.assign(state, { vehicles, requests, categories, catalog, priceGuide: await api('/price-guide').catch(() => ({})) });
     render();
     showView(location.hash.slice(1));
     const linked = Number(new URLSearchParams(location.search).get('job'));
@@ -543,6 +544,19 @@ $('add-vehicle-cancel').addEventListener('click', () => {
   $('vehicle-form').reset(); $('owner').value = $('who').textContent; clearPick(); showCustom(false); $('vehicle-error').textContent = ''; closeDlg('dlg-vehicle');
 });
 
+const REMINDERS = [['fitness', 'Fitness certificate expires'], ['registration', 'Registration expires'], ['insurance', 'Insurance expires'], ['oil', 'Next oil change']];
+const daysUntil = date => Math.floor(Date.parse(date + 'T00:00:00Z') / 86400000) - Math.floor(Date.now() / 86400000);
+function dueChip(date) {
+  if (!date) return '';
+  const d = daysUntil(date);
+  return d < 0 ? '<span class="due bad">Overdue</span>' : d <= 14 ? '<span class="due warn">' + (d === 0 ? 'Due today' : 'In ' + d + ' day' + (d > 1 ? 's' : '')) + '</span>' : '<span class="due ok">' + esc(date) + '</span>';
+}
+function remindersBlock(v) {
+  const r = v.reminders || {}, soon = REMINDERS.filter(([k]) => r[k] && daysUntil(r[k]) <= 14).length;
+  return '<details class="rem"' + (soon ? ' open' : '') + '><summary>Reminders' + (soon ? ' <span class="due bad">' + soon + ' due soon</span>' : '') + '</summary>' +
+    '<form data-rem="' + v.id + '">' + REMINDERS.map(([k, label]) => '<label>' + esc(label) + ' ' + dueChip(r[k]) + '<input type="date" name="' + k + '" value="' + esc(r[k] || '') + '"></label>').join('') +
+    '<button class="btn small" type="submit">Save reminders</button><p class="rem-msg" role="status"></p></form><small>We email you and send a notification 14 days before, and again on the day.</small></details>';
+}
 function renderVehicles() {
   const list = $('vehicle-list');
   syncGarageForm();
@@ -556,9 +570,22 @@ function renderVehicles() {
     return '<div class="vehicle feat"><div class="vtile"><span class="ic" style="--m: var(--d-car)"></span><em>' + esc(brand) + '</em></div>' +
       '<h3>' + esc(v.year) + ' ' + esc(v.type) + '</h3><small>' + esc(labelOf(state.categories.vehicle, v.category)) + '</small>' +
       '<div class="vmeta"><div>' + I('doc') + '<span><small>VIN</small><b>' + (v.vin ? esc(v.vin) : 'Not added') + '</b></span></div>' +
-      '<div>' + I('user') + '<span><small>Owner</small><b>' + esc(v.owner) + '</b></span></div></div>' + rm + '</div>';
+      '<div>' + I('user') + '<span><small>Owner</small><b>' + esc(v.owner) + '</b></span></div></div>' + remindersBlock(v) + rm + '</div>';
   }).join('') + '</div>';
 }
+
+$('vehicle-list').addEventListener('submit', async (e) => {
+  const f = e.target.closest('form[data-rem]'); if (!f) return;
+  e.preventDefault();
+  const msg = f.querySelector('.rem-msg'); msg.textContent = 'Saving...';
+  const body = {}; for (const [k] of REMINDERS) body[k] = f.elements[k].value;
+  try {
+    const v = await api('/vehicle/' + f.dataset.rem + '/reminders', { method: 'PATCH', body });
+    const i = state.vehicles.findIndex(x => x.id === v.id); if (i >= 0) state.vehicles[i] = { ...state.vehicles[i], ...v };
+    renderVehicles();
+    const again = $('vehicle-list').querySelector('form[data-rem="' + v.id + '"]'); if (again) { again.closest('details').open = true; again.querySelector('.rem-msg').textContent = 'Saved.'; }
+  } catch (err) { msg.textContent = err.message; }
+});
 
 function renderSelects() {
   const vSel = $('vehicleId');
@@ -574,12 +601,20 @@ function renderSelects() {
   if (!cSel.options.length) {
     cSel.innerHTML = state.categories.service.map(c => `<option value="${c.value}">${esc(c.label)}</option>`).join('');
   }
+  showPriceHint();
   const aSel = $('ai-vehicle');
   const aCurrent = aSel.value;
   aSel.innerHTML = '<option value="">Not specific to a vehicle</option>' +
     state.vehicles.map(v => `<option value="${v.id}">${esc(v.year)} ${esc(v.type)} (${esc(labelOf(state.categories.vehicle, v.category))})</option>`).join('');
   if (state.vehicles.some(v => String(v.id) === aCurrent)) aSel.value = aCurrent;
 }
+
+function showPriceHint() {
+  const p = (state.priceGuide || {})[$('category').value], h = $('price-hint');
+  h.hidden = !p;
+  if (p) h.textContent = 'Typical price: J$' + p.min.toLocaleString() + ' to J$' + p.max.toLocaleString() + '. The technician confirms the exact price with you before anything starts.';
+}
+$('category').addEventListener('change', showPriceHint);
 
 function vehicleName(id) {
   if (!id) return 'Vehicle not given';
