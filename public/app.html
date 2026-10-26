@@ -166,7 +166,7 @@
   <!-- RENTALS -->
   <div class="view" id="view-rentals" data-view="rentals" hidden>
     <div class="page-head">
-      <div><p class="eyebrow">Rentals</p><h1>Rent a vehicle</h1><p class="welcome-sub">Pick a car, SUV or truck from a rental company near you. Daily rates, at least 3 days. You pay the company in person.</p></div>
+      <div><p class="eyebrow">Rentals</p><h1>Rent a vehicle</h1><p class="welcome-sub" id="rentals-sub">Pick a car, SUV or truck from a rental company near you. Daily rates, at least 3 days. You pay the company in person.</p></div>
       <div class="filters seg" role="group" aria-label="Rentals">
         <button type="button" data-rtab="browse" aria-pressed="true">Find a vehicle</button>
         <button type="button" data-rtab="mine" aria-pressed="false">My rentals<span class="nav-badge" id="rentals-badge2" hidden></span></button>
@@ -1229,6 +1229,7 @@ $('sos-list').addEventListener('click', async (e) => {
 setInterval(() => { if (!document.hidden) loadSos(); }, 20000);
 api('/config').then(c => {
   if (c.parts && c.parts.enabled) { startParts(); startAccessories(); }
+  if (c.rentals && c.rentals.onlinePayment) $('rentals-sub').textContent = 'Pick a car, SUV or truck from a rental company near you. Daily rates, at least 3 days. After the company accepts, you pay securely in the app and AutoAid 24/7 holds it until the return is settled.';
   if (c.rentals && c.rentals.enabled) startRentals();
   shopPhone = c.shopPhone || '';
   if (shopPhone) { const a = $('sos-call'); a.href = 'tel:' + shopPhone.replace(/[^\d+]/g, ''); a.textContent = 'Or call the shop: ' + shopPhone; a.hidden = false; }

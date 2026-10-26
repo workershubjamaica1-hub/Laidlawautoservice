@@ -153,3 +153,20 @@ It is **off** until you set `JOBS_ONLINE_PAYMENT=true`. While it is off, custome
 * Customer paid but the job is still "Price sent": check Render logs for `Fygaro webhook rejected: bad signature` (Key ID or Secret do not match),
   or `could not be used` (the amount or job changed; it is queued under Refunds to make).
 * You can always see every Fygaro payment in the Fygaro dashboard, with the reference `job-<job number>-<time>`.
+
+## Rentals paid through the app
+
+Set `RENTALS_ONLINE_PAYMENT=true` (with the Fygaro settings above) to take rental payments online.
+
+1. The renter asks for a vehicle. The company accepts. The booking now shows **Pay J$... securely**: rent plus deposit in one payment, on a signed Fygaro link (reference `rent-<booking>-<time>`, same Hook URL as every other payment).
+2. When Fygaro reports the payment, the booking shows **Paid**. The company cannot mark the vehicle handed over until it is paid.
+3. After the return check is settled (the renter agrees, or 3 days pass, or you decide a dispute), the app works out:
+   * **Company payout** = rent − AutoAid commission + late fee taken from the deposit + any amount you decide to keep from the deposit.
+   * **Renter refund** = deposit − the late fee taken − the amount kept.
+4. In **Fees & orders**, **Rental returns to review** lists *Pay (company) J$...* with their bank details, and *Refund J$... to (renter)* with the Fygaro transaction number. Pay the company by bank transfer, then press **Mark paid**. Refund the renter in the Fygaro dashboard, then press **Mark refunded**.
+5. If a paid booking is cancelled before pick-up, the full amount shows as a refund to send.
+6. Companies add their bank details in **My account** (How should we pay you?).
+
+When you decide a dispute, the form asks how much of the deposit the company keeps (0 to refund it all).
+
+Card holds: Fygaro offers **Manual Capture** (a hold on the card instead of a charge) on some plans. The app does not use it yet: the deposit is charged and then refunded. Ask Fygaro whether Manual Capture works with signed links before we change this.

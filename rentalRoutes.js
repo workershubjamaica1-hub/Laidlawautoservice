@@ -40,8 +40,11 @@ const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.pa
 const overlaps = (a1, a2, b1, b2) => a1 <= b2 && b1 <= a2;
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Jamaica' });   // YYYY-MM-DD in Jamaica
 
-module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
+module.exports = function rentalRoutes({ supabase, handle, auth, push, subs }) {
   const router = express.Router();
+  // Rentals can be paid through AutoAid (Fygaro). Off until RENTALS_ONLINE_PAYMENT=true and the Fygaro keys are set.
+  const onlinePay = () => process.env.RENTALS_ONLINE_PAYMENT === 'true' && !!subs && subs.gatewayReady();
+  const dueNow = b => money(Number(b.total) + Number(b.deposit || 0));   // rent plus the deposit, paid together
   const enabled = (req, res, next) => (auth.RENTALS.enabled ? next() : res.status(404).json({ error: 'Vehicle rentals are not switched on yet.' }));
   const customerOnly = [enabled, ...auth.requireRole('customer')];
   const anyParty = [enabled, ...auth.requireRole('customer', 'vendor', 'admin')];
@@ -230,6 +233,11 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
       vendor: v ? { id: v.id, name: vendorName(v), parish: v.parish || '', ...(deal && !isVendor ? { address: v.address || '', phone: v.phone || '' } : {}) } : { name: 'Removed vendor' },
       ...(!isCustomer && b.commission_amount != null ? { commission: { percent: Number(b.commission_percent), amount: Number(b.commission_amount), settled: !!b.commission_settled_at } } : {}),
       rating: b.rating || null, review: b.review || '', open: !isClosed(b),
+      payMode: b.pay_mode || 'in_person', paid: b.pay_status === 'paid', paidAmount: b.paid_amount == null ? null : Number(b.paid_amount), amountDue: dueNow(b), paysOnline: onlinePay(), depositKept: Number(b.deposit_kept || 0), settled: !!b.settled_at,
+      ...(isCustomer && b.status === 'accepted' && b.pay_mode === 'platform' && b.pay_status !== 'paid' && onlinePay()
+        ? { payUrl: subs.checkoutUrl({ amount: dueNow(b).toFixed(2), currency: subs.config.currency, custom_reference: 'rent-' + b.id + '-' + Date.parse(b.accepted_at || b.updated_at || b.created_at) }, 3 * 3600) } : {}),
+      ...(!isCustomer && b.payout_amount != null ? { payout: { amount: Number(b.payout_amount), settled: !!b.payout_settled_at } } : {}),
+      ...(!isVendor && b.refund_status && b.refund_status !== 'none' ? { refund: { amount: Number(b.refund_amount || 0), status: b.refund_status, note: b.refund_note || '' } } : {}),
       lateChargeAuthorized: !!b.late_charge_authorized_at, agreementVersion: b.agreement_version || null, rules: b.rules_snapshot || '', rulesAccepted: !!b.rules_accepted_at,
       returnCheck: b.status === 'returned' ? (b.return_check || 'none') : 'none',
       ...(b.status === 'returned' ? { returnReport: { vendorOk: b.return_vendor_ok, vendorNote: b.return_vendor_note || '', customerOk: b.return_customer_ok, customerNote: b.return_customer_note || '' } } : {}),
@@ -311,8 +319,11 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const busy = await busyRanges([b.vehicle_id], b.id);
     if (!isFree(busy.get(b.vehicle_id), b.start_date, b.end_date)) return res.status(409).json({ error: 'Those dates clash with another booking or a blocked day.' });
     const commission = money(Number(b.total) * commissionPercent / 100);
-    await update(b, { status: 'accepted', accepted_at: new Date().toISOString(), commission_percent: commissionPercent, commission_amount: commission, customer_unread: true });
-    await addMessage(b.id, req.user.id, 'system', 'The vendor accepted your rental. Collect the vehicle on ' + b.start_date + '. Their address and phone are now showing. Pay the vendor in person (rent ' + jmd(b.total) + (Number(b.deposit) ? ', deposit ' + jmd(b.deposit) : '') + ').');
+    const online = onlinePay();
+    await update(b, { status: 'accepted', accepted_at: new Date().toISOString(), commission_percent: commissionPercent, commission_amount: commission, customer_unread: true, pay_mode: online ? 'platform' : 'in_person' });
+    await addMessage(b.id, req.user.id, 'system', online
+      ? 'The vendor accepted your rental. Pay ' + jmd(dueNow(b)) + ' securely in the app (rent ' + jmd(b.total) + (Number(b.deposit) ? ' plus the ' + jmd(b.deposit) + ' deposit' : '') + '). AutoAid 24/7 holds it, the vendor can hand the vehicle over once it shows as paid, and your deposit comes back after the return check, less anything due under the Rental Agreement.'
+      : 'The vendor accepted your rental. Collect the vehicle on ' + b.start_date + '. Their address and phone are now showing. Pay the vendor in person (rent ' + jmd(b.total) + (Number(b.deposit) ? ', deposit ' + jmd(b.deposit) : '') + ').');
     notify(b.customer_id, 'Your rental was accepted', 'Your rental of ' + b.vehicle_title + ' from ' + b.start_date + ' was accepted.');
     res.json({ ok: true });
   }));
@@ -330,6 +341,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const b = await loadBooking(req, res); if (!b) return;
     if (!mineAsVendor(b, req)) return res.status(404).json({ error: 'Booking not found.' });
     if (b.status !== 'accepted') return res.status(409).json({ error: 'Only an accepted booking can be handed over.' });
+    if (b.pay_mode === 'platform' && b.pay_status !== 'paid') return res.status(409).json({ error: 'The renter has not paid yet. Hand the vehicle over once the payment shows in this window.', code: 'payment_required' });
     if (!hasFourSides(await photoRows(b.id), 'pickup')) return res.status(400).json({ error: photosNeeded('pickup'), code: 'photos_required' });
     await update(b, { status: 'picked_up', picked_up_at: new Date().toISOString(), customer_unread: true });
     await addMessage(b.id, req.user.id, 'system', 'The vehicle was handed over. Return it by ' + b.end_date + '.');
@@ -381,6 +393,83 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     res.status(201).json({ ok: true, ownerHasFourSides: hasFourSides([...rows, { phase, side, angle }], phase) });
   }));
 
+  // ---------- paid through AutoAid: settling the money once the return is agreed or decided ----------
+  // The company is paid the rent less AutoAid's commission, plus any late fee and any damage amount taken from the deposit.
+  // The renter is refunded what is left of the deposit. The admin sends both by hand (as for repair jobs) and marks them done.
+  async function settle(b, keepFromDeposit = 0) {
+    if (b.pay_mode !== 'platform' || b.pay_status !== 'paid' || b.settled_at) return b;
+    const rent = Number(b.total), deposit = Number(b.deposit || 0), commission = Number(b.commission_amount || 0);
+    const lateOwed = b.late_fee_status === 'due' ? Number(b.late_fee || 0) : 0;
+    const lateTaken = money(Math.min(deposit, lateOwed));
+    const keep = money(Math.min(Math.max(0, Number(keepFromDeposit) || 0), deposit - lateTaken));
+    const payout = money(rent - commission + lateTaken + keep), refund = money(deposit - lateTaken - keep);
+    const patch = { settled_at: new Date().toISOString(), payout_amount: payout, deposit_kept: money(lateTaken + keep), commission_settled_at: new Date().toISOString(), customer_unread: true, vendor_unread: true,
+      ...(refund > 0 ? { refund_status: 'due', refund_amount: refund, refund_note: 'Deposit returned after the rental.' } : {}) };
+    if (lateOwed > 0) { patch.late_fee_status = lateTaken >= lateOwed - 0.005 ? 'charged' : 'due'; patch.late_fee_note = lateTaken >= lateOwed - 0.005 ? 'Taken from the deposit.' : jmd(lateTaken) + ' taken from the deposit. ' + jmd(money(lateOwed - lateTaken)) + ' still to collect.'; }
+    const done = await update(b, patch);
+    await addMessage(b.id, null, 'system', 'The rental is settled. ' + (lateTaken ? 'Late fee taken from the deposit: ' + jmd(lateTaken) + '. ' : '') + (keep ? 'Kept from the deposit by decision: ' + jmd(keep) + '. ' : '') +
+      'The company is paid ' + jmd(payout) + ' (the rent less AutoAid 24/7\'s ' + (b.commission_percent || commissionPercent) + '% commission' + (lateTaken || keep ? ', plus the amounts above' : '') + '). ' + (refund > 0 ? 'Your deposit refund of ' + jmd(refund) + ' will be sent to your card.' : 'There is no deposit left to refund.'));
+    alertAdmins('Rental to pay out', 'Booking #' + b.id + ' (' + b.vehicle_title + ') is settled. Pay the company ' + jmd(payout) + (refund > 0 ? ' and refund the renter ' + jmd(refund) + ' in Fygaro.' : '.'), '/admin.html');
+    return done;
+  }
+  if (subs && subs.registerPaymentHandler) {
+    subs.registerPaymentHandler('rent', async ({ rentId, amount, currency, transactionId }) => {
+      const dup = await supabase.from('rental_bookings').select('id').eq('transaction_id', transactionId);
+      if (!dup.error && dup.data.length) return;   // Fygaro sent the same notification twice
+      const { data: b } = await supabase.from('rental_bookings').select('*').eq('id', rentId).maybeSingle();
+      if (!b) { console.warn('Fygaro rental payment for a booking that does not exist:', rentId, transactionId); return; }
+      const fits = b.status === 'accepted' && b.pay_mode === 'platform' && b.pay_status !== 'paid' && currency === subs.config.currency && Math.abs(amount - dueNow(b)) < 0.01;
+      const payFields = { pay_status: 'paid', paid_at: new Date().toISOString(), paid_amount: amount, transaction_id: transactionId };
+      try {
+        if (fits) {
+          await update(b, { ...payFields, vendor_unread: true, customer_unread: true });
+          await addMessage(b.id, null, 'system', 'Payment of ' + jmd(amount) + ' received (rent ' + jmd(b.total) + (Number(b.deposit) ? ' plus the ' + jmd(b.deposit) + ' deposit' : '') + '). AutoAid 24/7 holds it. The vendor can now hand the vehicle over on ' + b.start_date + '.');
+          notify(b.vendor_id, 'The renter has paid', 'The renter paid ' + jmd(amount) + ' for ' + b.vehicle_title + '. You can hand it over on ' + b.start_date + '.');
+        } else {
+          console.warn('Fygaro rental payment ' + transactionId + ' could not be used: booking ' + rentId + ' is "' + b.status + '", got ' + amount + ' ' + currency + ', due ' + dueNow(b));
+          // a clean case (the booking was cancelled or declined before it could be paid) goes straight onto the refund list;
+          // anything else (a second payment, a wrong amount) is reported to the admin with the Fygaro transaction number
+          const clean = ['cancelled', 'declined'].includes(b.status) && b.pay_status !== 'paid' && (!b.refund_status || b.refund_status === 'none');
+          if (clean) {
+            await update(b, { transaction_id: transactionId, refund_status: 'due', refund_amount: amount, refund_note: 'Payment arrived after the booking was ' + b.status + '.', customer_unread: true });
+            await addMessage(b.id, null, 'system', 'A payment of ' + jmd(amount) + ' arrived after this booking was ' + b.status + '. It will be refunded in full.');
+          } else {
+            await addMessage(b.id, null, 'system', 'A payment of ' + jmd(amount) + ' arrived that this booking could not use. AutoAid 24/7 will look into it and refund it if it is not needed.');
+          }
+          alertAdmins('Rental payment to check', 'A payment of ' + jmd(amount) + ' (Fygaro transaction ' + transactionId + ') could not be used for booking #' + b.id + '. ' + (clean ? 'It is on the refund list.' : 'Check it in Fygaro and refund it if it is a duplicate or the wrong amount.'), '/admin.html');
+        }
+      } catch (e) { if (!(e && e.code === '23505')) throw e; }   // the same transaction arrived twice at once
+    });
+  }
+  // what the admin has to do by hand: pay companies and refund renters
+  router.get('/rentals/payouts', ...adminOnly, handle(async (req, res) => {
+    const { data, error } = await supabase.from('rental_bookings').select('*').eq('pay_mode', 'platform');
+    if (error) throw error;
+    const users = await usersById(data.flatMap(b => [b.customer_id, b.vendor_id]));
+    const det = new Map(((await supabase.from('users').select('id, payout_details').in('id', [...new Set(data.map(b => b.vendor_id))].concat(0))).data || []).map(u => [u.id, u.payout_details || '']));
+    const by = new Map();
+    for (const b of data.filter(x => x.payout_amount != null && !x.payout_settled_at)) {
+      const v = users.get(b.vendor_id), p = by.get(b.vendor_id) || { vendorId: b.vendor_id, name: vendorName(v), phone: v ? v.phone || '' : '', amount: 0, bookings: 0, payoutDetails: det.get(b.vendor_id) || '' };
+      p.amount = money(p.amount + Number(b.payout_amount)); p.bookings++; by.set(b.vendor_id, p);
+    }
+    const refunds = data.filter(b => b.refund_status === 'due').map(b => { const c = users.get(b.customer_id); return { id: b.id, vehicle: b.vehicle_title, amount: Number(b.refund_amount || 0), transactionId: b.transaction_id || '', note: b.refund_note || '', customer: { name: c ? c.name : 'Removed customer', phone: c ? c.phone || '' : '' } }; });
+    res.json({ payouts: [...by.values()], refunds });
+  }));
+  router.post('/rentals/vendors/:id/payout-paid', ...adminOnly, handle(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(404).json({ error: 'Vendor not found.' });
+    const { data, error } = await supabase.from('rental_bookings').update({ payout_settled_at: new Date().toISOString() }).eq('vendor_id', id).eq('pay_mode', 'platform').is('payout_settled_at', null).select();
+    if (error) throw error;
+    res.json({ paid: data.filter(b => b.payout_amount != null).length });
+  }));
+  router.post('/rentals/bookings/:id/refund-done', ...adminOnly, handle(async (req, res) => {
+    const b = await loadBooking(req, res); if (!b) return;
+    if (b.refund_status !== 'due') return res.status(409).json({ error: 'No refund is waiting on this booking.' });
+    await update(b, { refund_status: 'done', refund_done_at: new Date().toISOString(), customer_unread: true });
+    await addMessage(b.id, req.user.id, 'system', 'Your refund of ' + jmd(b.refund_amount) + ' has been sent to your card.');
+    res.json({ ok: true });
+  }));
+
   // ---------- the customer answers the condition check ----------
   router.post('/rentals/bookings/:id/return-check', ...customerOnly, handle(async (req, res) => {
     const b = await loadBooking(req, res); if (!b) return;
@@ -390,8 +479,9 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     const note = String((req.body && req.body.note) || '').trim().slice(0, 600);
     if (!agree && note.length < 5) return res.status(400).json({ error: 'Tell us what you disagree with (a few words) so AutoAid can look into it.' });
     if (agree) {
-      await update(b, { return_check: 'agreed', return_customer_ok: true, return_customer_note: note || null, return_check_at: new Date().toISOString(), vendor_unread: true });
+      const agreed = await update(b, { return_check: 'agreed', return_customer_ok: true, return_customer_note: note || null, return_check_at: new Date().toISOString(), vendor_unread: true });
       await addMessage(b.id, req.user.id, 'system', 'The customer agrees the vehicle came back in the same condition. Both sides agree, so this rental is complete.');
+      await settle(agreed);
     } else {
       await update(b, { return_check: 'disputed', return_customer_ok: false, return_customer_note: note, dispute_at: new Date().toISOString(), return_check_at: new Date().toISOString(), vendor_unread: true });
       await addMessage(b.id, req.user.id, 'system', 'The customer DOES NOT AGREE with the return report: ' + note + ' A dispute has been filed. AutoAid 24/7 will contact the customer and the vendor.');
@@ -418,8 +508,11 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     if (b.status !== 'returned' || !b.dispute_at || b.dispute_resolved_at) return res.status(409).json({ error: 'There is no open dispute on this booking.' });
     const outcome = String((req.body && req.body.outcome) || '').trim().slice(0, 800);
     if (outcome.length < 5) return res.status(400).json({ error: 'Write what was decided (and what each side will be charged or refunded, if anything).' });
-    await update(b, { dispute_resolved_at: new Date().toISOString(), dispute_outcome: outcome, customer_unread: true, vendor_unread: true });
+    const keep = b.pay_mode === 'platform' ? Number((req.body && req.body.keepFromDeposit) || 0) : 0;
+    if (!Number.isFinite(keep) || keep < 0 || keep > Number(b.deposit || 0)) return res.status(400).json({ error: 'The amount kept from the deposit must be between 0 and the deposit (' + jmd(b.deposit || 0) + ').' });
+    const decided = await update(b, { dispute_resolved_at: new Date().toISOString(), dispute_outcome: outcome, customer_unread: true, vendor_unread: true });
     await addMessage(b.id, req.user.id, 'system', 'AutoAid 24/7 reviewed this dispute. Decision: ' + outcome);
+    await settle(decided, keep);
     notify(b.customer_id, 'Your rental dispute was decided', outcome); notify(b.vendor_id, 'The rental dispute was decided', outcome);
     res.json({ ok: true });
   }));
@@ -450,8 +543,9 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
           notify(b.vendor_id, 'A rental is overdue', b.vehicle_title + ' was due back on ' + b.end_date + ' (' + late.days + ' day' + (late.days > 1 ? 's' : '') + ' late).');
           out.overdue++;
         } else if (b.status === 'returned' && b.return_check === 'waiting_customer' && b.returned_at && Date.now() - Date.parse(b.returned_at) > AUTO_AGREE_MS) {
-          await update(b, { return_check: 'agreed', return_check_at: new Date().toISOString(), vendor_unread: true });
+          const auto = await update(b, { return_check: 'agreed', return_check_at: new Date().toISOString(), vendor_unread: true });
           await addMessage(b.id, null, 'system', 'The customer did not answer the return check within 3 days, so the return is taken as agreed.');
+          await settle(auto);
           out.autoAgreed++;
         }
       }
@@ -466,8 +560,11 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     if (req.user.role === 'admin') return res.status(403).json({ error: 'Admins can read bookings but not change them.' });
     if (b.status !== 'requested' && b.status !== 'accepted') return res.status(409).json({ error: 'This booking can no longer be cancelled.' });
     const byCustomer = req.user.role === 'customer';
-    await update(b, { status: 'cancelled', commission_percent: null, commission_amount: null, [byCustomer ? 'vendor_unread' : 'customer_unread']: true });
-    await addMessage(b.id, req.user.id, 'system', (byCustomer ? 'The customer' : 'The vendor') + ' cancelled this booking.');
+    const refundIt = b.pay_mode === 'platform' && b.pay_status === 'paid' && (!b.refund_status || b.refund_status === 'none');
+    await update(b, { status: 'cancelled', commission_percent: null, commission_amount: null, [byCustomer ? 'vendor_unread' : 'customer_unread']: true,
+      ...(refundIt ? { refund_status: 'due', refund_amount: Number(b.paid_amount), refund_note: 'Booking cancelled before pick-up: full refund.' } : {}) });
+    await addMessage(b.id, req.user.id, 'system', (byCustomer ? 'The customer' : 'The vendor') + ' cancelled this booking.' + (refundIt ? ' Your payment of ' + jmd(b.paid_amount) + ' will be refunded in full.' : ''));
+    if (refundIt) alertAdmins('Rental refund to send', 'A paid rental was cancelled (booking #' + b.id + ', ' + b.vehicle_title + '). Refund ' + jmd(b.paid_amount) + ' to the renter in Fygaro.', '/admin.html');
     res.json({ ok: true });
   }));
 
@@ -654,5 +751,5 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push }) {
     res.json({ settled: data.length });
   }));
 
-  return { router, commissionPercent, sweep };
+  return { router, commissionPercent, sweep, onlinePayment: onlinePay };
 };

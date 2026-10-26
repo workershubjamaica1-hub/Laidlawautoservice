@@ -64,7 +64,7 @@
         '<div><label for="ac-parish">Parish</label><select id="ac-parish"><option value="">' + (isAdmin ? 'Not set' : 'Choose your parish') + '</option>' + parishes.map(p => '<option' + (p === user.parish ? ' selected' : '') + '>' + esc(p) + '</option>').join('') + '</select></div></div>' +
         '<label for="ac-address">' + (isVendor ? 'Address (customers collect from here)' : 'Address') + '</label><textarea id="ac-address" rows="2" maxlength="200" placeholder="Street, community or town">' + esc(user.address) + '</textarea>' +
         (isStaff ? '<label>The work you do</label><div class="checks acct-checks" id="ac-spec">' + specialties.map(s => '<label><input type="checkbox" value="' + esc(s.value) + '"' + (user.specialties.includes(s.value) ? ' checked' : '') + '> ' + esc(s.label) + '</label>').join('') + '</div>' : '') +
-        (isStaff ? '<label for="ac-payout">How should we pay you? (bank name, account number, account name)</label><textarea id="ac-payout" rows="2" maxlength="400" placeholder="e.g. NCB, 123456789, Jane Brown. Used to pay you for jobs customers paid for online.">' + esc(user.payoutDetails || '') + '</textarea>' : '') +
+        ((isStaff || isVendor) ? '<label for="ac-payout">How should we pay you? (bank name, account number, account name)</label><textarea id="ac-payout" rows="2" maxlength="400" placeholder="e.g. NCB, 123456789, Jane Brown. Used to pay you for jobs and rentals customers paid for online.">' + esc(user.payoutDetails || '') + '</textarea>' : '') +
         ((isVendor || isStaff) ? '<label for="ac-about">' + (isVendor ? 'About your business' : 'Your experience and qualifications') + '</label><textarea id="ac-about" rows="3" maxlength="600">' + esc(user.experience) + '</textarea>' : '') +
         '<button class="btn" id="ac-save" type="submit">Save changes</button> <span class="acct-status" id="ac-status" role="status"></span>' +
         '<p class="error" id="ac-error" role="alert"></p></form></section>';
@@ -77,7 +77,8 @@
       if (!isAdmin || $('ac-parish').value) body.parish = $('ac-parish').value;
       if (!isAdmin || $('ac-address').value.trim()) body.address = $('ac-address').value;
       if (isVendor || isStaff) { body.businessName = $('ac-biz').value; body.experience = $('ac-about').value; }
-      if (isStaff) { body.specialties = [...el.querySelectorAll('#ac-spec input:checked')].map(c => c.value); body.payoutDetails = $('ac-payout').value; }
+      if (isStaff) body.specialties = [...el.querySelectorAll('#ac-spec input:checked')].map(c => c.value);
+      if (isStaff || isVendor) body.payoutDetails = $('ac-payout').value;
       $('ac-save').disabled = true;
       try { const r = await api('/auth/profile', { method: 'PATCH', body }); $('ac-status').textContent = 'Saved.'; if (onSaved) onSaved(r.user); }
       catch (err) { $('ac-error').textContent = err.message; }

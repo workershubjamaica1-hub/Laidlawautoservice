@@ -91,6 +91,28 @@
         (can ? '<label class="btn ghost small shot-more">Add a close-up<input type="file" accept="image/*" capture="environment" data-shot="' + phase + ':extra"></label>' : '') + '</details>';
     }
 
+    // the renter's pay box (rent plus the deposit, held by AutoAid 24/7)
+    function payBox(b) {
+      const dep = b.deposit ? ' plus the <strong>' + jmd(b.deposit) + '</strong> deposit' : '';
+      if (b.paid) return '<div class="deal"><b>Paid: ' + jmd(b.paidAmount) + '. Your rental is confirmed.</b><p>Collect it on <strong>' + esc(day(b.startDate)) + '</strong> from ' + esc(b.vendor.name) + (b.vendor.address ? ', ' + esc(b.vendor.address) : '') + (b.vendor.phone ? '<br>Phone: <a href="tel:' + tel(b.vendor.phone) + '">' + esc(b.vendor.phone) + '</a>' : '') + '</p><p>Bring your driver\'s licence. AutoAid 24/7 holds your payment' + (b.deposit ? '. Your deposit is refunded after the return check, less anything due under the Rental Agreement (late days, or damage you did not dispute)' : '') + '.</p></div>';
+      return '<div class="deal"><b>Pay to confirm your rental</b><p>Rent <strong>' + jmd(b.total) + '</strong>' + dep + ' = <strong>' + jmd(b.amountDue) + '</strong>, paid securely through Fygaro. AutoAid 24/7 holds it; ' + esc(b.vendor.name) + ' is paid only after the return is settled' + (b.deposit ? ', and your deposit comes back to your card after the return check' : '') + '.</p>' +
+        (b.payUrl ? '<div class="th-actions"><a class="btn" href="' + esc(b.payUrl) + '" target="_blank" rel="noopener">Pay ' + jmd(b.amountDue) + ' securely</a></div><p class="th-hint">After paying, come back here. The payment shows within a minute.</p>' : '<p class="th-hint">Online payment is not available right now. Ask the company in the chat.</p>') + '</div>';
+    }
+    // where the money is: held, paid to the company, or the deposit refund
+    function moneyPanel(b) {
+      if (b.payMode !== 'platform' || !b.paid) {
+        return b.refund && b.status === 'cancelled' && role !== 'vendor' ? '<p class="th-hint">Refund of ' + jmd(b.refund.amount) + ': ' + (b.refund.status === 'done' ? 'sent to the card' : 'being sent by AutoAid 24/7') + '.</p>' : '';
+      }
+      const parts = [];
+      if (b.status === 'returned' && !b.settled) parts.push('<p class="th-hint">AutoAid 24/7 is holding ' + jmd(b.paidAmount) + ' until the return check is settled.</p>');
+      if (b.settled) {
+        if (role !== 'customer' && b.payout) parts.push('<p class="th-hint"><strong>Company payout: ' + jmd(b.payout.amount) + '</strong> (rent less commission' + (b.depositKept ? ', plus ' + jmd(b.depositKept) + ' taken from the deposit' : '') + ') &middot; ' + (b.payout.settled ? 'paid' : 'AutoAid 24/7 will send it to the company\'s bank account') + '.</p>');
+        if (role !== 'vendor' && b.refund) parts.push('<p class="th-hint"><strong>Deposit refund: ' + jmd(b.refund.amount) + '</strong> &middot; ' + (b.refund.status === 'done' ? 'sent to the card' : 'AutoAid 24/7 will send it to your card') + '.</p>');
+        else if (role !== 'vendor' && !b.refund) parts.push('<p class="th-hint">No deposit was left to refund.</p>');
+      }
+      return parts.join('');
+    }
+
     // overdue notice, late fee, and the condition check when the vehicle comes back
     function returnPanel(b) {
       const parts = [];
@@ -119,12 +141,13 @@
 
     function panel(b) {
       const out = [summary(b)];
+      if (role === 'customer' && b.status === 'accepted' && b.payMode === 'platform') out.push(payBox(b));   // paying comes first
       out.push(photoSection(b, 'pickup'), photoSection(b, 'return'));
       if (b.listingPhotos) out.push('<details class="rules-agreed"><summary>Photos of the vehicle as listed</summary><div class="angle-strip big">' + [['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']].filter(x => b.listingPhotos[x[0]]).map(x => '<a href="' + esc(b.listingPhotos[x[0]]) + '" target="_blank" rel="noopener"><img src="' + esc(b.listingPhotos[x[0]]) + '" alt="' + x[1] + '" loading="lazy"><span>' + x[1] + '</span></a>').join('') + '</div><p class="th-hint">These are the photos the renter saw when booking. Take your own photos at pick-up and at return too.</p></details>');
       if (b.rules) out.push('<details class="rules-agreed"' + (['requested', 'accepted', 'picked_up'].includes(b.status) ? '' : '') + '><summary>Rental rules ' + (role === 'customer' ? 'you agreed to' : 'the renter agreed to') + '</summary><ul>' + b.rules.split(/\n+/).map(l => '<li>' + esc(l) + '</li>').join('') + '</ul></details>');
       if (role === 'customer') {
-        if (b.status === 'requested') out.push('<p class="th-hint">Waiting for ' + esc(b.vendor.name) + ' to accept. You can chat with them meanwhile. Nothing is charged online: you pay the vendor in person.</p>');
-        if (b.status === 'accepted') out.push('<div class="deal"><b>Your rental is confirmed</b><p>Collect it on <strong>' + esc(day(b.startDate)) + '</strong> from ' + esc(b.vendor.name) + (b.vendor.address ? ', ' + esc(b.vendor.address) : '') + (b.vendor.phone ? '<br>Phone: <a href="tel:' + tel(b.vendor.phone) + '">' + esc(b.vendor.phone) + '</a>' : '') + '</p><p>Bring your driver\'s licence. Pay the vendor <strong>' + jmd(b.total) + '</strong>' + (b.deposit ? ' plus the <strong>' + jmd(b.deposit) + '</strong> deposit' : '') + ' in person.</p><p>You agreed the vendor may charge you for any damage or loss' + (b.deposit ? ', up to the deposit,' : '') + ' using the card or deposit you give at pick-up.</p></div>');
+        if (b.status === 'requested') out.push('<p class="th-hint">Waiting for ' + esc(b.vendor.name) + ' to accept. You can chat with them meanwhile. ' + (b.paysOnline ? 'After they accept, you pay securely in the app: AutoAid 24/7 holds the money until the return is settled.' : 'Nothing is charged online: you pay the vendor in person.') + '</p>');
+        if (b.status === 'accepted' && b.payMode !== 'platform') out.push('<div class="deal"><b>Your rental is confirmed</b><p>Collect it on <strong>' + esc(day(b.startDate)) + '</strong> from ' + esc(b.vendor.name) + (b.vendor.address ? ', ' + esc(b.vendor.address) : '') + (b.vendor.phone ? '<br>Phone: <a href="tel:' + tel(b.vendor.phone) + '">' + esc(b.vendor.phone) + '</a>' : '') + '</p><p>Bring your driver\'s licence. Pay the vendor <strong>' + jmd(b.total) + '</strong>' + (b.deposit ? ' plus the <strong>' + jmd(b.deposit) + '</strong> deposit' : '') + ' in person.</p><p>You agreed the vendor may charge you for any damage or loss' + (b.deposit ? ', up to the deposit,' : '') + ' using the card or deposit you give at pick-up.</p></div>');
         if (b.status === 'picked_up') out.push('<div class="deal"><b>The vehicle is with you</b><p>Return it by <strong>' + esc(day(b.endDate)) + '</strong> to ' + esc(b.vendor.name) + (b.vendor.phone ? '. Phone: <a href="tel:' + tel(b.vendor.phone) + '">' + esc(b.vendor.phone) + '</a>' : '') + '.</p></div>');
         if (b.status === 'returned') out.push(b.rating ? '<p class="th-hint">You rated this vendor ' + stars(b.rating) + '</p>'
           : '<div class="rate" data-value="0"><span>How was the rental?</span><span role="group" aria-label="Rating out of 5">' + [1, 2, 3, 4, 5].map(n => '<button type="button" class="star" data-star="' + n + '" aria-label="' + n + ' stars">★</button>').join('') + '</span>' +
@@ -135,13 +158,15 @@
         if (showLic) out.push('<div class="th-actions"><button class="btn ghost small" type="button" data-act="licence">View driver\'s licence</button></div>');
         if (role === 'vendor') {
           if (b.status === 'requested') out.push('<div class="th-actions"><button class="btn" type="button" data-act="accept">Accept booking</button><button class="btn ghost" type="button" data-act="decline">Decline</button></div>');
-          if (b.status === 'accepted') out.push('<div class="th-actions"><button class="btn" type="button" data-act="pickup">Mark handed over</button></div>');
+          if (b.status === 'accepted' && b.payMode === 'platform' && !b.paid) out.push('<p class="th-hint"><strong>Waiting for the renter to pay</strong> (' + jmd(b.amountDue) + ' through the app). Hand the vehicle over once the payment shows here.</p>');
+          else if (b.status === 'accepted') out.push('<div class="th-actions"><button class="btn" type="button" data-act="pickup">Mark handed over</button>' + (b.payMode === 'platform' ? ' <span class="th-hint">The renter has paid ' + jmd(b.paidAmount) + '. AutoAid 24/7 holds it.</span>' : '') + '</div>');
           if (b.status === 'picked_up') out.push('<div class="th-actions"><button class="btn" type="button" data-act="return-good">Returned in the same condition</button><button class="btn ghost" type="button" data-act="return-problem">Returned with a problem</button></div>');
         }
-        if (b.commission) out.push('<p class="th-hint">AutoAid commission (' + b.commission.percent + '% of the rent): ' + jmd(b.commission.amount) + (b.status === 'returned' ? (b.commission.settled ? ' &middot; settled' : ' &middot; due') : ' &middot; counted once the vehicle is returned') + '.</p>');
+        if (b.commission) out.push('<p class="th-hint">AutoAid commission (' + b.commission.percent + '% of the rent): ' + jmd(b.commission.amount) + (b.payMode === 'platform' ? ' &middot; taken from your payout' : b.status === 'returned' ? (b.commission.settled ? ' &middot; settled' : ' &middot; due') : ' &middot; counted once the vehicle is returned') + '.</p>');
         if (b.status === 'returned' && b.rating) out.push('<p class="th-hint">Customer rating ' + stars(b.rating) + (b.review ? ' "' + esc(b.review) + '"' : '') + '</p>');
       }
       out.push(returnPanel(b));
+      out.push(moneyPanel(b));
       if (b.status === 'declined' || b.status === 'cancelled') out.push('<p class="th-hint">This booking was ' + b.status + '.</p>');
       return out.join('');
     }
@@ -216,7 +241,12 @@
       else if (a === 'return-problem') { const note = prompt('Describe the problem (damage, missing items, fuel, dirt). AutoAid 24/7 will contact both of you.'); if (note) act('/return', { condition: 'problem', note }); }
       else if (a === 'check-agree') { if (confirm('Do you agree the vehicle came back in the same condition it was given to you?')) act('/return-check', { agree: true }); }
       else if (a === 'check-disagree') { const note = prompt('What do you disagree with? AutoAid 24/7 will contact both of you.'); if (note) act('/return-check', { agree: false, note }); }
-      else if (a === 'resolve') { const outcome = prompt('Record the decision (what was decided, and what each side is charged or refunded):'); if (outcome) act('/resolve', { outcome }); }
+      else if (a === 'resolve') {
+        const outcome = prompt('Record the decision (what was decided, and what each side is charged or refunded):'); if (!outcome) return;
+        const o = cur && cur.order; let keep;
+        if (o && o.payMode === 'platform' && o.deposit > 0) { const k = prompt('How much of the J$' + o.deposit + ' deposit is kept for the company? (0 to refund all of it)', '0'); if (k === null) return; keep = Number(String(k).replace(/[,\sJ$]/g, '')); }
+        act('/resolve', { outcome, ...(keep !== undefined ? { keepFromDeposit: keep } : {}) });
+      }
       else if (a === 'late-charged') { const note = prompt('Note (optional), e.g. the card payment reference:'); if (note !== null) act('/late-fee', { status: 'charged', note }); }
       else if (a === 'late-waived') { const note = prompt('Why is it waived? (optional)'); if (note !== null) act('/late-fee', { status: 'waived', note }); }
       else if (a === 'rate') { const box = btn.closest('.rate'); act('/rating', { rating: Number(box.dataset.value), review: box.querySelector('.rate-note').value }); }

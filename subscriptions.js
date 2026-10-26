@@ -6,6 +6,7 @@
 //      who is paying and for what), so the amount cannot be changed.
 //   2. They pay on Fygaro's page. Fygaro then POSTs a signed notification to  /webhooks/fygaro.
 //   3. We verify the signature (HMAC-SHA256 over "<timestamp>.<raw body>"), check the amount, and extend their access.
+// References:  rent-<bookingId>-<time>         a vehicle rental paid online (handled by rentalRoutes.js through registerPaymentHandler)
 // References:  job-<jobId>-<time>             a repair job paid online (handled by jobRoutes.js through registerPaymentHandler)
 //              sub-<userId>-<time>            service provider subscription
 //              prem-<userId>-<plan>-<time>    Premium customer membership (plan = monthly | yearly)
@@ -209,7 +210,12 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
     const ref = String(p.customReference || p.custom_reference || '');
     const prov = /^sub-(\d+)-/.exec(ref), prem = /^prem-(\d+)-(monthly|yearly)-/.exec(ref);
     const paid = Number(p.amount), cur = String(p.currency || '').toUpperCase();
-    const jobRef = /^job-(\d+)-/.exec(ref);
+    const jobRef = /^job-(\d+)-/.exec(ref), rentRef = /^rent-(\d+)-/.exec(ref);
+    if (rentRef && handlers.rent) {
+      if (!p.transactionId) { console.warn('Fygaro rental payment without a transactionId:', ref); return res.json({ ok: true, ignored: true }); }
+      await handlers.rent({ rentId: Number(rentRef[1]), amount: paid, currency: cur, transactionId: String(p.transactionId), reference: ref });
+      return res.json({ ok: true });
+    }
     if (jobRef && handlers.job) {
       if (!p.transactionId) { console.warn('Fygaro job payment without a transactionId:', ref); return res.json({ ok: true, ignored: true }); }
       await handlers.job({ jobId: Number(jobRef[1]), amount: paid, currency: cur, transactionId: String(p.transactionId), reference: ref });

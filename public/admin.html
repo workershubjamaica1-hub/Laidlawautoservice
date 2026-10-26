@@ -458,7 +458,10 @@ async function setupParts() {
   $('rentHead').hidden = !rentChat; $('rentBookings').hidden = !rentChat;
   $('partsOrders').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b && partsChat) partsChat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
   $('rentBookings').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b && rentChat) rentChat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
-  $('rentReview').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b && rentChat) rentChat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
+  $('rentReview').addEventListener('click', async (e) => {
+  const pay = e.target.closest('[data-rpay]'), ref = e.target.closest('[data-rrefund]');
+  if (pay) { if (!confirm('Have you paid ' + PartsChat.jmd(Number(pay.dataset.amt)) + ' to ' + pay.dataset.name + '?')) return; try { await api('/rentals/vendors/' + pay.dataset.rpay + '/payout-paid', { method: 'POST' }); await loadParts(); } catch (err) { $('appError').textContent = err.message; } return; }
+  if (ref) { if (!confirm('Have you refunded ' + PartsChat.jmd(Number(ref.dataset.amt)) + ' in Fygaro?')) return; try { await api('/rentals/bookings/' + ref.dataset.rrefund + '/refund-done', { method: 'POST' }); await loadParts(); } catch (err) { $('appError').textContent = err.message; } return; } const b = e.target.closest('[data-booking]'); if (b && rentChat) rentChat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
 }
 async function loadParts() {
   if (!partsChat && !rentChat && !jobsLedger) return;
@@ -503,10 +506,12 @@ async function loadParts() {
     if (partsChat) partsChat.renderList($('partsOrders'), await api('/parts/orders'), 'No part orders yet.');
     if (rentChat) {
       rentChat.renderList($('rentBookings'), await api('/rentals/bookings'), 'No rental bookings yet.');
-      const rv = await api('/rentals/review'), box = $('rentReview');
+      const rv = await api('/rentals/review'), box = $('rentReview'), rp = await api('/rentals/payouts');
       const row = (b, text) => '<div class="review-row"><div><b>' + PartsChat.esc(b.vehicle.title) + '</b><p>' + text + '</p></div><button class="btn small" type="button" data-booking="' + b.id + '">Open</button></div>';
-      box.hidden = !(rv.disputes.length || rv.lateFees.length);
+      box.hidden = !(rv.disputes.length || rv.lateFees.length || rp.payouts.length || rp.refunds.length);
       box.innerHTML = '<h3 style="margin:22px 0 8px">Rental returns to review</h3>' +
+        rp.payouts.map(p => '<div class="review-row"><div><b>Pay ' + PartsChat.esc(p.name) + ' ' + PartsChat.jmd(p.amount) + '</b><p>' + p.bookings + ' rental' + (p.bookings > 1 ? 's' : '') + ' settled. ' + (p.payoutDetails ? 'Pay to: ' + PartsChat.esc(p.payoutDetails) : 'No bank details given yet' + (p.phone ? ': call ' + PartsChat.esc(p.phone) : '')) + '</p></div><button class="btn small safety" type="button" data-rpay="' + p.vendorId + '" data-amt="' + p.amount + '" data-name="' + PartsChat.esc(p.name) + '">Mark paid</button></div>').join('') +
+        rp.refunds.map(f => '<div class="review-row"><div><b>Refund ' + PartsChat.jmd(f.amount) + ' to ' + PartsChat.esc(f.customer.name) + '</b><p>' + PartsChat.esc(f.vehicle) + (f.transactionId ? ' &middot; Fygaro transaction ' + PartsChat.esc(f.transactionId) : '') + (f.note ? ' &middot; ' + PartsChat.esc(f.note) : '') + (f.customer.phone ? ' &middot; ' + PartsChat.esc(f.customer.phone) : '') + '</p></div><button class="btn small safety" type="button" data-rrefund="' + f.id + '" data-amt="' + f.amount + '">Mark refunded</button></div>').join('') +
         rv.disputes.map(b => row(b, 'Dispute: customer ' + PartsChat.esc(b.customer.name) + ' (' + PartsChat.esc(b.customerPhone || 'no phone') + '), vendor ' + PartsChat.esc(b.vendor.name) + ' (' + PartsChat.esc(b.vendorPhone || 'no phone') + '). Contact both, then record the decision.')).join('') +
         rv.lateFees.map(b => row(b, 'Late fee due: ' + PartsChat.jmd(b.late.fee) + ' for ' + b.late.days + ' extra day' + (b.late.days > 1 ? 's' : '') + ' (' + PartsChat.esc(b.customer.name) + ').')).join('');
     }

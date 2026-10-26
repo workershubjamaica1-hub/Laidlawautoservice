@@ -433,6 +433,28 @@ create table if not exists rental_photos (
 create index if not exists rental_photos_booking_idx on rental_photos(booking_id, id);
 alter table rental_photos enable row level security;
 
+-- Rentals paid through AutoAid (Fygaro): the renter pays rent + deposit, AutoAid holds it, then pays the company and refunds the deposit
+alter table rental_bookings add column if not exists pay_mode text not null default 'in_person';
+alter table rental_bookings add column if not exists pay_status text not null default 'none';
+alter table rental_bookings add column if not exists paid_at timestamptz;
+alter table rental_bookings add column if not exists paid_amount numeric(12, 2);
+alter table rental_bookings add column if not exists transaction_id text;
+alter table rental_bookings add column if not exists refund_status text not null default 'none';
+alter table rental_bookings add column if not exists refund_amount numeric(12, 2);
+alter table rental_bookings add column if not exists refund_note text;
+alter table rental_bookings add column if not exists refund_done_at timestamptz;
+alter table rental_bookings add column if not exists payout_amount numeric(12, 2);
+alter table rental_bookings add column if not exists payout_settled_at timestamptz;
+alter table rental_bookings add column if not exists deposit_kept numeric(12, 2) not null default 0;
+alter table rental_bookings add column if not exists settled_at timestamptz;
+alter table rental_bookings drop constraint if exists rental_bookings_pay_mode_check;
+alter table rental_bookings add constraint rental_bookings_pay_mode_check check (pay_mode in ('in_person', 'platform'));
+alter table rental_bookings drop constraint if exists rental_bookings_pay_status_check;
+alter table rental_bookings add constraint rental_bookings_pay_status_check check (pay_status in ('none', 'paid'));
+alter table rental_bookings drop constraint if exists rental_bookings_refund_status_check;
+alter table rental_bookings add constraint rental_bookings_refund_status_check check (refund_status in ('none', 'due', 'done'));
+create unique index if not exists rental_bookings_txn_idx on rental_bookings(transaction_id) where transaction_id is not null;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

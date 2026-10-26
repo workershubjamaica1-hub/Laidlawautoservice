@@ -60,6 +60,7 @@ in the **Fees & orders** tab. Technicians choose their departments in **My accou
 |---|---|---|
 | `JOBS_FEE_PERCENT` | `5` | AutoAid's share of each completed repair job (0 to 50) |
 | `JOBS_ONLINE_PAYMENT` | off | `true` makes customers pay online (Fygaro) when they agree the price. Needs the `FYGARO_*` settings in PAYMENTS.md |
+| `RENTALS_ONLINE_PAYMENT` | `true` | rentals are paid through the app (Fygaro): rent plus deposit are held by AutoAid 24/7, then the company is paid and the deposit refunded. Needs the Fygaro settings |
 
 Run `schema-users.sql` in the Supabase SQL Editor once (safe to run again). Online payment through the platform is added when Fygaro is set up.
 
@@ -108,3 +109,4 @@ Run `schema-users.sql` in the Supabase SQL Editor whenever it changes. It is saf
 The pages are `public/privacy.html` and `public/terms.html`. They are plain-language drafts that describe what the app really does.
 **Have them checked by a lawyer in Jamaica before relying on them**, and decide your own refund policy (the Terms currently say refunds are
 considered case by case). When you change them in a way people should agree to again, change `TERMS_VERSION` in `auth.js`.
+

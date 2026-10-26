@@ -90,7 +90,7 @@ const publicUser = u => ({
   premium: u.role === 'customer' ? premiumStatusOf(u) : null, premiumPaidUntil: u.premium_paid_until || null,   // only customers can be Premium members
   specialties: u.specialties ? u.specialties.split(',') : [],
   businessName: u.business_name || '', experience: u.experience || '',
-  payoutDetails: u.role === 'staff' ? (u.payout_details || '') : '',
+  payoutDetails: u.role === 'staff' || u.role === 'vendor' ? (u.payout_details || '') : '',
   offers: u.role === 'vendor' ? String(u.vendor_offers || 'parts').split(',').filter(Boolean) : [],
   hasLicence: !!u.licence_photo_path,
   // Customers must have all four before the shop can send someone out
@@ -515,7 +515,7 @@ module.exports = function createAuth({ supabase, handle }) {
         update.experience = ex;
       }
     }
-    if (req.user.role === 'staff' && req.body.payoutDetails !== undefined) update.payout_details = String(req.body.payoutDetails).trim().slice(0, 400) || null;
+    if ((req.user.role === 'staff' || req.user.role === 'vendor') && req.body.payoutDetails !== undefined) update.payout_details = String(req.body.payoutDetails).trim().slice(0, 400) || null;
     if (req.user.role === 'staff' && req.body.specialties !== undefined) {
       const allowed = SPECIALTIES.map(s => s.value);
       const list = [...new Set((Array.isArray(req.body.specialties) ? req.body.specialties : []).filter(v => allowed.includes(v)))];
@@ -656,10 +656,12 @@ module.exports = function createAuth({ supabase, handle }) {
     const side = u.role === 'vendor' ? 'vendor_id' : 'customer_id';
     if (u.role === 'customer' || u.role === 'vendor') {
       const parts = await rows(supabase.from('part_orders').select('id, status, commission_amount, commission_settled_at').eq(side, u.id)).catch(() => []);
-      const rents = await rows(supabase.from('rental_bookings').select('id, status, commission_amount, commission_settled_at, return_check, dispute_at, dispute_resolved_at, late_fee_status').eq(side, u.id)).catch(() => []);
+      const rents = await rows(supabase.from('rental_bookings').select('id, status, commission_amount, commission_settled_at, return_check, dispute_at, dispute_resolved_at, late_fee_status, pay_mode, pay_status, refund_status, payout_amount, payout_settled_at').eq(side, u.id)).catch(() => []);
       if (parts.some(o => o.status === 'accepted')) blocked.push('a parts order that is accepted and waiting to be collected');
       if (rents.some(b => b.status === 'accepted' || b.status === 'picked_up')) blocked.push('a rental that is confirmed or out on the road');
       if (rents.some(b => b.status === 'returned' && (b.return_check === 'waiting_customer' || (b.dispute_at && !b.dispute_resolved_at) || b.late_fee_status === 'due'))) blocked.push('a rental return that is being checked, in dispute, or has a late fee waiting');
+      if (rents.some(b => b.refund_status === 'due')) blocked.push('a rental deposit or payment that is still to be refunded to the customer');
+      if (u.role === 'vendor' && rents.some(b => b.payout_amount != null && !b.payout_settled_at)) blocked.push('a rental payout that AutoAid 24/7 still has to send you');
       if (u.role === 'vendor') {
         const owedParts = parts.filter(o => o.status === 'completed' && o.commission_amount && !o.commission_settled_at).length;
         const owedRents = rents.filter(b => b.status === 'returned' && b.commission_amount && !b.commission_settled_at).length;
