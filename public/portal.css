@@ -225,3 +225,20 @@ body:not([data-tab="requests"]):not([data-tab="emergencies"]):not([data-tab="veh
 
 /* the summary tiles on the technician dashboard (parts.css also has a small icon square called .tile, so these are scoped) */
 .tiles .tile { display: block; width: auto; height: auto; place-items: normal; border-radius: 20px; background: #fff; color: var(--ink); }
+
+/* big tables scroll inside their own box, so the scroll bars are always on screen (not far down the page) */
+@media (min-width: 641px) {
+  .table-wrap { max-height: calc(100vh - 250px); overflow: auto; }
+  .table-wrap thead th { position: sticky; top: 0; z-index: 2; }
+}
+/* the people table fits the page: the buttons wrap inside their own column instead of running off the right edge */
+.users-table { min-width: 0; table-layout: fixed; width: 100%; }
+.users-table th:nth-child(1) { width: 14%; } .users-table th:nth-child(2) { width: 18%; } .users-table th:nth-child(3) { width: 14%; }
+.users-table th:nth-child(4) { width: 14%; } .users-table th:nth-child(5) { width: 10%; } .users-table th:nth-child(6) { width: 30%; }
+.users-table .badge { white-space: nowrap; }
+.users-table td select { font-size: 13px; padding-left: 8px; padding-right: 24px; background-position: right 8px center; }
+.users-table td { overflow-wrap: anywhere; }
+.users-table td select { max-width: 100%; }
+.users-table td.act { min-width: 0; text-align: left; }
+.users-table td.act .btn { margin: 3px 4px 3px 0; white-space: nowrap; font-size: 12.5px; padding: 6px 10px; }
+@media (max-width: 640px) { .users-table { table-layout: auto; } .users-table th:nth-child(n) { width: auto; } }

@@ -110,6 +110,7 @@
         <button type="button" class="show" id="show" aria-controls="pw">Show</button>
       </div>
       <p class="hint" id="pwHint" hidden>At least 8 characters.</p>
+      <label class="agree" id="rememberRow"><input type="checkbox" id="remember" checked> <span>Keep me signed in on this device <small>(not on a shared computer)</small></span></label>
       <label class="agree" id="agreeRow" hidden><input type="checkbox" id="agree"> <span id="agreeText">I agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms of Use</a> and the <a href="/privacy.html" target="_blank" rel="noopener">Privacy Notice</a>.</span></label>
       <button class="btn" id="submit" type="submit">Sign in</button>
       <p class="error" id="error" role="alert"></p>
@@ -259,6 +260,9 @@ function setMode(m) {
   $('nameRow').hidden = !creating;
   $('pwHint').hidden = !creating;
   $('agreeRow').hidden = !creating;
+  $('rememberRow').hidden = m === 'tech' || m === 'vendor';
+  $('email').autocomplete = creating ? 'email' : 'username';   // so the browser or phone offers to fill and save the password
+  if (m === 'login' && !$('email').value) { try { $('email').value = localStorage.getItem('rememberedEmail') || ''; } catch (_) {} }
   updateAgree();
   $('pw').autocomplete = creating ? 'new-password' : 'current-password';
   $('tab-login').setAttribute('aria-selected', m === 'login');
@@ -411,11 +415,15 @@ $('verifyForm').addEventListener('submit', async e => {
   }
 });
 
+// the page opens on Sign in: let the browser fill and save the password, and bring back the last email used on this device
+$('email').autocomplete = 'username';
+try { if (!$('email').value) $('email').value = localStorage.getItem('rememberedEmail') || ''; } catch (_) {}
+
 // ---- sign in / sign up / apply ----
 $('form').addEventListener('submit', async e => {
   e.preventDefault();
   $('error').textContent = '';
-  const body = { email: $('email').value, password: $('pw').value };
+  const body = { email: $('email').value, password: $('pw').value, remember: $('remember').checked };
   let image = null;
   $('submit').disabled = true;
   try {
@@ -458,6 +466,10 @@ $('form').addEventListener('submit', async e => {
     if (res.status === 403 && data.code === 'email_unverified') return showVerify(data.email || body.email, true, null);   // signed up earlier but never verified
     if (!res.ok) throw new Error(data.error || 'Could not sign in.');
     if (data.verificationRequired) return showVerify(body.email, data.emailSent, image);
+    try {
+      if ($('remember').checked) { localStorage.setItem('rememberedEmail', body.email.trim()); if (window.PasswordCredential) await navigator.credentials.store(new PasswordCredential({ id: body.email.trim(), password: body.password, name: data.user.name })); }
+      else localStorage.removeItem('rememberedEmail');
+    } catch (_) {}
     await finishSignIn(data.token, data.user.role, image);
   } catch (err) {
     $('error').textContent = err.message;

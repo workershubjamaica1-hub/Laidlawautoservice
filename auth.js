@@ -12,6 +12,7 @@ const express = require('express');
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const ROLES = ['customer', 'staff', 'admin', 'vendor'];
 const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
+const REMEMBER_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // "keep me signed in on this device"
 // Random secret = everyone is signed out when the server restarts. Set ADMIN_SECRET to keep sessions.
 const SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
 
@@ -39,8 +40,8 @@ const safeEqual = (a, b) => {
   return crypto.timingSafeEqual(ha, hb);
 };
 const revoked = new Map(); // token -> expiry
-function makeToken(userId) {
-  const payload = Buffer.from(JSON.stringify({ uid: userId, iat: Date.now(), exp: Date.now() + TOKEN_TTL_MS })).toString('base64url');
+function makeToken(userId, ttlMs = TOKEN_TTL_MS) {
+  const payload = Buffer.from(JSON.stringify({ uid: userId, iat: Date.now(), exp: Date.now() + ttlMs })).toString('base64url');
   return `${payload}.${sign(payload)}`;
 }
 function readToken(token) {
@@ -331,7 +332,7 @@ module.exports = function createAuth({ supabase, handle }) {
       const sent = await sendCode(user);
       return res.status(201).json({ verificationRequired: true, email, emailSent: !!sent.sent || !!sent.wait });
     }
-    res.status(201).json({ token: makeToken(user.id), user: publicUser(user) });
+    res.status(201).json({ token: makeToken(user.id, req.body && req.body.remember === true ? REMEMBER_TTL_MS : TOKEN_TTL_MS), user: publicUser(user) });
   }));
 
   // A professional applies to do jobs. They cannot sign in until an admin approves them.
@@ -466,7 +467,7 @@ module.exports = function createAuth({ supabase, handle }) {
     if (user.approved === false) return res.status(403).json({ error: 'Your application is still waiting for approval. You can sign in once an admin approves it.' });
     if (!user.active) return res.status(403).json({ error: 'This account has been disabled. Contact the shop.' });
     loginLimit.clear(req.ip);
-    res.json({ token: makeToken(user.id), user: publicUser(user) });
+    res.json({ token: makeToken(user.id, req.body && req.body.remember === true ? REMEMBER_TTL_MS : TOKEN_TTL_MS), user: publicUser(user) });
   }));
 
   router.post('/logout', (req, res) => {
@@ -623,7 +624,7 @@ module.exports = function createAuth({ supabase, handle }) {
     if (error) throw error;
     changeLimit.clear(req.user.id);
     const old = tokenFrom(req); const t = readToken(old); if (t) revoked.set(old, t.exp);
-    res.json({ ok: true, token: makeToken(req.user.id) });
+    res.json({ ok: true, token: makeToken(req.user.id, t && (t.exp - t.iat) > TOKEN_TTL_MS + 60000 ? REMEMBER_TTL_MS : TOKEN_TTL_MS) });   // a long session stays long
   }));
 
   // ---------- Delete my account ----------
