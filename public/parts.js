@@ -37,16 +37,40 @@
       ? '<div class="offer"><div><b>' + esc(o.offer.item) + '</b><small>' + esc(COND[o.offer.condition] || o.offer.condition) + ' &middot; ' + o.offer.quantity + ' &times; ' + jmd(o.offer.unitPrice) + (o.offer.installFee > 0 ? ' + fitting ' + jmd(o.offer.installFee) : o.kind === 'accessory' && o.installMode ? ' &middot; fitting included' : '') + '</small></div><div class="offer-total"><small>Total</small><b>' + jmd(o.offer.total) + '</b></div></div>'
       : '';
 
+    // paying through AutoAid: the customer's pay box, the confirmation, and where the money is
+    const who = o => (o.kind === 'accessory' ? 'seller' : 'vendor');
+    function payBox(o) {
+      const fit = o.kind === 'accessory' && o.installMode;
+      if (o.paid) return '<div class="deal"><b>Paid: ' + jmd(o.paidAmount) + '</b><p>AutoAid 24/7 is holding it. ' + esc(o.vendor.name) + (o.vendor.address ? ', ' + esc(o.vendor.address) : '') + (o.vendor.phone ? '<br>Phone: <a href="tel:' + esc(String(o.vendor.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.vendor.phone) + '</a>' : '') + '</p><p>' + (o.installMode === 'mobile' ? 'Agree a time in the chat for the seller to come and fit it.' : fit ? 'Take your vehicle to the shop to have it fitted.' : 'Collect it from the ' + who(o) + '.') + ' Afterwards, confirm here that you are happy so the ' + who(o) + ' is paid.</p></div>';
+      return '<div class="deal"><b>Pay to confirm your order</b><p><strong>' + jmd(o.offer.total) + '</strong>, paid securely through Fygaro. AutoAid 24/7 holds it, and the ' + who(o) + ' is paid only after you confirm you are happy.</p>' +
+        (o.payUrl ? '<div class="th-actions"><a class="btn" href="' + esc(o.payUrl) + '" target="_blank" rel="noopener">Pay ' + jmd(o.offer.total) + ' securely</a></div><p class="th-hint">After paying, come back here. The payment shows within a minute.</p>' : '<p class="th-hint">Online payment is not available right now. Ask the ' + who(o) + ' in the chat.</p>') + '</div>';
+    }
+    function confirmBox(o) {
+      if (role !== 'customer' || o.status !== 'completed' || o.payMode !== 'platform' || !o.paid || o.settled || o.dispute) return '';
+      return '<div class="deal"><b>Please confirm your order</b><p>The ' + who(o) + ' says it is ' + (o.kind === 'accessory' && o.installMode ? 'fitted' : 'handed over') + '. Are you happy? Confirming pays the ' + who(o) + ' ' + jmd(o.offer.total) + ' (AutoAid 24/7 releases the money you paid). If you do not answer in 3 days it is confirmed for you.</p><div class="th-actions"><button class="btn" type="button" data-act="confirm">Yes, I am happy</button><button class="btn ghost" type="button" data-act="dispute">Report a problem</button></div></div>';
+    }
+    function moneyPanel(o) {
+      if (o.payMode !== 'platform' || !o.paid) return o.refund && o.status === 'cancelled' && role !== 'vendor' ? '<p class="th-hint">Refund of ' + jmd(o.refund.amount) + ': ' + (o.refund.status === 'done' ? 'sent to your card' : 'being sent by AutoAid 24/7') + '.</p>' : '';
+      const p = [];
+      if (o.dispute) p.push('<div class="deal late"><b>' + (o.dispute.resolvedAt ? 'Problem decided' : 'Problem reported') + '</b><p>' + esc(o.dispute.note) + '</p><p>' + (o.dispute.resolvedAt ? 'Decision: ' + esc(o.dispute.outcome) : 'The payment is held. AutoAid 24/7 will contact the customer and the ' + who(o) + '.') + '</p></div>');
+      if (o.status === 'completed' && !o.settled && !o.dispute && role !== 'customer') p.push('<p class="th-hint">AutoAid 24/7 holds ' + jmd(o.paidAmount) + ' until the customer confirms (or 3 days pass).</p>');
+      if (o.settled && o.payout && role !== 'customer') p.push('<p class="th-hint"><strong>Payout: ' + jmd(o.payout.amount) + '</strong> (price less commission) &middot; ' + (o.payout.settled ? 'paid' : 'AutoAid 24/7 will send it to the bank account') + '.</p>');
+      if (o.refund && role !== 'vendor') p.push('<p class="th-hint"><strong>Refund: ' + jmd(o.refund.amount) + '</strong> &middot; ' + (o.refund.status === 'done' ? 'sent to the card' : 'AutoAid 24/7 will send it to the card') + '.</p>');
+      if (role === 'admin' && o.dispute && !o.dispute.resolvedAt) p.push('<div class="th-actions"><button class="btn" type="button" data-act="resolve-release">Decide: pay the ' + who(o) + '</button><button class="btn ghost" type="button" data-act="resolve-refund">Decide: refund the customer</button></div>');
+      return p.join('');
+    }
+
     function panel(o) {
       const out = [];
       const closed = o.status === 'completed' || o.status === 'cancelled';
       if (role === 'customer') {
         if (o.status === 'chatting') out.push('<p class="th-hint">Chat with the ' + (o.kind === 'accessory' ? 'seller' : 'vendor') + '. They will send you an offer with the price' + (o.kind === 'accessory' && o.installMode ? ' (and the fitting charge)' : '') + '. You only pay when you ' + (o.kind === 'accessory' && o.installMode ? 'get it fitted' : 'collect it') + '.</p>');
         if (o.status === 'offered') out.push(summary(o) + '<div class="th-actions"><button class="btn" type="button" data-act="accept">Accept offer</button><button class="btn ghost" type="button" data-act="decline">Decline</button></div>');
-        if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>' + (o.kind === 'accessory' ? (o.installMode === 'mobile' ? 'Agree a time for the fitting' : o.installMode === 'shop' ? 'Take your vehicle to the shop for fitting' : 'Collect your item') : 'Collect your part') + '</b><p>' + esc(o.vendor.name) + (o.vendor.address ? ', ' + esc(o.vendor.address) : '') + (o.vendor.phone ? '<br>Phone: <a href="tel:' + esc(String(o.vendor.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.vendor.phone) + '</a>' : '') +
+        if (o.status === 'accepted' && o.payMode === 'platform') out.push(summary(o) + payBox(o));
+        else if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>' + (o.kind === 'accessory' ? (o.installMode === 'mobile' ? 'Agree a time for the fitting' : o.installMode === 'shop' ? 'Take your vehicle to the shop for fitting' : 'Collect your item') : 'Collect your part') + '</b><p>' + esc(o.vendor.name) + (o.vendor.address ? ', ' + esc(o.vendor.address) : '') + (o.vendor.phone ? '<br>Phone: <a href="tel:' + esc(String(o.vendor.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.vendor.phone) + '</a>' : '') +
           '</p><p>Pay <strong>' + jmd(o.offer.total) + '</strong> to the ' + (o.kind === 'accessory' ? 'seller' : 'vendor') + (o.kind === 'accessory' && o.installMode ? ' when it is fitted.' : ' when you collect it.') + '</p></div>');
         if (o.status === 'completed') {
-          out.push(summary(o));
+          out.push(summary(o)); out.push(confirmBox(o));
           out.push(o.rating ? '<p class="th-hint">You rated this vendor <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span></p>'
             : '<div class="rate" data-value="0"><span>How was the vendor?</span><span role="group" aria-label="Rating out of 5">' + [1, 2, 3, 4, 5].map(n => '<button type="button" class="star" data-star="' + n + '" aria-label="' + n + ' stars">★</button>').join('') + '</span>' +
               '<input class="rate-note" maxlength="500" placeholder="A few words (optional)" aria-label="Your comment"><button type="button" class="btn small" data-act="rate" disabled>Send rating</button></div>');
@@ -64,19 +88,21 @@
             (o.kind === 'accessory' ? '<div><label for="of-install">Fitting charge (J$, 0 if none)</label><input id="of-install" inputmode="decimal" placeholder="0" value="' + (o.offer && o.offer.installFee ? o.offer.installFee : '') + '"></div>' : '') +
             '<p class="th-hint" id="of-total"></p><button class="btn" type="submit">Send offer to customer</button></form>');
         }
-        if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>' + (o.kind === 'accessory' ? (o.installMode === 'mobile' ? 'The customer accepted. Agree a time to go and fit it.' : o.installMode === 'shop' ? 'The customer accepted. They will bring the vehicle to your shop for fitting.' : 'The customer accepted. They will collect it from you.') : 'The customer accepted. They will collect the part from you.') + '</b><p>Customer: ' + esc(o.customer.name) + (o.customer.phone ? ' &middot; <a href="tel:' + esc(String(o.customer.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.customer.phone) + '</a>' : '') + '</p>' +
+        if (o.status === 'accepted' && o.payMode === 'platform' && !o.paid) out.push(summary(o) + '<p class="th-hint"><strong>Waiting for the customer to pay</strong> (' + jmd(o.offer.total) + ' through the app). Hand it over once the payment shows here.</p>');
+        else if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>' + (o.kind === 'accessory' ? (o.installMode === 'mobile' ? 'The customer accepted. Agree a time to go and fit it.' : o.installMode === 'shop' ? 'The customer accepted. They will bring the vehicle to your shop for fitting.' : 'The customer accepted. They will collect it from you.') : 'The customer accepted. They will collect the part from you.') + '</b><p>Customer: ' + esc(o.customer.name) + (o.customer.phone ? ' &middot; <a href="tel:' + esc(String(o.customer.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.customer.phone) + '</a>' : '') + '</p>' +
           '<p>They pay you <strong>' + jmd(o.offer.total) + '</strong> in person.' + (o.commission ? ' AutoAid commission (' + o.commission.percent + '%): <strong>' + jmd(o.commission.amount) + '</strong>, due once you mark it picked up.' : '') + '</p></div>' +
           (role === 'vendor' ? '<div class="th-actions"><button class="btn" type="button" data-act="complete">' + (o.kind === 'accessory' && o.installMode ? 'Mark fitted and paid' : 'Mark picked up and paid') + '</button></div>' : ''));
         if (o.status === 'completed') out.push(summary(o) + (o.commission ? '<p class="th-hint">AutoAid commission (' + o.commission.percent + '%): ' + jmd(o.commission.amount) + (o.commission.settled ? ' &middot; settled' : ' &middot; due') + '.</p>' : '') +
           (o.rating ? '<p class="th-hint">Customer rating <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span>' + (o.review ? ' "' + esc(o.review) + '"' : '') + '</p>' : ''));
       }
+      out.push(moneyPanel(o));
       if (closed && o.status === 'cancelled') out.push('<p class="th-hint">This order was cancelled.</p>');
       return out.join('');
     }
 
     function draw(data, keepScroll) {
       const o = data.order;
-      const closed = o.status === 'completed' || o.status === 'cancelled';
+      const closed = o.open === false;
       $('th-title').textContent = o.part;
       $('th-sub').textContent = (role === 'customer' ? o.vendor.name : o.customer.name + (role === 'admin' ? ' with ' + o.vendor.name : '')) + (o.vehicle ? ' · ' + o.vehicle.name : '');
       $('th-pill').innerHTML = '<span class="pill st-' + esc(o.status === 'chatting' ? 'pending' : o.status === 'offered' ? 'in-progress' : o.status === 'accepted' ? 'in-progress' : o.status) + '">' + esc(STATUS[o.status] || o.status) + '</span>';
@@ -159,6 +185,9 @@
       if (a === 'offer-toggle') { offerOpen = !offerOpen; const f = dlg.querySelector('#th-offer'); if (f) { f.hidden = !offerOpen; if (offerOpen) dlg.querySelector('#of-item').focus(); } }
       else if (a === 'accept') act('/offer/respond', { accept: true });
       else if (a === 'decline') act('/offer/respond', { accept: false });
+      else if (a === 'confirm') { if (confirm('Are you happy with this order? The ' + (cur && cur.order ? who(cur.order) : 'seller') + ' will be paid.')) act('/confirm'); }
+      else if (a === 'dispute') { const note = prompt('What is wrong? (The payment is held while we look into it.)'); if (note) act('/dispute', { note }); }
+      else if (a === 'resolve-release' || a === 'resolve-refund') { const note = prompt(a === 'resolve-release' ? 'Why is the ' + (cur && cur.order ? who(cur.order) : 'seller') + ' being paid?' : 'Why is the customer being refunded?'); if (note) act('/resolve', { decision: a === 'resolve-release' ? 'release' : 'refund', note }); }
       else if (a === 'complete') { if (confirm('Mark this order as picked up and paid?')) act('/complete'); }
       else if (a === 'rate') { const box = b.closest('.rate'); act('/rating', { rating: Number(box.dataset.value), review: box.querySelector('.rate-note').value }); }
     });

@@ -455,6 +455,31 @@ alter table rental_bookings drop constraint if exists rental_bookings_refund_sta
 alter table rental_bookings add constraint rental_bookings_refund_status_check check (refund_status in ('none', 'due', 'done'));
 create unique index if not exists rental_bookings_txn_idx on rental_bookings(transaction_id) where transaction_id is not null;
 
+-- Parts and accessories paid through AutoAid (Fygaro): the customer pays, AutoAid holds it, the seller is paid after the customer confirms
+alter table part_orders add column if not exists pay_mode text not null default 'in_person';
+alter table part_orders add column if not exists pay_status text not null default 'none';
+alter table part_orders add column if not exists paid_at timestamptz;
+alter table part_orders add column if not exists paid_amount numeric(12, 2);
+alter table part_orders add column if not exists transaction_id text;
+alter table part_orders add column if not exists refund_status text not null default 'none';
+alter table part_orders add column if not exists refund_amount numeric(12, 2);
+alter table part_orders add column if not exists refund_note text;
+alter table part_orders add column if not exists refund_done_at timestamptz;
+alter table part_orders add column if not exists payout_amount numeric(12, 2);
+alter table part_orders add column if not exists payout_settled_at timestamptz;
+alter table part_orders add column if not exists settled_at timestamptz;
+alter table part_orders add column if not exists dispute_at timestamptz;
+alter table part_orders add column if not exists dispute_note text;
+alter table part_orders add column if not exists dispute_resolved_at timestamptz;
+alter table part_orders add column if not exists dispute_outcome text;
+alter table part_orders drop constraint if exists part_orders_pay_mode_check;
+alter table part_orders add constraint part_orders_pay_mode_check check (pay_mode in ('in_person', 'platform'));
+alter table part_orders drop constraint if exists part_orders_pay_status_check;
+alter table part_orders add constraint part_orders_pay_status_check check (pay_status in ('none', 'paid'));
+alter table part_orders drop constraint if exists part_orders_refund_status_check;
+alter table part_orders add constraint part_orders_refund_status_check check (refund_status in ('none', 'due', 'done'));
+create unique index if not exists part_orders_txn_idx on part_orders(transaction_id) where transaction_id is not null;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

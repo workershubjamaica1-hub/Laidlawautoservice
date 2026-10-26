@@ -655,9 +655,12 @@ module.exports = function createAuth({ supabase, handle }) {
     }
     const side = u.role === 'vendor' ? 'vendor_id' : 'customer_id';
     if (u.role === 'customer' || u.role === 'vendor') {
-      const parts = await rows(supabase.from('part_orders').select('id, status, commission_amount, commission_settled_at').eq(side, u.id)).catch(() => []);
+      const parts = await rows(supabase.from('part_orders').select('id, status, commission_amount, commission_settled_at, pay_mode, pay_status, refund_status, payout_amount, payout_settled_at, settled_at, dispute_at, dispute_resolved_at').eq(side, u.id)).catch(() => []);
       const rents = await rows(supabase.from('rental_bookings').select('id, status, commission_amount, commission_settled_at, return_check, dispute_at, dispute_resolved_at, late_fee_status, pay_mode, pay_status, refund_status, payout_amount, payout_settled_at').eq(side, u.id)).catch(() => []);
       if (parts.some(o => o.status === 'accepted')) blocked.push('a parts order that is accepted and waiting to be collected');
+      if (parts.some(o => o.status === 'completed' && o.pay_mode === 'platform' && o.pay_status === 'paid' && !o.settled_at)) blocked.push('a paid parts or accessories order that is waiting for the customer to confirm (or is in dispute)');
+      if (parts.some(o => o.refund_status === 'due')) blocked.push('a parts or accessories payment that is still to be refunded to the customer');
+      if (u.role === 'vendor' && parts.some(o => o.payout_amount != null && !o.payout_settled_at)) blocked.push('a parts or accessories payout that AutoAid 24/7 still has to send you');
       if (rents.some(b => b.status === 'accepted' || b.status === 'picked_up')) blocked.push('a rental that is confirmed or out on the road');
       if (rents.some(b => b.status === 'returned' && (b.return_check === 'waiting_customer' || (b.dispute_at && !b.dispute_resolved_at) || b.late_fee_status === 'due'))) blocked.push('a rental return that is being checked, in dispute, or has a late fee waiting');
       if (rents.some(b => b.refund_status === 'due')) blocked.push('a rental deposit or payment that is still to be refunded to the customer');

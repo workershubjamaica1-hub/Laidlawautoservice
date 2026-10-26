@@ -61,6 +61,7 @@ in the **Fees & orders** tab. Technicians choose their departments in **My accou
 | `JOBS_FEE_PERCENT` | `5` | AutoAid's share of each completed repair job (0 to 50) |
 | `JOBS_ONLINE_PAYMENT` | off | `true` makes customers pay online (Fygaro) when they agree the price. Needs the `FYGARO_*` settings in PAYMENTS.md |
 | `RENTALS_ONLINE_PAYMENT` | `true` | rentals are paid through the app (Fygaro): rent plus deposit are held by AutoAid 24/7, then the company is paid and the deposit refunded. Needs the Fygaro settings |
+| `PARTS_ONLINE_PAYMENT` | `true` | parts and accessories are paid through the app (Fygaro): the customer pays when they accept an offer, AutoAid 24/7 holds it, and the seller is paid after the customer confirms. Needs the Fygaro settings |
 
 Run `schema-users.sql` in the Supabase SQL Editor once (safe to run again). Online payment through the platform is added when Fygaro is set up.
 

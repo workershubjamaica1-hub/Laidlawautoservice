@@ -124,6 +124,7 @@
         <h3 style="margin:22px 0 8px">Customer complaints <small style="font-weight:500">(the payment is held until you decide)</small></h3>
         <div class="table-wrap"><table><thead><tr><th>Job</th><th>Customer</th><th>Technician</th><th>Amount</th><th>The problem</th><th></th></tr></thead><tbody id="disputeBody"></tbody></table></div>
       </div>
+      <div id="partsReview" hidden></div>
       <h3 style="margin:22px 0 8px" id="partsHead">All part orders</h3>
       <div id="partsOrders" class="card flush"></div>
       <div id="rentReview" hidden></div>
@@ -458,6 +459,12 @@ async function setupParts() {
   $('rentHead').hidden = !rentChat; $('rentBookings').hidden = !rentChat;
   $('partsOrders').addEventListener('click', (e) => { const b = e.target.closest('[data-order]'); if (b && partsChat) partsChat.open(Number(b.dataset.order)).catch(err => alert(err.message)); });
   $('rentBookings').addEventListener('click', (e) => { const b = e.target.closest('[data-booking]'); if (b && rentChat) rentChat.open(Number(b.dataset.booking)).catch(err => alert(err.message)); });
+  $('partsReview').addEventListener('click', async (e) => {
+    const pay = e.target.closest('[data-ppay]'), ref = e.target.closest('[data-prefund]'), open = e.target.closest('[data-order]');
+    if (open && partsChat) { partsChat.open(Number(open.dataset.order)).catch(err => alert(err.message)); return; }
+    if (pay) { if (!confirm('Have you paid ' + PartsChat.jmd(Number(pay.dataset.amt)) + ' to ' + pay.dataset.name + '?')) return; try { await api('/parts/vendors/' + pay.dataset.ppay + '/payout-paid', { method: 'POST' }); await loadParts(); } catch (err) { $('appError').textContent = err.message; } return; }
+    if (ref) { if (!confirm('Have you refunded ' + PartsChat.jmd(Number(ref.dataset.amt)) + ' in Fygaro?')) return; try { await api('/parts/orders/' + ref.dataset.prefund + '/refund-done', { method: 'POST' }); await loadParts(); } catch (err) { $('appError').textContent = err.message; } }
+  });
   $('rentReview').addEventListener('click', async (e) => {
   const pay = e.target.closest('[data-rpay]'), ref = e.target.closest('[data-rrefund]');
   if (pay) { if (!confirm('Have you paid ' + PartsChat.jmd(Number(pay.dataset.amt)) + ' to ' + pay.dataset.name + '?')) return; try { await api('/rentals/vendors/' + pay.dataset.rpay + '/payout-paid', { method: 'POST' }); await loadParts(); } catch (err) { $('appError').textContent = err.message; } return; }
@@ -504,6 +511,14 @@ async function loadParts() {
     }
     $('ledgerBody').replaceChildren(...(rows.length ? rows : [el('tr', {}, el('td', { colSpan: 7, textContent: 'Nothing completed yet.' }))]));
     if (partsChat) partsChat.renderList($('partsOrders'), await api('/parts/orders'), 'No part orders yet.');
+    if (partsChat) {
+      const pp = await api('/parts/payouts'), pbox = $('partsReview'), J = PartsChat.jmd, E = PartsChat.esc;
+      pbox.hidden = !(pp.payouts.length || pp.refunds.length || pp.disputes.length);
+      pbox.innerHTML = '<h3 style="margin:22px 0 8px">Parts and accessories to settle</h3>' +
+        pp.payouts.map(p => '<div class="review-row"><div><b>Pay ' + E(p.name) + ' ' + J(p.amount) + '</b><p>' + p.orders + ' order' + (p.orders > 1 ? 's' : '') + ' confirmed. ' + (p.payoutDetails ? 'Pay to: ' + E(p.payoutDetails) : 'No bank details given yet' + (p.phone ? ': call ' + E(p.phone) : '')) + '</p></div><button class="btn small safety" type="button" data-ppay="' + p.vendorId + '" data-amt="' + p.amount + '" data-name="' + E(p.name) + '">Mark paid</button></div>').join('') +
+        pp.refunds.map(f => '<div class="review-row"><div><b>Refund ' + J(f.amount) + ' to ' + E(f.customer.name) + '</b><p>' + E(f.part) + (f.transactionId ? ' &middot; Fygaro transaction ' + E(f.transactionId) : '') + (f.note ? ' &middot; ' + E(f.note) : '') + (f.customer.phone ? ' &middot; ' + E(f.customer.phone) : '') + '</p></div><button class="btn small safety" type="button" data-prefund="' + f.id + '" data-amt="' + f.amount + '">Mark refunded</button></div>').join('') +
+        pp.disputes.map(d => '<div class="review-row"><div><b>Problem: ' + E(d.part) + ' (' + J(d.amount) + ' held)</b><p>' + E(d.note) + ' &middot; customer ' + E(d.customer.name) + ' (' + E(d.customer.phone || 'no phone') + '), seller ' + E(d.vendor.name) + ' (' + E(d.vendor.phone || 'no phone') + '). Contact both, then decide.</p></div><button class="btn small" type="button" data-order="' + d.id + '">Open</button></div>').join('');
+    }
     if (rentChat) {
       rentChat.renderList($('rentBookings'), await api('/rentals/bookings'), 'No rental bookings yet.');
       const rv = await api('/rentals/review'), box = $('rentReview'), rp = await api('/rentals/payouts');

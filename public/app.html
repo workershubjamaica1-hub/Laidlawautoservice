@@ -286,7 +286,7 @@
     <textarea id="part-note" maxlength="500" rows="2" placeholder="e.g. genuine only, or the part number if you have it"></textarea>
     <label>Choose a vendor</label>
     <div class="vendor-pick" id="part-vendors" role="radiogroup" aria-label="Parts vendors"></div>
-    <p class="hint-line">You collect the part from the vendor and pay them there once you agree the price.</p>
+    <p class="hint-line" id="part-hint">You collect the part from the vendor and pay them there once you agree the price.</p>
     <button class="btn" id="part-send" type="submit">Start chat with vendor</button>
     <p class="error" id="part-error" role="alert"></p>
   </form>
@@ -310,7 +310,7 @@
     <textarea id="acc-note" maxlength="500" rows="2" placeholder="e.g. colour, brand, the budget you have in mind"></textarea>
     <label>Choose a seller</label>
     <div class="vendor-pick" id="acc-vendors" role="radiogroup" aria-label="Accessory sellers"></div>
-    <p class="hint-line">The seller sends you a price (and a fitting charge if you want it fitted). You pay them directly when it is collected or fitted.</p>
+    <p class="hint-line" id="acc-hint">The seller sends you a price (and a fitting charge if you want it fitted). You pay them directly when it is collected or fitted.</p>
     <button class="btn" id="acc-send" type="submit">Start chat with seller</button>
     <p class="error" id="acc-error" role="alert"></p>
   </form>
@@ -1229,6 +1229,7 @@ $('sos-list').addEventListener('click', async (e) => {
 setInterval(() => { if (!document.hidden) loadSos(); }, 20000);
 api('/config').then(c => {
   if (c.parts && c.parts.enabled) { startParts(); startAccessories(); }
+  if (c.parts && c.parts.onlinePayment) { $('part-hint').textContent = 'The vendor sends you a price. When you accept it, you pay securely in the app. AutoAid 24/7 holds the money and the vendor is paid after you confirm you are happy.'; $('acc-hint').textContent = 'The seller sends you a price (and a fitting charge if you want it fitted). When you accept it, you pay securely in the app. AutoAid 24/7 holds the money and the seller is paid after you confirm you are happy.'; }
   if (c.rentals && c.rentals.onlinePayment) $('rentals-sub').textContent = 'Pick a car, SUV or truck from a rental company near you. Daily rates, at least 3 days. After the company accepts, you pay securely in the app and AutoAid 24/7 holds it until the return is settled.';
   if (c.rentals && c.rentals.enabled) startRentals();
   shopPhone = c.shopPhone || '';

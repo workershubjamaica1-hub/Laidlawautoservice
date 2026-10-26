@@ -170,3 +170,15 @@ Set `RENTALS_ONLINE_PAYMENT=true` (with the Fygaro settings above) to take renta
 When you decide a dispute, the form asks how much of the deposit the company keeps (0 to refund it all).
 
 Card holds: Fygaro offers **Manual Capture** (a hold on the card instead of a charge) on some plans. The app does not use it yet: the deposit is charged and then refunded. Ask Fygaro whether Manual Capture works with signed links before we change this.
+
+## Parts and accessories paid through the app
+
+Set `PARTS_ONLINE_PAYMENT=true` (with the Fygaro settings above).
+
+1. The customer accepts the seller's offer (for accessories, the total includes any fitting charge). The order now shows **Pay J$... securely** on a signed Fygaro link (reference `part-<order>-<time>`, same Hook URL).
+2. When Fygaro reports the payment the order shows **Paid**. The seller cannot mark it handed over or fitted until it is paid.
+3. After the seller marks it done, the customer is asked to **confirm they are happy**. If they do not answer in 3 days it is confirmed for them. Then the seller's payout is the price less the commission (3% by default).
+4. If the customer **reports a problem**, the money stays held. In **Fees & orders**, *Parts and accessories to settle* shows the problem with both phone numbers: call both, open the order, and press *Decide: pay the seller* or *Decide: refund the customer*, with a note.
+5. In the same list: *Pay (seller) J$...* with their bank details (press **Mark paid** after you transfer it), and *Refund J$... to (customer)* with the Fygaro transaction number (refund in Fygaro, then **Mark refunded**).
+6. A paid order that is cancelled before it is handed over shows as a full refund to send.
+7. Sellers add their bank details in **My account**.

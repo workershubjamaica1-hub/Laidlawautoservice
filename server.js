@@ -494,11 +494,12 @@ app.use(jobs.router);
 app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
 
 // --- Parts marketplace: order parts from approved vendors in a chat (partsRoutes.js). Off until PARTS_ENABLED=true. ---
-const parts = require('./partsRoutes')({ supabase, handle, auth });
+const parts = require('./partsRoutes')({ supabase, handle, auth, push, subs });
 app.use(parts.router);
 
 // --- Vehicle rentals: rental companies list vehicles, customers book them (rentalRoutes.js). Off until RENTALS_ENABLED=true. ---
 const rentals = require('./rentalRoutes')({ supabase, handle, auth, push, subs });
+if (process.env.PUSH_FAKE === '1') app.post('/_parts_sweep', handle(async (req, res) => res.json(await parts.sweep(Number(req.body && req.body.ageMs) || undefined))));   // tests only
 if (process.env.PUSH_FAKE === '1') {   // tests only: move a booking's dates back, and run the overdue / auto-agree check now
   app.post('/_rentals_backdate/:id', handle(async (req, res) => { const { error } = await supabase.from('rental_bookings').update({ start_date: req.body.start, end_date: req.body.end, ...(req.body.returnedAt ? { returned_at: req.body.returnedAt } : {}) }).eq('id', Number(req.params.id)); if (error) throw error; res.json({ ok: true }); }));
   app.post('/_rentals_sweep', handle(async (req, res) => res.json(await rentals.sweep())));
@@ -533,7 +534,7 @@ app.get('/config', (req, res) => res.json({
   legalName: process.env.LEGAL_NAME || '', contactEmail: process.env.CONTACT_EMAIL || '',   // shown on the privacy notice and terms
   subscription: { enabled: subs.config.enabled, priceLabel: subCfg.priceLabel(), days: subs.config.days },
   jobs: { feePercent: jobs.feePercent, onlinePayment: jobs.onlinePayment() },
-  parts: { enabled: auth.PARTS.enabled, commissionPercent: parts.commissionPercent },
+  parts: { enabled: auth.PARTS.enabled, commissionPercent: parts.commissionPercent, onlinePayment: parts.onlinePayment() },
   rentals: { enabled: auth.RENTALS.enabled, commissionPercent: rentals.commissionPercent, onlinePayment: rentals.onlinePayment() },
   premium: { enabled: subCfg.premium.enabled, oilPerYear: subCfg.premium.oilPerYear, oilGapDays: subCfg.premium.oilGapDays,
     plans: subCfg.premiumPlans().map(p => ({ id: p.id, label: p.label, priceLabel: p.priceLabel, days: p.days })) }
