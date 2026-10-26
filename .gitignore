@@ -1,2 +1,4 @@
 node_modules/
 .env
+video-assets/
+VIDEO_BRIEF.md
