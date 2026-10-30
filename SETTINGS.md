@@ -99,7 +99,7 @@ and the company takes the card or deposit at pick-up. Cars 10 years or older get
 ## Payments
 
 See **PAYMENTS.md** for the service provider subscription (`SUBSCRIPTIONS_ENABLED`, `SUBSCRIPTION_PRICE`, `FYGARO_*`, ...)
-and Premium customers (`PREMIUM_ENABLED`, `PREMIUM_PRICE_MONTHLY`, `PREMIUM_PRICE_YEARLY`, `PREMIUM_PAY_OIL`, `PREMIUM_PAY_BRAKES`, ...).
+and Premium vehicles (`PREMIUM_ENABLED`, `PREMIUM_PRICE_CAR`, `PREMIUM_PRICE_SUV`, `PREMIUM_PRICE_SMALL_TRUCK`, `PREMIUM_PRICE_LARGE_TRUCK`, `PREMIUM_PAY_CAR`, ...).
 
 ## Database
 

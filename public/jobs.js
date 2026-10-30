@@ -276,7 +276,7 @@
       countdowns();
       const offer = dlg.querySelector('#push-offer'); if (offer && JobPush.supported()) JobPush.state().then(st => { if (st === 'off') JobPush.mountCard(offer, { api, audience: 'customer', compact: true }); });
       const fee = dlg.querySelector('#q-fee'), amt = dlg.querySelector('#q-amount');
-      if (fee && amt) { const upd = () => { const v = Number(String(amt.value).replace(/[,\sJ$]/g, '')); fee.textContent = v > 0 && !o.premiumPerk ? 'AutoAid fee ' + (data.feePercent || 5) + '%: ' + jmd(Math.round(v * (data.feePercent || 5)) / 100) + ' (you keep ' + jmd(v - Math.round(v * (data.feePercent || 5)) / 100) + ').' + (data.onlinePayment ? ' The customer pays online first, and you are paid after they confirm.' : ' The customer pays you in person.') : ''; }; amt.addEventListener('input', upd); upd(); }
+      if (fee && amt) { const upd = () => { const v = Number(String(amt.value).replace(/[,\sJ$]/g, '')); fee.textContent = v > 0 && !o.premiumPerk ? 'AutoAid fee ' + (typeof data.feePercent === 'number' ? data.feePercent : 5) + '%: ' + jmd(Math.round(v * (typeof data.feePercent === 'number' ? data.feePercent : 5)) / 100) + ' (you keep ' + jmd(v - Math.round(v * (typeof data.feePercent === 'number' ? data.feePercent : 5)) / 100) + ').' + (data.onlinePayment ? ' The customer pays online first, and you are paid after they confirm.' : ' The customer pays you in person.') : ''; }; amt.addEventListener('input', upd); upd(); }
     }
 
     async function refresh(keepScroll) {

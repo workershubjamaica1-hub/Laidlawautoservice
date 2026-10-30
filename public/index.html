@@ -25,6 +25,17 @@
   <div class="slides" role="region" aria-roledescription="carousel" aria-label="Services we provide"></div>
 </header>
 <main>
+  <div class="landing">
+    <section class="intro-head" aria-labelledby="introTitle">
+      <p class="kicker">AutoAid 24/7 &middot; Jamaica</p>
+      <h2 id="introTitle">Help for your vehicle, <span>when you need it.</span></h2>
+      <p class="lead">One app for roadside help, towing, repairs, parts, accessories and car rentals. Real people near you, a clear price before anything starts, and everything in one place.</p>
+      <ul class="points">
+        <li>Stuck on the road? Tap <b>Help</b> and nearby technicians are alerted.</li>
+        <li>See who is coming, with ratings and an <b>ID Verified</b> badge.</li>
+        <li>Agree the price first. Your chat and agreement are kept in the app.</li>
+      </ul>
+    </section>
   <div class="card">
     <h2 id="title">Welcome back</h2>
     <p class="sub" id="sub">Sign in to manage your vehicles and service requests.</p>
@@ -58,6 +69,7 @@
 
     <form id="form" novalidate>
       <button type="button" class="linkbtn" id="change-type" hidden>&larr; Change account type</button>
+      <div class="role-info" id="roleInfo" hidden></div>
       <div id="nameRow" hidden>
         <label for="name">Full name</label>
         <input id="name" autocomplete="name">
@@ -89,7 +101,7 @@
         <label for="experience">Your experience and qualifications</label>
         <textarea id="experience" placeholder="Years of experience, certifications, the kinds of vehicles you work on"></textarea>
         <p class="hint" id="feeHint" hidden></p>
-        <p class="hint">An admin reviews every application. You can sign in once you are approved.</p>
+        <p class="hint approval-hint">An admin reviews every application. You can sign in once you are approved.</p>
       </div>
       <div id="vendorFields" hidden>
         <label>What do you offer?</label>
@@ -102,7 +114,7 @@
         <input id="vbusiness" autocomplete="organization">
         <label for="vstock">Tell us about your business</label>
         <textarea id="vstock" placeholder="Parts: makes and models you stock, new or used. Rentals: the kinds of vehicles you rent out."></textarea>
-        <p class="hint">Customers collect parts from your address. An admin reviews every application, and you can sign in once you are approved.</p>
+        <p class="hint approval-hint">An admin reviews every application. You can sign in once you are approved.</p>
       </div>
       <label for="pw">Password</label>
       <div class="pw">
@@ -148,11 +160,61 @@
     </div>
     <p class="legal-links"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a> &middot; <a href="/agreements.html">Agreements</a></p>
   </div>
+    <section class="intro-more" aria-labelledby="moreTitle">
+      <h3 id="moreTitle">Everything for your vehicle, in one app</h3>
+      <div class="feats">
+      <div class="feat"><span class="fico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v2M5.6 6.6l1.4 1.4M18.4 6.6L17 8M6 18v-5a6 6 0 0 1 12 0v5M4 18h16M8 21h8"/></svg></span><div><b>Emergency help</b><p>Roadside assistance and towing. Share where you are, even with a photo, and technicians nearby are alerted right away.</p></div></div>
+      <div class="feat"><span class="fico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6zM9 12l2 2 4-4"/></svg></span><div><b>Know who is coming</b><p>Chat first, see ratings, and look for the ID Verified badge. Emergencies go to technicians whose ID has been checked.</p></div></div>
+      <div class="feat"><span class="fico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></span><div><b>Repairs your way</b><p>Mechanical, tires, electrical, maintenance and auto body work. Get a price and an arrival time before you agree.</p></div></div>
+      <div class="feat"><span class="fico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8"/></svg></span><div><b>Parts and accessories</b><p>Ask local sellers for parts, lights, tint and seat covers, get an offer, and have them fitted for you if you like.</p></div></div>
+      <div class="feat"><span class="fico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17h14M5 17v-6l2-5h10l2 5v6M3 11h2m14 0h2M8 17h.01M16 17h.01"/></svg></span><div><b>Rent a car by the day</b><p>Choose from local rental companies. See photos of all four sides, read the owner's rules, and agree before you book.</p></div></div>
+      <div class="feat"><span class="fico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></svg></span><div><b>Never miss a date</b><p>Reminders before your fitness, registration, insurance and oil change are due.</p></div></div>
+      </div>
+      <h3>How it works</h3>
+      <ol class="steps">
+        <li><b>Create a free account</b><span>It takes a minute. Customers, technicians and businesses each have their own sign-up.</span></li>
+        <li><b>Ask for help or book</b><span>Send an emergency, book a repair, order a part or request a rental.</span></li>
+        <li><b>Agree the price, get it done</b><span>Chat, agree, and rate the person who helped.</span></li>
+      </ol>
+      <p class="trust"><b>Stay safe, stay in the app.</b> Everything is recorded, so AutoAid 24/7 can help if something goes wrong. Every role has a clear <a href="/agreements.html">agreement</a>.</p>
+    </section>
+  </div>
 </main>
 <script>
 const $ = id => document.getElementById(id);
 
 let mode = 'login';
+const pct = (v, fallback) => (typeof v === 'number' ? v : fallback);   // 0 means no fee, and must not turn back into the old default
+let CFG = {};   // the site's public settings (fees, what is switched on); filled in below
+
+// what each kind of account is for, shown above the sign-up form
+const ROLE_INFO = {
+  register: () => ['What you are signing up for', [
+    'It is <b>free to join</b>. Add your vehicles and get reminders before fitness, registration, insurance or an oil change is due.',
+    'Tap <b>Help</b> for roadside assistance or a tow: nearby technicians are alerted and you see who is coming.',
+    'Book repairs, order parts and accessories (fitted for you if you like), and rent cars from local companies.',
+    'Agree the price before anything starts. Your chat and agreement are kept in the app.'
+  ], 'You will need your phone number, address, parish and a photo of your vehicle, so a technician can find you.'],
+  tech: () => ['What you are signing up for', [
+    'Get new jobs and emergencies on your phone, for your kind of work in your parish.',
+    'Set your own price and arrival time, and chat with the customer first.',
+    'Build your name with ratings. Emergency jobs go to technicians whose ID AutoAid 24/7 has checked.',
+    (pct(CFG.jobs && CFG.jobs.feePercent, 5) > 0 ? 'AutoAid 24/7 keeps ' + pct(CFG.jobs && CFG.jobs.feePercent, 5) + '% of each job. ' : 'There is no AutoAid fee on jobs at the moment. ') + (CFG.subscription && CFG.subscription.enabled && CFG.subscription.priceLabel ? 'There is also a monthly subscription of ' + CFG.subscription.priceLabel + '.' : 'There is no monthly subscription at the moment.')
+  ], 'Only choose the kinds of work you can really do. You agree to the Service Provider Agreement below.'],
+  vendor: () => ['What you are signing up for', [
+    'Receive customers in a chat, send them an offer, and get paid for what you sell or rent out.',
+    '<b>Parts and accessories:</b> offer fitting too, if you do it. ' + (pct(CFG.parts && CFG.parts.commissionPercent, 3) > 0 ? 'AutoAid 24/7 keeps ' + pct(CFG.parts && CFG.parts.commissionPercent, 3) + '% of each sale.' : 'There is no AutoAid commission at the moment.'),
+    '<b>Rentals:</b> list vehicles with four photos, set your own rules (no smoking, no pets and so on) and a deposit. ' + (pct(CFG.rentals && CFG.rentals.commissionPercent, 5) > 0 ? 'AutoAid 24/7 keeps ' + pct(CFG.rentals && CFG.rentals.commissionPercent, 5) + '% of the rent.' : 'There is no AutoAid commission at the moment.'),
+    'You agree to a clear agreement for each thing you offer, shown below.'
+  ], 'Add your bank details later, in My account, so we can pay you.']
+};
+function renderRoleInfo() {
+  const box = $('roleInfo'), f = ROLE_INFO[mode];
+  if (!f) { box.hidden = true; return; }
+  const [title, items, note] = f();
+  box.innerHTML = '<h4>' + title + '</h4><ul>' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>' + (note ? '<p class="note">' + note + '</p>' : '');
+  box.hidden = false;
+}
 
 // Where each kind of user lands after signing in
 const home = role => role === 'customer' ? '/app.html' : role === 'vendor' ? '/vendor.html' : '/admin.html';
@@ -171,6 +233,8 @@ const home = role => role === 'customer' ? '/app.html' : role === 'vendor' ? '/v
 
 // If monthly subscriptions are on, tell applicants up front what it costs
 fetch('/config').then(r => r.json()).then(c => {
+  CFG = c; renderRoleInfo();
+  if (c.signup && c.signup.emailVerification) document.querySelectorAll('.approval-hint').forEach(h => { h.textContent = 'We email you a 6-digit code to check your email address. Enter it and you can sign in right away.'; });
   const pOn = !!(c.parts && c.parts.enabled), rOn = !!(c.rentals && c.rentals.enabled);
   if (pOn || rOn) $('choose-vendor').hidden = false;
   $('offer-parts-row').hidden = !pOn; $('offer-accessories-row').hidden = !pOn; $('offer-rentals-row').hidden = !rOn;
@@ -226,7 +290,7 @@ const COPY = {
   login:    { title: 'Welcome back', sub: 'Customers and service providers sign in here.', button: 'Sign in' },
   create:   { title: 'Create an account', sub: 'What would you like to do?', button: '' },
   register: { title: 'Create your customer account', sub: 'So the nearest technician can reach you.', button: 'Create account' },
-  vendor:   { title: 'Join as a business', sub: 'Sell auto parts, rent out vehicles, or both. Customers collect from you and pay you directly.', button: 'Submit application' },
+  vendor:   { title: 'Join as a business', sub: 'Sell parts or accessories, or rent out vehicles. Customers ask you in a chat and you send an offer.', button: 'Submit application' },
   tech:     { title: 'Join as a service provider', sub: 'Mechanics, tire, electrical, roadside and towing professionals: apply to take jobs in your parish.', button: 'Submit application' }
 };
 // the agreements this person is accepting depend on who they are signing up as
@@ -263,7 +327,7 @@ function setMode(m) {
   $('rememberRow').hidden = m === 'tech' || m === 'vendor';
   $('email').autocomplete = creating ? 'email' : 'username';   // so the browser or phone offers to fill and save the password
   if (m === 'login' && !$('email').value) { try { $('email').value = localStorage.getItem('rememberedEmail') || ''; } catch (_) {} }
-  updateAgree();
+  updateAgree(); renderRoleInfo();
   $('pw').autocomplete = creating ? 'new-password' : 'current-password';
   $('tab-login').setAttribute('aria-selected', m === 'login');
   $('tab-create').setAttribute('aria-selected', m !== 'login');

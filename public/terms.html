@@ -58,13 +58,14 @@
     <li>Technicians may add a photo of finished work to their profile and to your job.</li>
   </ul>
 
-  <h2>6. Premium membership (customers)</h2>
-  <p id="premiumTerms">Premium is a paid membership with free servicing perks. Details, prices and limits are shown in the app when Premium is available.</p>
+  <h2>6. Premium membership (for a vehicle)</h2>
+  <p id="premiumTerms">Premium is a yearly membership for one vehicle. Each membership year includes free services (a diagnostic check, then servicing). The price depends on the type of vehicle and is shown in the app when Premium is available.</p>
   <ul>
-    <li>You can pay monthly or yearly. Membership runs for the period you paid for and ends then, unless you pay again. We do not charge you automatically.</li>
-    <li>Free oil and filter changes are limited per membership year, and only one can be booked within a short period of the last one (shown in the app).</li>
-    <li>The yearly brake disc pad check is free, and the labour to replace the pads is free if they need replacing. <strong>You pay for the pad parts</strong> and for any other work or parts beyond the free service.</li>
-    <li>Free services are for the vehicles in your account and are not transferable. If you cancel a booking, the free service is returned to you.</li>
+    <li>A Premium membership belongs to <strong>one vehicle</strong>, the one you choose when you join. It runs for 12 months from the day it starts and ends then, unless you pay again. We do not charge you automatically.</li>
+    <li>Each membership year includes the number of services shown in the app (two). A service is a <strong>diagnostic check followed by servicing</strong> (an oil and filter change), done by an AutoAid 24/7 technician. Services must be at least the number of days apart shown in the app.</li>
+    <li>AutoAid 24/7 provides the technician. <strong>You supply the oil and the filter</strong>, or agree a price with the technician in the chat if the technician supplies them. You pay for any parts, oil or other work beyond the free service.</li>
+    <li>Free services are for the vehicle you joined and are not transferable to another vehicle or person. If you cancel a booking, the free service is returned to you. Unused services do not carry over to the next year.</li>
+    <li>Premium is offered for the vehicle types and in the areas shown in the app. The technician decides when they can come, and AutoAid 24/7 does not promise a particular time.</li>
     <li>Membership fees are paid in advance. Refunds are considered case by case. Contact us if there is a problem with a payment.</li>
   </ul>
 
@@ -126,9 +127,8 @@ fetch('/config').then(r => r.json()).then(c => {
   if (bits.length) document.getElementById('contactLine').textContent = 'If you have a question about these terms, contact us by ' + bits.join(' or ') + '.';
   const p = c.premium;
   if (p && p.enabled) {
-    const plans = (p.plans || []).map(x => x.label.toLowerCase() + ' (' + x.priceLabel + ')').join(' or ');
-    document.getElementById('premiumTerms').textContent = 'Premium is a paid membership with free servicing perks: ' + p.oilPerYear +
-      ' free oil and filter changes each membership year (at least ' + p.oilGapDays + ' days apart) and one free brake disc pad check each year.' + (plans ? ' You can join ' + plans + '.' : '');
+    document.getElementById('premiumTerms').textContent = 'Premium is a yearly membership for one vehicle with ' + p.servicesPerYear + ' free services a year (a diagnostic check, then servicing).' +
+      ((p.tiers || []).length ? ' Prices: ' + p.tiers.map(x => x.label.toLowerCase() + ' ' + x.priceLabel).join(', ') + ' a year.' : '');
   }
 }).catch(() => {});
 </script>

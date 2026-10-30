@@ -174,7 +174,7 @@
         <span></span>
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Owner</th><th>Vehicle</th><th>Year</th><th>VIN</th><th>Jobs</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Owner</th><th>Vehicle</th><th>Year</th><th>VIN</th><th>Jobs</th><th>Premium</th><th></th></tr></thead>
         <tbody id="vehBody"></tbody>
       </table></div>
       <p class="empty" id="vehEmpty" hidden>No matching vehicles.</p>
@@ -882,7 +882,7 @@ function renderRequests() {
       el('td', { textContent: r.id }),
       el('td', {}, el('strong', { textContent: vehicleName(r.vehicle) }), el('br'), ...customerCell(r.vehicle && r.vehicle.account, r.vehicle && r.vehicle.owner)),
       el('td', { className: 'desc' }, el('span', { className: 'badge', textContent: r.category, style: 'margin-right:6px' }),
-        r.premiumPerk ? el('span', { className: 'badge', style: 'margin-right:6px;background:#1D2731;color:#F2B705', textContent: 'Premium: free ' + (r.premiumPerk === 'oil' ? 'oil and filter change' : 'brake pad check') }) : null, r.description),
+        r.premiumPerk ? el('span', { className: 'badge', style: 'margin-right:6px;background:#1D2731;color:#F2B705', textContent: 'Premium: free ' + (r.premiumPerk === 'oil' ? 'oil and filter change' : r.premiumPerk === 'brakes' ? 'brake pad check' : 'service (diagnostic check and servicing)') }) : null, r.description),
       jobCell,
       el('td', { textContent: fmtDate(r.createdAt) }),
       el('td', { className: 'act' }, del));
@@ -897,6 +897,15 @@ function renderVehicles() {
   $('vehEmpty').hidden = rows.length > 0;
   $('vehBody').replaceChildren(...rows.map(v => {
     const n = jobs.get(v.id) || 0;
+    const prem = v.premium || { status: 'not-required' };
+    const premOn = !!(subInfo && subInfo.premium && subInfo.premium.enabled) && me.role === 'admin';
+    const addPrem = el('button', { className: 'btn ghost small', textContent: 'Add Premium days', hidden: !premOn });
+    addPrem.addEventListener('click', () => {
+      const box = el('input', { type: 'number', min: 1, max: 732, value: 365, ariaLabel: 'Premium days to add', style: 'width:70px;padding:4px 6px' });
+      const ok = el('button', { className: 'btn safety small', textContent: 'Add' });
+      ok.addEventListener('click', async () => { try { await api('/admin/vehicles/' + v.id + '/premium', { method: 'POST', body: JSON.stringify({ days: Number(box.value) }) }); await load(); } catch (err) { $('appError').textContent = err.message; } });
+      addPrem.replaceWith(box, ' ', ok); box.focus();
+    });
     const del = el('button', { className: 'btn danger small', textContent: 'Delete', hidden: me.role !== 'admin' });
     armDelete(del, async () => { await api('/admin/vehicle/' + v.id, { method: 'DELETE' }); await load(); },
       n ? `Delete + ${n} job${n > 1 ? 's' : ''}?` : 'Confirm?');
@@ -904,20 +913,21 @@ function renderVehicles() {
       el('td', { textContent: v.id }), el('td', {}, ...(v.account ? customerCell(v.account) : [v.owner])),
       el('td', {}, v.type, el('br'), el('small', { textContent: v.category })),
       el('td', { textContent: v.year }), el('td', { textContent: v.vin || '—' }),
-      el('td', { textContent: n }), el('td', { className: 'act' }, del));
+      el('td', { textContent: n }), el('td', {}, prem.status === 'active' ? el('span', { className: 'badge completed', textContent: 'Premium until ' + fmtDate(prem.paidUntil) }) : prem.status === 'expired' ? el('span', { className: 'badge off', textContent: 'Premium ended' }) : prem.status === 'none' && prem.tier ? el('small', { textContent: prem.tier }) : null), el('td', { className: 'act' }, addPrem, ' ', del));
   }));
 }
 
 function premiumKids() {
   const p = subInfo.premium;
   if (!p || !p.enabled) {
-    return [el('p', { className: 'empty', style: 'margin:12px 0 0', textContent: 'Premium customer membership is OFF. To switch it on, follow PAYMENTS.md and set PREMIUM_ENABLED=true in Render.' })];
+    return [el('p', { className: 'empty', style: 'margin:12px 0 0', textContent: 'Premium membership is OFF. To switch it on, follow PAYMENTS.md and set PREMIUM_ENABLED=true in Render.' })];
   }
-  const plans = p.plans.map(x => x.label + ' ' + x.priceLabel + (x.saving ? ' (' + x.saving + '% cheaper per year)' : '')).join(', ');
+  const priced = p.tiers.filter(x => x.price > 0);
+  const tiers = priced.map(x => x.label + ' ' + x.priceLabel + ' a year (technician paid ' + (x.pay > 0 ? money(x.pay) : 'NOTHING: set the pay') + ' per service)').join('; ');
   return [
-    el('strong', { style: 'display:block;margin-top:12px', textContent: 'Premium customers are ON: ' + (plans || 'no plan has a price yet') }),
-    el('p', { style: 'margin:6px 0 0', textContent: p.activeMembers + ' active member' + (p.activeMembers === 1 ? '' : 's') + '. Free oil and filter changes: ' + p.oilPerYear + ' a year, one every ' + p.oilGapDays + ' days at most. One free brake pad check a year (the customer pays for pad parts).' }),
-    el('p', { style: 'margin:6px 0 0', textContent: 'AutoAid pays technicians ' + money(p.payOil) + ' per oil and filter change and ' + money(p.payBrakes) + ' per brake pad check.' })
+    el('strong', { style: 'display:block;margin-top:12px', textContent: 'Premium is ON, one membership for each vehicle: ' + (tiers || 'no vehicle type has a price yet') }),
+    el('p', { style: 'margin:6px 0 0', textContent: p.activeMembers + ' active member vehicle' + (p.activeMembers === 1 ? '' : 's') + '. Each gets ' + p.servicesPerYear + ' services a year (a diagnostic check and servicing), at least ' + p.gapDays + ' days apart. The customer supplies the oil and filter.' }),
+    priced.some(x => !(x.pay > 0)) ? el('p', { className: 'error', style: 'margin:6px 0 0', textContent: 'Some vehicle types have a price but no technician pay. Set PREMIUM_PAY_CAR, PREMIUM_PAY_SUV, PREMIUM_PAY_SMALL_TRUCK and PREMIUM_PAY_LARGE_TRUCK in Render.' }) : null
   ];
 }
 
@@ -1044,19 +1054,6 @@ function renderUsers() {
       : u.subscription.status === 'none' ? 'Subscription: not paid'
       : u.subscription.status === 'active' ? 'Paid until ' + dateLabel(u.subscription.paidUntil)
       : u.subscription.status === 'grace' ? 'Ended ' + dateLabel(u.subscription.paidUntil) + ' (grace)' : 'Expired ' + dateLabel(u.subscription.paidUntil);
-    const premOn = !!(subInfo && subInfo.premium && subInfo.premium.enabled && u.role === 'customer');
-    const premText = !premOn || !u.premium || u.premium.status === 'none' || u.premium.status === 'not-required' ? null
-      : u.premium.status === 'active' ? 'Premium until ' + dateLabel(u.premium.paidUntil) : 'Premium ended ' + dateLabel(u.premium.paidUntil);
-    const addPremium = el('button', { className: 'btn ghost small', textContent: 'Add Premium days', hidden: !premOn });
-    addPremium.addEventListener('click', () => {
-      const box = el('input', { type: 'number', min: 1, max: 732, value: 30, ariaLabel: 'Premium days to add', style: 'width:70px;padding:4px 6px' });
-      const ok = el('button', { className: 'btn safety small', textContent: 'Add' });
-      ok.addEventListener('click', async () => {
-        try { await api('/admin/users/' + u.id + '/premium', { method: 'POST', body: JSON.stringify({ days: Number(box.value) }) }); await load(); }
-        catch (err) { $('appError').textContent = err.message; }
-      });
-      addPremium.replaceWith(box, ' ', ok); box.focus();
-    });
     const addDays = el('button', { className: 'btn ghost small', textContent: 'Add days', hidden: !(subInfo && subInfo.enabled && u.role === 'staff') });
     addDays.addEventListener('click', () => {
       const box = el('input', { type: 'number', min: 1, max: 366, value: subInfo.days, ariaLabel: 'Days to add', style: 'width:70px;padding:4px 6px' });
@@ -1082,8 +1079,8 @@ function renderUsers() {
       el('td', {}, el('span', { className: 'who', textContent: u.email }), u.phone ? el('span', { className: 'who', textContent: u.phone }) : null, u.address ? el('small', { className: 'who', textContent: u.address }) : null),
       el('td', {}, role),
       el('td', {}, parish),
-      el('td', {}, el('span', { className: u.active ? 'badge completed' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), (subText || premText) ? el('br') : null, (subText || premText) ? el('small', { textContent: subText || premText }) : null),
-      el('td', { className: 'act' }, idBtn, ' ', verifyBtn, ' ', addPremium, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
+      el('td', {}, el('span', { className: u.active ? 'badge completed' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), (subText) ? el('br') : null, (subText) ? el('small', { textContent: subText }) : null),
+      el('td', { className: 'act' }, idBtn, ' ', verifyBtn, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }
 async function patchUser(id, body) {

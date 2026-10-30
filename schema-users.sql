@@ -480,6 +480,14 @@ alter table part_orders drop constraint if exists part_orders_refund_status_chec
 alter table part_orders add constraint part_orders_refund_status_check check (refund_status in ('none', 'due', 'done'));
 create unique index if not exists part_orders_txn_idx on part_orders(transaction_id) where transaction_id is not null;
 
+-- Premium is now one membership per VEHICLE (priced by vehicle type); each membership year gives 2 services (diagnostic check and servicing)
+alter table vehicles add column if not exists premium_paid_until timestamptz;
+alter table vehicles add column if not exists premium_year_start timestamptz;
+alter table service_requests drop constraint if exists service_requests_premium_perk_check;
+alter table service_requests add constraint service_requests_premium_perk_check check (premium_perk in ('oil', 'brakes', 'service'));
+-- when AutoAid has paid the technician for a Premium service
+alter table service_requests add column if not exists platform_pay_settled_at timestamptz;
+
 -- Make Supabase's API notice the new columns and table straight away
 notify pgrst, 'reload schema';
 schema-users

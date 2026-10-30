@@ -60,9 +60,11 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SEC
 });
 
 // Database columns are snake_case; the API keeps camelCase for the frontend
+const { premiumStatusOf, tierOfCategory } = require('./subscriptionConfig');
 const dateOnly = v => (v ? String(v).slice(0, 10) : null);
 const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.category, year: r.year, vin: r.vin, createdAt: r.created_at,
-  reminders: { fitness: dateOnly(r.fitness_due), registration: dateOnly(r.registration_due), insurance: dateOnly(r.insurance_due), oil: dateOnly(r.oil_due) } });
+  reminders: { fitness: dateOnly(r.fitness_due), registration: dateOnly(r.registration_due), insurance: dateOnly(r.insurance_due), oil: dateOnly(r.oil_due) },
+  premium: (st => ({ status: st.status, paidUntil: st.paidUntil, daysLeft: st.daysLeft, tier: (tierOfCategory(r.category) || {}).label || null }))(premiumStatusOf(r)) });   // this vehicle's Premium membership
 const toRequest = r => ({
   id: r.id, vehicleId: r.vehicle_id, category: r.category, description: r.description, status: r.status, createdAt: r.created_at, updatedAt: r.updated_at,
   technicianId: r.technician_id || null, amount: r.amount == null ? null : Number(r.amount),
@@ -530,14 +532,15 @@ app.put('/admin/price-guide', auth.requireRole('admin'), handle(async (req, res)
 // Public settings the pages need (the shop's phone number for the call buttons)
 const subCfg = require('./subscriptionConfig');
 app.get('/config', (req, res) => res.json({
+  signup: { emailVerification: auth.VERIFY.enabled },   // the sign-in page tells people whether a 6-digit email code or an admin approves them
   businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '',
   legalName: process.env.LEGAL_NAME || '', contactEmail: process.env.CONTACT_EMAIL || '',   // shown on the privacy notice and terms
   subscription: { enabled: subs.config.enabled, priceLabel: subCfg.priceLabel(), days: subs.config.days },
   jobs: { feePercent: jobs.feePercent, onlinePayment: jobs.onlinePayment() },
   parts: { enabled: auth.PARTS.enabled, commissionPercent: parts.commissionPercent, onlinePayment: parts.onlinePayment() },
   rentals: { enabled: auth.RENTALS.enabled, commissionPercent: rentals.commissionPercent, onlinePayment: rentals.onlinePayment() },
-  premium: { enabled: subCfg.premium.enabled, oilPerYear: subCfg.premium.oilPerYear, oilGapDays: subCfg.premium.oilGapDays,
-    plans: subCfg.premiumPlans().map(p => ({ id: p.id, label: p.label, priceLabel: p.priceLabel, days: p.days })) }
+  premium: { enabled: subCfg.premium.enabled, servicesPerYear: subCfg.premium.servicesPerYear,
+    tiers: subCfg.premiumTiers().filter(t => t.price > 0).map(t => ({ id: t.id, label: t.label, priceLabel: t.priceLabel })) }
 }));
 
 // --- Staff/admin portal API (adminRoutes.js) ---

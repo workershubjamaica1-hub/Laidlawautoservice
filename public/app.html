@@ -188,7 +188,7 @@
 
   <!-- PREMIUM -->
   <div class="view" id="view-premium" data-view="premium" hidden>
-    <div class="page-head"><div><p class="eyebrow">Membership</p><h1>AutoAid Premium</h1><p class="welcome-sub">Free servicing all year for members.</p></div></div>
+    <div class="page-head"><div><p class="eyebrow">Membership</p><h1>AutoAid Premium</h1><p class="welcome-sub">Two services a year for each vehicle you join.</p></div></div>
     <div class="narrow"><section class="premium" id="premium-box" aria-labelledby="premium-h" hidden></section></div>
   </div>
 
@@ -616,7 +616,7 @@ function renderVehicles() {
     const brand = String(v.type).split(/\s+/)[0].toUpperCase();
     const rm = '<button class="remove" data-remove="' + v.id + '" aria-label="Remove ' + esc(v.type) + '" title="Remove vehicle">Remove</button>';
     return '<div class="vehicle feat"><div class="vtile"><span class="ic" style="--m: var(--d-car)"></span><em>' + esc(brand) + '</em></div>' +
-      '<h3>' + esc(v.year) + ' ' + esc(v.type) + '</h3><small>' + esc(labelOf(state.categories.vehicle, v.category)) + '</small>' +
+      '<h3>' + esc(v.year) + ' ' + esc(v.type) + '</h3><small>' + esc(labelOf(state.categories.vehicle, v.category)) + '</small>' + (v.premium && v.premium.status === 'active' ? '<span class="due ok" style="margin:4px 0 0">Premium until ' + esc(new Date(v.premium.paidUntil).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })) + '</span>' : '') +
       '<div class="vmeta"><div>' + I('doc') + '<span><small>VIN</small><b>' + (v.vin ? esc(v.vin) : 'Not added') + '</b></span></div>' +
       '<div>' + I('user') + '<span><small>Owner</small><b>' + esc(v.owner) + '</b></span></div></div>' + remindersBlock(v) + rm + '</div>';
   }).join('') + '</div>';
@@ -1003,49 +1003,41 @@ document.addEventListener('click', async (e) => {
   } catch (err) { alert(err.message); send.disabled = false; }
 });
 
-// --- Premium membership ---
-let premiumPerkOpen = null;   // which free service the booking form is open for
-const PERK_TEXT = { oil: 'Free oil and filter change', brakes: 'Yearly brake disc pad check' };
+// --- Premium membership: one membership for each vehicle ---
+let premiumBook = null;   // the vehicle a free service is being booked for: { id, name }
 const longDate = iso => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 
-function plansHtml(p, label) {
-  return '<div class="plans" role="group" aria-label="' + esc(label) + '">' + p.plans.map(pl =>
-    '<button class="plan" type="button" data-plan="' + esc(pl.id) + '"' + (p.canPayOnline ? '' : ' disabled') + '><strong>' + esc(pl.label) + '</strong><span>' + esc(pl.priceLabel) +
-    (pl.id === 'yearly' ? ' for 12 months' : ' a month') + '</span>' + (pl.saving ? '<small>Save ' + pl.saving + '% a year</small>' : '') + '</button>').join('') + '</div>' +
-    (p.canPayOnline ? '<p class="empty" style="font-size:14px;margin-top:8px">You pay securely by card on the payment page. Your Premium starts as soon as the payment goes through.</p>'
-      : '<p class="error">Online payment is not set up yet. Please contact AutoAid 24/7 to join.</p>');
+function premiumVehicleCard(p, v) {
+  const head = '<div class="pv-head"><div><b>' + esc(v.name) + '</b><small>' + esc(v.tier || 'Not covered') + '</small></div>';
+  if (!v.covered) return '<div class="pv">' + head + '</div><p class="empty">Premium does not cover this type of vehicle.</p></div>';
+  if (!v.offered) return '<div class="pv">' + head + '</div><p class="empty">Premium for this type of vehicle is coming soon.</p></div>';
+  if (v.status !== 'active') {
+    const expired = v.status === 'expired';
+    return '<div class="pv">' + head + '<span class="pv-price"><b>' + esc(v.priceLabel) + '</b><small>for 12 months</small></span></div>' +
+      (expired ? '<p class="empty" style="margin:0 0 8px">Ended on ' + esc(longDate(v.paidUntil)) + '. Renew to use your free services again.</p>' : '') +
+      '<button class="btn small" type="button" data-join="' + v.id + '"' + (p.canPayOnline ? '' : ' disabled') + '>' + (expired ? 'Renew Premium' : 'Join Premium') + ' for this vehicle</button></div>';
+  }
+  const s = v.services, note = s.left === 0 ? 'All used for this membership year.' : s.nextAvailable ? 'Next one available from ' + esc(longDate(s.nextAvailable)) + '.' : 'Available now.';
+  return '<div class="pv on">' + head + '<span class="pv-member">Member</span></div>' +
+    '<p style="margin:0 0 6px">Active until <strong>' + esc(longDate(v.paidUntil)) + '</strong> (' + v.daysLeft + ' day' + (v.daysLeft === 1 ? '' : 's') + ' left).</p>' +
+    '<div class="perk"><strong>Free services</strong><div class="count">' + s.used + ' of ' + s.limit + ' used</div><p>' + note + '</p>' +
+      '<button class="btn small safety" type="button" data-svc="' + v.id + '" data-name="' + esc(v.name) + '"' + (s.canBook ? '' : ' disabled') + '>Book a free service</button></div>' +
+    '<button class="linkbtn" type="button" data-join="' + v.id + '"' + (p.canPayOnline ? '' : ' disabled') + '>Add another 12 months</button></div>';
 }
 
 function renderPremium(p) {
   const box = $('premium-box');
-  const benefits = '<ul><li><strong>' + p.oilPerYear + ' free oil and filter changes</strong> every membership year (about one every 3 months)</li>' +
-    '<li><strong>A free yearly brake disc pad check</strong>, and the labour to change the pads is free if they need replacing. You only pay for the pad parts.</li></ul>';
-  if (p.status !== 'active') {
-    const expired = p.status === 'expired';
-    box.innerHTML = '<h2 id="premium-h">AutoAid Premium</h2><p style="margin:0">' + (expired
-      ? 'Your Premium membership ended on ' + esc(longDate(p.paidUntil)) + '. Renew to use your free services again.'
-      : 'Join Premium and get free servicing all year:') + '</p>' + benefits + (p.plans.length ? plansHtml(p, 'Choose a plan') : '<p class="empty">Premium plans are coming soon.</p>');
-    return;
-  }
-  const o = p.perks.oil, b = p.perks.brakes;
-  const oilNote = o.left === 0 ? 'All used for this membership year.' : (o.nextAvailable ? 'Next one available from ' + esc(longDate(o.nextAvailable)) + '.' : 'Available now.');
-  const brakeNote = b.canBook ? 'Available now. Pad parts are paid by you if they need replacing.' : 'Used for this membership year.';
-  box.innerHTML = '<h2 id="premium-h">AutoAid Premium<span class="member">Member</span></h2>' +
-    '<p style="margin:0">Active until <strong>' + esc(longDate(p.paidUntil)) + '</strong> (' + p.daysLeft + ' day' + (p.daysLeft === 1 ? '' : 's') + ' left).</p>' +
-    '<div class="perks">' +
-      '<div class="perk"><strong>' + PERK_TEXT.oil + '</strong><div class="count">' + o.used + ' of ' + o.limit + ' used</div><p>' + oilNote + '</p>' +
-        '<button class="btn small safety" type="button" data-perk="oil"' + (o.canBook ? '' : ' disabled') + '>Book free oil change</button></div>' +
-      '<div class="perk"><strong>' + PERK_TEXT.brakes + '</strong><div class="count">' + (b.used ? 'Used' : 'Not used yet') + '</div><p>' + brakeNote + '</p>' +
-        '<button class="btn small safety" type="button" data-perk="brakes"' + (b.canBook ? '' : ' disabled') + '>Book free brake check</button></div>' +
-    '</div>' +
+  const intro = '<h2 id="premium-h">AutoAid Premium</h2><p style="margin:0 0 6px">Keep each vehicle serviced all year. For every vehicle you join, you get <strong>' + p.servicesPerYear + ' services</strong> a year. Each service is a <strong>diagnostic check, then servicing</strong> (an oil and filter change), done by an AutoAid technician.</p>' +
+    '<p class="empty" style="font-size:14px;margin:0 0 12px">You supply the oil and filter. If the technician supplies them, agree the price in the chat first. Services are at least ' + p.gapDays + ' days apart.</p>';
+  const list = p.vehicles.length ? p.vehicles.map(v => premiumVehicleCard(p, v)).join('') : '<p class="empty">Add your vehicle in <a href="#garage">My garage</a> first, then join Premium for it.</p>';
+  const pay = p.canPayOnline ? '<p class="empty" style="font-size:14px;margin-top:10px">You pay securely by card on the payment page. Premium starts for that vehicle as soon as the payment goes through.</p>' : '<p class="error" style="margin-top:10px">Online payment is not set up yet. Please contact AutoAid 24/7 to join.</p>';
+  box.innerHTML = intro + '<div class="pvlist">' + list + '</div>' + pay +
     '<form id="perk-form" hidden novalidate><h3 id="perk-title"></h3>' +
-      '<label for="perk-vehicle">Which vehicle?</label><select id="perk-vehicle"></select>' +
-      '<label for="perk-note">Anything the technician should know? (optional)</label><input id="perk-note" maxlength="300" placeholder="e.g. my oil type, or a noise when braking">' +
+      '<label for="perk-note">Anything the technician should know? (optional)</label><input id="perk-note" maxlength="300" placeholder="e.g. the oil I use, or a noise or warning light">' +
       '<button class="btn safety" id="perk-send" type="submit">Book it</button> <button class="btn ghost" id="perk-cancel" type="button">Cancel</button>' +
       '<p class="error" id="perk-error" role="alert"></p></form>' +
-    '<p class="found" id="perk-done" role="status" hidden></p>' +
-    (p.plans.length ? '<details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600">Extend my membership</summary><div style="margin-top:8px">' + plansHtml(p, 'Extend your membership') + '</div></details>' : '');
-  if (premiumPerkOpen) openPerkForm(premiumPerkOpen);
+    '<p class="found" id="perk-done" role="status" hidden></p>';
+  if (premiumBook) openPerkForm(premiumBook);
 }
 
 async function loadPremium() {
@@ -1065,63 +1057,64 @@ function updateMember(p) {
   if (location.hash === '#premium') showView('premium');
   chip.hidden = true; chip.onclick = null; chip.classList.remove('ok', 'warn', 'act');
   if (!p || !p.enabled) { title.textContent = 'Standard'; $('who-sub').textContent = 'Customer'; return; }
-  if (p.status === 'active') { title.textContent = 'Premium'; chip.textContent = 'Active'; chip.classList.add('ok'); chip.hidden = false; $('who-sub').textContent = 'Premium member'; return; }
+  const on = p.vehicles.filter(v => v.status === 'active').length, lapsed = p.vehicles.some(v => v.status === 'expired');
+  if (on) { title.textContent = 'Premium'; chip.textContent = on + ' vehicle' + (on > 1 ? 's' : ''); chip.classList.add('ok'); chip.hidden = false; $('who-sub').textContent = 'Premium member'; return; }
   $('who-sub').textContent = 'Customer';
-  if (p.status === 'expired') { title.textContent = 'Premium'; chip.textContent = 'Expired'; chip.classList.add('warn'); }
+  if (lapsed) { title.textContent = 'Premium'; chip.textContent = 'Expired'; chip.classList.add('warn'); }
   else { title.textContent = 'Standard'; chip.textContent = 'Join Premium'; chip.classList.add('act'); }
   chip.hidden = false;
 }
 
-function openPerkForm(perk) {
-  premiumPerkOpen = perk;
+function openPerkForm(v) {
+  premiumBook = v;
   const f = $('perk-form'); if (!f) return;
-  $('perk-title').textContent = 'Book: ' + PERK_TEXT[perk];
-  $('perk-vehicle').innerHTML = state.vehicles.length
-    ? state.vehicles.map(v => '<option value="' + v.id + '">' + esc(v.year) + ' ' + esc(v.type) + '</option>').join('')
-    : '<option value="">Add a vehicle to your garage first</option>';
-  $('perk-error').textContent = state.vehicles.length ? '' : 'Add your vehicle in "Your garage" below, then book.';
+  $('perk-title').textContent = 'Book a free service: ' + v.name;
+  $('perk-error').textContent = '';
   f.hidden = false;
 }
 
 $('premium-box').addEventListener('click', async (e) => {
-  const plan = e.target.closest('[data-plan]');
-  if (plan) {
-    plan.disabled = true;
-    try { const r = await api('/premium/checkout', { method: 'POST', body: { plan: plan.dataset.plan } }); location.href = r.url; }
-    catch (err) { alert(err.message); plan.disabled = false; }
+  const join = e.target.closest('[data-join]');
+  if (join) {
+    join.disabled = true;
+    try { const r = await api('/premium/checkout', { method: 'POST', body: { vehicleId: Number(join.dataset.join) } }); location.href = r.url; }
+    catch (err) { alert(err.message); join.disabled = false; }
     return;
   }
-  const perk = e.target.closest('[data-perk]');
-  if (perk) { openPerkForm(perk.dataset.perk); $('perk-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return; }
-  if (e.target.id === 'perk-cancel') { premiumPerkOpen = null; $('perk-form').hidden = true; }
+  const svc = e.target.closest('[data-svc]');
+  if (svc) { openPerkForm({ id: Number(svc.dataset.svc), name: svc.dataset.name }); $('perk-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return; }
+  if (e.target.id === 'perk-cancel') { premiumBook = null; $('perk-form').hidden = true; }
 });
 $('premium-box').addEventListener('submit', async (e) => {
   if (e.target.id !== 'perk-form') return;
   e.preventDefault();
   $('perk-error').textContent = '';
-  const vehicleId = Number($('perk-vehicle').value);
-  if (!vehicleId) { $('perk-error').textContent = 'Add a vehicle to your garage first.'; return; }
+  if (!premiumBook) return;
   $('perk-send').disabled = true;
   try {
-    const redeemed = await api('/premium/redeem', { method: 'POST', body: { perk: premiumPerkOpen, vehicleId, note: $('perk-note').value } });
-    const label = PERK_TEXT[premiumPerkOpen];
-    premiumPerkOpen = null;
+    const redeemed = await api('/premium/redeem', { method: 'POST', body: { vehicleId: premiumBook.id, note: $('perk-note').value } });
+    const name = premiumBook.name;
+    premiumBook = null;
     await Promise.all([loadPremium(), (async () => { state.requests = await api('/service-requests'); renderRequests(); })()]);
-    const done = $('perk-done'); if (done) { done.textContent = label + ' booked. We are finding a technician for you.'; done.hidden = false; }
+    const done = $('perk-done'); if (done) { done.textContent = 'Free service booked for your ' + name + '. We are finding a technician for you.'; done.hidden = false; }
     renderCurrent(); jchat.open(redeemed.id).catch(() => {});
   } catch (err) { $('perk-error').textContent = err.message; const b = $('perk-send'); if (b) b.disabled = false; }
 });
 
-// back from the payment page: the payment notification can take a moment to arrive
+// back from the payment page: the payment notification can take a moment to arrive. We watch for a vehicle's membership date to change.
 if (new URLSearchParams(location.search).get('premium') === 'paid') {
-  let tries = 0;
+  let tries = 0, baseline = null;
+  const stamp = p => JSON.stringify((p.vehicles || []).map(v => [v.id, v.paidUntil]));
   const wait = async () => {
-    let p; try { p = await api('/premium'); } catch (_) {}
+    let p; try { p = await api('/premium'); } catch (_) { p = null; }
+    if (p && p.enabled) {
+      if (baseline === null) baseline = stamp(p);
+      else if (stamp(p) !== baseline) { history.replaceState(null, '', '/app.html#premium'); state.vehicles = await api('/vehicles'); renderVehicles(); return loadPremium(); }
+      renderPremium(p);
+    }
     const box = $('premium-box');
-    if (p && p.status === 'active') { history.replaceState(null, '', '/app.html'); return loadPremium(); }
-    box.hidden = false; box.innerHTML = '<h2>AutoAid Premium</h2><p><strong>Payment received? We are activating your Premium...</strong></p>';
-    if (++tries < 12) setTimeout(wait, 3000);
-    else box.innerHTML = '<h2>AutoAid Premium</h2><p>Your payment can take a minute to show. Refresh this page shortly. If it still does not appear, please contact AutoAid 24/7.</p>';
+    if (++tries < 8) { box.insertAdjacentHTML('afterbegin', '<p class="found"><strong>Payment received? We are activating your Premium...</strong></p>'); setTimeout(wait, 3000); }
+    else { history.replaceState(null, '', '/app.html#premium'); box.insertAdjacentHTML('afterbegin', '<p class="empty">If your vehicle does not show as a member yet, give it a minute and refresh this page. If it still does not appear, please contact AutoAid 24/7.</p>'); }
   };
   setTimeout(wait, 800);
 }

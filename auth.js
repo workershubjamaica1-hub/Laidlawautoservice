@@ -5,7 +5,7 @@
 //         staff     = sees every vehicle and request, can update request status
 //         admin     = everything, plus deleting records and managing users
 const crypto = require('crypto');
-const { statusOf, premiumStatusOf } = require('./subscriptionConfig');
+const { statusOf } = require('./subscriptionConfig');
 const mailer = require('./mailer');
 const express = require('express');
 
@@ -87,7 +87,6 @@ const publicUser = u => ({
   subscriptionPaidUntil: u.subscription_paid_until || null,
   termsAcceptedAt: u.terms_accepted_at || null,   // when they agreed to the Terms and Privacy Notice
   subscription: u.role === 'staff' ? statusOf(u) : null,   // only service providers have one
-  premium: u.role === 'customer' ? premiumStatusOf(u) : null, premiumPaidUntil: u.premium_paid_until || null,   // only customers can be Premium members
   specialties: u.specialties ? u.specialties.split(',') : [],
   businessName: u.business_name || '', experience: u.experience || '',
   payoutDetails: u.role === 'staff' || u.role === 'vendor' ? (u.payout_details || '') : '',
@@ -712,5 +711,5 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ ok: true });
   }));
 
-  return { router, requireAuth, requireRole, requireWorker, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES, PARTS, RENTALS };
+  return { router, VERIFY, requireAuth, requireRole, requireWorker, seed, createUser, findByEmail, hashPassword, publicUser, validEmail, checkContact, parseAmount, readImage, storePhoto, signedPhotoUrl, removePhoto, ROLES, PARISHES, SPECIALTIES, PARTS, RENTALS };
 };

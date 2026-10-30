@@ -482,7 +482,9 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   // What the admin has to do by hand: pay technicians, refund customers, decide complaints
   router.get('/jobs/payouts', adminOnly, handle(async (req, res) => {
     const all = await rows(supabase.from('service_requests').select('*').eq('pay_mode', 'platform'));
-    const users = await usersById([...all.map(r => r.technician_id)]);
+    // Premium services: AutoAid pays the technician a fixed amount for each one the customer has confirmed
+    const perkDue = (await rows(supabase.from('service_requests').select('id, technician_id, platform_pay, platform_pay_settled_at, premium_perk, stage').eq('stage', 'closed'))).filter(r => r.premium_perk && Number(r.platform_pay) > 0 && !r.platform_pay_settled_at && r.technician_id);
+    const users = await usersById([...all.map(r => r.technician_id), ...perkDue.map(r => r.technician_id)]);
     const vehicles = await vehiclesById(all.map(r => r.vehicle_id));
     const custUsers = await usersById([...all.map(r => r.customer_id), ...[...vehicles.values()].map(v => v.user_id)]);
     const payoutsMap = new Map();
@@ -490,6 +492,11 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
       const t = users.get(r.technician_id);
       const p = payoutsMap.get(r.technician_id) || { technicianId: r.technician_id, name: t ? t.name : 'Removed technician', phone: t ? t.phone || '' : '', amount: 0, jobs: 0 };
       p.amount = money(p.amount + Number(r.payout_amount)); p.jobs++; payoutsMap.set(r.technician_id, p);
+    }
+    for (const r of perkDue) {
+      const t = users.get(r.technician_id);
+      const p = payoutsMap.get(r.technician_id) || { technicianId: r.technician_id, name: t ? t.name : 'Removed technician', phone: t ? t.phone || '' : '', amount: 0, jobs: 0 };
+      p.amount = money(p.amount + Number(r.platform_pay)); p.jobs++; p.premiumJobs = (p.premiumJobs || 0) + 1; payoutsMap.set(r.technician_id, p);
     }
     const details = new Map((await rows(supabase.from('users').select('id, payout_details').in('id', [...payoutsMap.keys()].concat(0)))).map(u => [u.id, u.payout_details || '']));
     const who = r => { const v = vehicles.get(r.vehicle_id); const c = custUsers.get(r.customer_id) || (v ? custUsers.get(v.user_id) : null); return { name: c ? c.name : (v ? v.owner : ''), phone: c ? c.phone || '' : '' }; };
@@ -500,9 +507,11 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     });
   }));
   router.post('/jobs/technicians/:id(\\d+)/payout-paid', adminOnly, handle(async (req, res) => {
+    const perkIds = (await rows(supabase.from('service_requests').select('id, premium_perk, platform_pay, platform_pay_settled_at').eq('technician_id', Number(req.params.id)).eq('stage', 'closed'))).filter(r => r.premium_perk && Number(r.platform_pay) > 0 && !r.platform_pay_settled_at).map(r => r.id);
+    if (perkIds.length) await supabase.from('service_requests').update({ platform_pay_settled_at: new Date().toISOString() }).in('id', perkIds);
     const { data, error } = await supabase.from('service_requests').update({ payout_settled_at: new Date().toISOString() }).eq('technician_id', Number(req.params.id)).eq('stage', 'closed').eq('pay_mode', 'platform').is('payout_settled_at', null).select();
     if (error) throw error;
-    res.json({ paid: data.length });
+    res.json({ paid: data.length + perkIds.length });
   }));
   router.post('/jobs/:id(\\d+)/refund-done', adminOnly, handle(async (req, res) => {
     const { data, error } = await supabase.from('service_requests').update({ refund_status: 'done' }).eq('id', Number(req.params.id)).eq('refund_status', 'due').select();
