@@ -92,6 +92,7 @@ const publicUser = u => ({
   payoutDetails: u.role === 'staff' || u.role === 'vendor' ? (u.payout_details || '') : '',
   offers: u.role === 'vendor' ? String(u.vendor_offers || 'parts').split(',').filter(Boolean) : [],
   hasLicence: !!u.licence_photo_path,
+  providerType: u.provider_type || null, identityStatus: u.identity_status || null, identityNote: u.identity_note || '',
   // Customers must have all four before the shop can send someone out
   profileComplete: u.role !== 'customer' || profileComplete(u)
 });
@@ -302,8 +303,60 @@ module.exports = function createAuth({ supabase, handle }) {
     return data;
   }
 
+  // --- Who is behind a service provider's account: a company, or one person who must show their face live ---
+  // The browser opens the camera (no picking an old picture), asks for a look straight ahead and one random move,
+  // and sends both shots with a signed, single-use, 10-minute challenge. An admin then looks at the two shots and decides.
+  const MOVES = ['Turn your head slowly to your left', 'Turn your head slowly to your right', 'Smile', 'Raise your eyebrows', 'Tilt your head to one side'];
+  const usedChallenges = new Map();   // nonce -> expiry, so one challenge cannot be reused
+  const challengeLimit = makeLimiter(40, 60 * 60 * 1000);
+  const newChallenge = () => {
+    const nonce = crypto.randomBytes(9).toString('base64url'), exp = Date.now() + 10 * 60 * 1000, move = crypto.randomInt(0, MOVES.length);
+    const payload = exp + '.' + move + '.' + nonce;
+    return { token: payload + '.' + sign('idn:' + payload), prompts: ['Look straight at the camera', MOVES[move]] };
+  };
+  function useChallenge(token) {
+    const parts = String(token || '').split('.');
+    if (parts.length !== 4) return false;
+    const payload = parts.slice(0, 3).join('.');
+    if (parts[3] !== sign('idn:' + payload) || Number(parts[0]) < Date.now() || usedChallenges.has(parts[2])) return false;
+    for (const [n, e] of usedChallenges) if (e < Date.now()) usedChallenges.delete(n);
+    usedChallenges.set(parts[2], Number(parts[0]));
+    return true;
+  }
+  // Reads and checks the "company or sole person" part of an application. Nothing is saved here.
+  function readIdentity(body, businessName) {
+    const type = body && body.providerType;
+    if (type !== 'company' && type !== 'sole') return { error: 'Say whether you are a company or a sole person (you, working on your own).', status: 400 };
+    if (type === 'company') {
+      if (String(businessName || '').trim().length < 2) return { error: 'Enter your company name.', status: 400 };
+      return { type };
+    }
+    const a = readImage({ image: body.selfie1 }), b = readImage({ image: body.selfie2 });
+    if (a.error || b.error) return { error: 'Take both live photos of your face with the camera.', status: 400 };
+    if (a.buf.length < 6000 || b.buf.length < 6000) return { error: 'A photo came out too small or blank. Take it again in good light.', status: 400 };
+    if (crypto.createHash('sha256').update(a.buf).digest('hex') === crypto.createHash('sha256').update(b.buf).digest('hex')) return { error: 'The two photos are the same picture. Take the second one while following the instruction.', status: 400 };
+    if (!useChallenge(body.challenge)) return { error: 'The photo check timed out or was already used. Start the face check again.', status: 400 };
+    return { type, a, b };
+  }
+  async function saveIdentity(userId, idn) {
+    const fields = { provider_type: idn.type };
+    if (idn.type === 'sole') {
+      await storePhoto('user-' + userId + '/selfie1', idn.a.buf, idn.a.type);
+      await storePhoto('user-' + userId + '/selfie2', idn.b.buf, idn.b.type);
+      Object.assign(fields, { selfie_path: 'user-' + userId + '/selfie1', selfie2_path: 'user-' + userId + '/selfie2', identity_status: 'pending', identity_note: null, identity_at: new Date().toISOString() });
+    } else Object.assign(fields, { identity_status: null });
+    const { error } = await supabase.from('users').update(fields).eq('id', userId);
+    if (error) throw error;
+  }
+
   // --- /auth routes ---
   const router = express.Router();
+
+  router.get('/identity-challenge', (req, res) => {
+    if (challengeLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many tries. Please wait a little.' });
+    challengeLimit.fail(req.ip);
+    res.json(newChallenge());
+  });
 
   router.post('/register', handle(async (req, res) => {
     if (signupLimit.locked(req.ip)) return res.status(429).json({ error: 'Too many sign-ups. Try again later.' });
@@ -353,6 +406,8 @@ module.exports = function createAuth({ supabase, handle }) {
     const businessName = String(req.body.businessName || '').trim().slice(0, 100);
     const experience = String(req.body.experience || '').trim().slice(0, 600);
     if (experience.length < 10) return res.status(400).json({ error: 'Tell us a little about your experience and qualifications.' });
+    const idn = readIdentity(req.body, businessName);
+    if (idn.error) return res.status(idn.status).json({ error: idn.error });
     if (VERIFY.enabled && !mailer.ready()) return notReady(res);
     const existing = await findByEmail(email);
     if (existing && !(VERIFY.enabled && existing.email_verified === false && existing.role === 'staff')) {
@@ -365,6 +420,7 @@ module.exports = function createAuth({ supabase, handle }) {
           specialties: specialties.join(','), business_name: businessName || null, experience, terms_accepted_at: now, terms_version: TERMS_VERSION })
       : await createUser({ name, email, password, role: 'staff', approved: false, specialties: specialties.join(','), businessName, experience, termsAcceptedAt: now, emailVerified: !VERIFY.enabled, ...contact.value });
     signupLimit.fail(req.ip);
+    await saveIdentity(user.id, idn);
     if (VERIFY.enabled) {
       const sent = await sendCode(user);
       return res.status(201).json({ pending: true, verificationRequired: true, email, emailSent: !!sent.sent || !!sent.wait });
@@ -392,6 +448,8 @@ module.exports = function createAuth({ supabase, handle }) {
     if (!offers.length) return res.status(400).json({ error: 'Choose what you offer: auto parts, auto accessories, vehicle rentals, or a mix.' });
     const experience = String(req.body.experience || '').trim().slice(0, 600);
     if (experience.length < 10) return res.status(400).json({ error: 'Tell us what you offer (parts or accessories you stock, fitting you do, or the vehicles you rent out).' });
+    const idn = readIdentity(req.body, businessName);
+    if (idn.error) return res.status(idn.status).json({ error: idn.error });
     if (VERIFY.enabled && !mailer.ready()) return notReady(res);
     const existing = await findByEmail(email);
     if (existing && !(VERIFY.enabled && existing.email_verified === false && existing.role === 'vendor')) {
@@ -404,6 +462,7 @@ module.exports = function createAuth({ supabase, handle }) {
           business_name: businessName, experience, vendor_offers: offers.join(','), terms_accepted_at: now, terms_version: TERMS_VERSION })
       : await createUser({ name, email, password, role: 'vendor', approved: false, businessName, experience, vendorOffers: offers.join(','), termsAcceptedAt: now, emailVerified: !VERIFY.enabled, ...contact.value });
     signupLimit.fail(req.ip);
+    await saveIdentity(user.id, idn);
     if (VERIFY.enabled) {
       const sent = await sendCode(user);
       return res.status(201).json({ pending: true, verificationRequired: true, email, emailSent: !!sent.sent || !!sent.wait });
@@ -543,6 +602,16 @@ module.exports = function createAuth({ supabase, handle }) {
     res.json({ user: publicUser(data) });
   };
   const bigJson = express.json({ limit: '6mb' });
+  // A service provider who signed up before this check existed (or was rejected) sends it from My account
+  router.post('/identity', requireAuth, bigJson, handle(async (req, res) => {
+    if (req.user.role !== 'staff' && req.user.role !== 'vendor') return res.status(403).json({ error: 'Only service providers need this.' });
+    const idn = readIdentity(req.body, req.user.business_name);
+    if (idn.error) return res.status(idn.status).json({ error: idn.error });
+    await saveIdentity(req.user.id, idn);
+    const { data, error } = await supabase.from('users').select('*').eq('id', req.user.id).single();
+    if (error) throw error;
+    res.json({ user: publicUser(data) });
+  }));
   // Photo of the chassis (VIN) number
   router.post('/chassis-photo', requireAuth, bigJson, handle(receivePhoto('chassis_photo_path', 'chassis')));
   // Optional profile photo (technicians show it to customers)

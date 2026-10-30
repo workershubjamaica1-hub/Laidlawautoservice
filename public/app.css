@@ -230,3 +230,10 @@ main > section h2 { display: flex; align-items: center; gap: 10px; }
   .bottom-nav a:active { background: var(--brand-50); color: var(--brand-700); }
   .bottom-nav a.sos-link { color: #fff; background: linear-gradient(135deg, #F2575B, #C42D32); margin-top: -22px; border-radius: 20px; box-shadow: 0 12px 22px -8px rgba(217, 60, 60, .8); padding: 10px 2px 7px; }
 }
+
+/* the chat button that stays on screen */
+.ai-fab { position: fixed; right: 16px; bottom: 18px; z-index: 40; display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 999px; padding: 12px 18px; font: inherit; font-weight: 800;
+  background: var(--brand-600, #0B5ED7); color: #fff; box-shadow: 0 8px 24px rgba(11, 37, 69, .35); cursor: pointer; }
+.ai-fab .ic { width: 22px; height: 22px; background: currentColor; -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; display: inline-block; }
+.ai-fab:hover { filter: brightness(1.08); }
+@media (max-width: 720px) { .ai-fab { bottom: 84px; right: 12px; padding: 12px; } .ai-fab-text { display: none; } .ai-fab .ic { width: 26px; height: 26px; } }

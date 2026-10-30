@@ -1,4 +1,4 @@
-// ai.js — the "Ask the mechanic" chat. Streams answers from Claude; with no API key it falls back
+// ai.js — the "AutoAid AI" chat. Streams answers from Claude; with no API key it falls back
 // to the built-in rule-based answers (diagnose() in server.js) so the page keeps working.
 //
 // Protocol (newline-delimited JSON over a normal POST response):
@@ -27,7 +27,7 @@ const HOURLY_LIMIT = Number(process.env.AI_HOURLY_LIMIT || 40); // questions per
 
 const SERVICE_VALUES = ['diagnostics', 'mechanical', 'tire', 'electrical', 'maintenance', 'bodywork', 'roadside', 'towing', 'other'];
 
-const SYSTEM_PROMPT = `You are the in-house mechanic assistant for AutoAid 24/7, a vehicle repair and roadside assistance service in Jamaica. Customers talk to you through a chat on the AutoAid 24/7 website.
+const SYSTEM_PROMPT = `You are AutoAid AI, the in-house mechanic assistant for AutoAid 24/7, a vehicle repair and roadside assistance service in Jamaica. Customers talk to you through a chat on the AutoAid 24/7 website.
 
 Who you help: vehicle owners, usually not mechanics. Cars, light trucks, small trucks and heavy trucks (including diesel engines, air brakes and hydraulics). Many vehicles are Japanese imports and Jamaican roads, heat, potholes, salt air and fuel quality are normal context.
 

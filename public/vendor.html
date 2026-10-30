@@ -113,7 +113,7 @@
   <!-- PROFILE -->
   <div class="view" id="view-profile" data-view="profile" hidden>
     <div class="page-head"><div><p class="eyebrow">Account</p><h1>My account</h1><p class="welcome-sub">Your business details, password and account.</p></div></div>
-    <div class="narrow"><div class="card" id="acct-details"></div><div class="card" id="acct-security"></div></div>
+    <div class="narrow"><div class="card" id="acct-details"></div><div class="card" id="acct-identity"></div><div class="card" id="acct-security"></div></div>
   </div>
 
   <!-- SALES -->
@@ -191,6 +191,7 @@
 
 <script src="/parts.js"></script>
 <script src="/rentals.js"></script>
+<script src="/selfie.js"></script>
 <script src="/account.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -388,6 +389,7 @@ $('rbookings-list').addEventListener('click', (e) => { const b = e.target.closes
     $('tab-orders').hidden = !offersParts; $('tab-rentals').hidden = !offersRentals;
     showView(location.hash.slice(1));
     AccountUI.mountDetails($('acct-details'), { api, user, onSaved: u => { me = u; $('who').textContent = u.businessName || u.name; } });
+    AccountUI.mountIdentity($('acct-identity'), { api, user, onSaved: u => { me = u; } });
     AccountUI.mountSecurity($('acct-security'), { api, onTokenChange: t => { token = t; } });
     if (offersParts) pchat = PartsChat.create({ api, role: 'vendor', commissionPercent: cfg.parts.commissionPercent, onChange: () => { loadOrders(); loadSales(); } });
     if (offersRentals) { rchat = RentalChat.create({ api, role: 'vendor', onChange: () => { loadBookings(); loadSales(); } }); parishes = await api('/auth/parishes'); fillParishes(); }

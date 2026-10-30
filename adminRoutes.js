@@ -37,6 +37,7 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
       refundsDue: jobs.filter(j => j.refund_status === 'due').length,
       techniciansOnline: techs.filter(t => t.online && t.online_at && now - ts(t.online_at) < 150000).length,
       techniciansTotal: techs.filter(t => t.approved !== false && t.active !== false).length,
+      bankPending: (await supabase.from('bank_payments').select('id, status').eq('status', 'pending')).data.length,
       techniciansNotIdChecked: techs.filter(t => t.approved !== false && t.active !== false && !t.pro_verified).length,
       customersTotal: users.filter(u => u.role === 'customer').length,
       newCustomersThisWeek: users.filter(u => u.role === 'customer' && now - ts(u.created_at) < 7 * DAY).length
@@ -214,6 +215,31 @@ module.exports = function adminRoutes({ supabase, handle, auth, subs, toVehicle,
     if (error) throw error;
     if (!data.length) return res.status(404).json({ error: 'Vehicle not found.' });
     res.json({ deleted: id });
+  }));
+
+  // One person's whole profile for the admin: contact details, photos, vehicles and, for a service provider, who they are
+  router.get('/users/:id/profile', adminOnly, handle(async (req, res) => {
+    const { data: u, error } = await supabase.from('users').select('*').eq('id', Number(req.params.id)).maybeSingle();
+    if (error) throw error;
+    if (!u) return res.status(404).json({ error: 'User not found.' });
+    const link = async p => { try { return await auth.signedPhotoUrl(p); } catch (_) { return null; } };
+    const { data: cars } = await supabase.from('vehicles').select('*').eq('user_id', u.id).order('id');
+    res.json({
+      user: auth.publicUser(u), joined: u.created_at, online: !!u.online,
+      photos: { vehicle: await link(u.chassis_photo_path), face: await link(u.avatar_path), selfie1: await link(u.selfie_path), selfie2: await link(u.selfie2_path), licence: await link(u.licence_photo_path) },
+      vehicles: (cars || []).map(v => ({ id: v.id, type: v.type, category: v.category, year: v.year, chassis: v.vin || '', colour: v.colour || '', plate: v.plate || '', about: v.about || '' }))
+    });
+  }));
+  // The admin looks at the two live photos and decides whether a real person stands behind the account
+  router.post('/users/:id/identity', adminOnly, handle(async (req, res) => {
+    const decision = req.body && req.body.decision, note = String((req.body && req.body.note) || '').trim().slice(0, 300);
+    if (decision !== 'approve' && decision !== 'reject') return res.status(400).json({ error: 'Choose approve or reject.' });
+    if (decision === 'reject' && !note) return res.status(400).json({ error: 'Say why, so they know what to fix.' });
+    const { data: u } = await supabase.from('users').select('id, provider_type, selfie_path').eq('id', Number(req.params.id)).maybeSingle();
+    if (!u || u.provider_type !== 'sole' || !u.selfie_path) return res.status(404).json({ error: 'This person has no face check to decide on.' });
+    const { error } = await supabase.from('users').update({ identity_status: decision === 'approve' ? 'approved' : 'rejected', identity_note: decision === 'reject' ? note : null, identity_at: new Date().toISOString(), ...(decision === 'reject' ? { online: false } : {}) }).eq('id', u.id);
+    if (error) throw error;
+    res.json({ ok: true });
   }));
 
   router.get('/users/:id/chassis-photo', staffUp, handle(async (req, res) => {

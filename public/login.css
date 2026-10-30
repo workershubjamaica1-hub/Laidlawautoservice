@@ -103,3 +103,15 @@ main { place-items: start center; }
   .landing > .card { position: sticky; top: 20px; }
 }
 @media (max-width: 480px) { .intro-head h2 { font-size: 29px; } .lead { font-size: 15.5px; } main { padding-top: 20px; } }
+
+/* live face check (selfie.js) */
+.selfie { margin: 6px 0 10px; }
+.selfie .sf-stage video { width: 100%; max-height: 340px; background: #000; border-radius: 12px; transform: scaleX(-1); object-fit: cover; }
+.selfie .sf-prompt { margin: 8px 0; font-weight: 700; }
+.selfie .sf-shots { display: flex; gap: 8px; margin: 8px 0; }
+.selfie .sf-shots img { width: 48%; max-width: 200px; border-radius: 10px; transform: scaleX(-1); }
+.selfie .sf-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.selfie .sf-error:empty { display: none; }
+.who-opts label { display: block; margin: 6px 0; font-weight: 600; }
+.car-box { border: 1px solid #D5DEE9; border-radius: 12px; padding: 4px 12px 12px; margin: 10px 0; }
+.car-box h4 { margin: 10px 0 0; }

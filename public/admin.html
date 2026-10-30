@@ -51,6 +51,7 @@
     <p class="error" id="appError" role="alert"></p>
     <div class="panel gate" id="gatePanel" hidden></div>
     <div class="subbar" id="subBanner" hidden></div>
+    <div id="bankPending"></div>
     <div class="biz" id="bizBox" hidden></div>
     <div class="stats" id="stats"></div>
 
@@ -62,8 +63,8 @@
 
     <div class="panel" id="jobsPanel" hidden>
       <div class="jobs-top" id="jobsTop">
-        <label class="switch" aria-label="Online: receive new jobs"><input type="checkbox" id="onlineToggle" role="switch"><span class="slider"></span></label>
-        <div class="grow"><b id="onlineLabel">You are offline</b><small id="lockNote" hidden style="color:#B4322A;font-weight:700">Emergency jobs (roadside and towing) are sent to technicians whose ID AutoAid 24/7 has checked. Contact the shop to get verified.</small><small id="onlineHint">Switch on to receive new jobs for your departments. Keep this page open and your sound on.</small></div>
+        <label class="switch" aria-label="Available: receive new jobs"><input type="checkbox" id="onlineToggle" role="switch"><span class="slider"></span></label>
+        <div class="grow"><b id="onlineLabel">You are NOT available: no jobs are sent to you</b><small id="lockNote" hidden style="color:#B4322A;font-weight:700">Emergency jobs (roadside and towing) are sent to technicians whose ID AutoAid 24/7 has checked. Contact the shop to get verified.</small><small id="onlineHint">Switch on to receive new jobs for your departments. Keep this page open and your sound on.</small></div>
         <button class="btn ghost small" id="soundTest" type="button">Test the alert sound</button>
       </div>
       <div id="pushCard"></div>
@@ -107,6 +108,7 @@
 
     <div class="panel" id="accountPanel" hidden>
       <div id="acctDetails"></div>
+      <div id="acctIdentity"></div>
       <div id="acctSecurity"></div>
     </div>
 
@@ -145,6 +147,7 @@
         <pre id="emailTestOut" style="white-space:pre-wrap;margin:10px 0 0;font:13px/1.5 inherit"></pre>
       </details>
       <div id="subBox" class="subinfo" hidden></div>
+      <div id="bankBox" class="panel" hidden></div>
       <div id="guideBox" class="panel" hidden></div>
       </div>
       <div id="usec-people">
@@ -184,8 +187,13 @@
   <footer class="legal-foot"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a> &middot; <a href="/agreements.html">Agreements</a></footer>
 </div>
 
+<dialog id="profileDlg" class="profile-dlg" aria-labelledby="profileTitle">
+  <div class="profile-head"><h3 id="profileTitle">Profile</h3><button type="button" class="btn ghost small" id="profileClose">Close</button></div>
+  <div id="profileBody"></div>
+</dialog>
 <script src="/parts.js"></script>
 <script src="/rentals.js"></script>
+<script src="/selfie.js"></script>
 <script src="/account.js"></script>
 <script src="/jobs.js"></script>
 <script>
@@ -305,6 +313,7 @@ async function load() {
       if (me.role === 'customer') return location.replace('/app.html');
       if (me.role === 'vendor') return location.replace('/vendor.html');
       AccountUI.mountDetails($('acctDetails'), { api, user: me, onSaved: u => { me = u; $('who').textContent = u.name + ' (' + u.role + ')'; } }).catch(() => {});
+      if (me.role === 'staff') AccountUI.mountIdentity($('acctIdentity'), { api, user: me, onSaved: u => { me = u; } });
       if (me.role === 'staff') { $('jobsTab').hidden = false; $('requestsTab').hidden = true; $('emergTab').hidden = true; startJobs(); }
       AccountUI.mountSecurity($('acctSecurity'), { api, canDelete: me.role !== 'admin', onTokenChange: t => { token = t; } });
       $('who').textContent = me.name + ' (' + me.role + ')';
@@ -328,7 +337,7 @@ async function load() {
       else if (me.role === 'staff') $('jobsTab').click();
     }
     await loadDashboard();
-    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); }
+    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); loadBankDetails(); }
   } catch (err) {
     if (err.code !== 'subscription_required') $('appError').textContent = err.message;
     return;
@@ -345,6 +354,7 @@ async function loadBiz() {
     const attn = [];
     if (s.emergenciesWaiting) attn.push(['requests', 'urgent', plural(s.emergenciesWaiting, 'emergency') + ' waiting for a technician', 'Open']);
     if (s.waitingNow - s.emergenciesWaiting > 0) attn.push(['requests', 'warn', plural(s.waitingNow - s.emergenciesWaiting, 'job') + ' waiting for a technician', 'Open']);
+    if (s.bankPending) attn.push(['', 'warn', plural(s.bankPending, 'Premium payment') + ' waiting for you to confirm (see below)', '']);
     if (s.complaintsOpen) attn.push(['parts', 'urgent', plural(s.complaintsOpen, 'customer complaint') + ' to decide (the payment is held)', 'Open']);
     if (s.refundsDue) attn.push(['parts', 'warn', plural(s.refundsDue, 'refund') + ' to send', 'Open']);
     if (s.techniciansNotIdChecked) attn.push(['users', 'warn', plural(s.techniciansNotIdChecked, 'technician') + ' without an ID check (cannot take emergencies)', 'Open']);
@@ -359,9 +369,38 @@ async function loadBiz() {
         card(s.averageMinutesToAccept == null ? '-' : s.averageMinutesToAccept + ' min', 'average wait for a technician (30 days)'), card(s.unansweredLast30Days + ' of ' + s.jobsLast30Days, 'jobs nobody took (30 days)'),
         card(s.customersTotal, 'customers (' + s.newCustomersThisWeek + ' new this week)')].join('') + '</div>';
     $('bizBox').hidden = false;
+    renderBankPending();
     $('bizBox').onclick = e => { const b = e.target.closest('[data-attn]'); if (b) document.querySelector('.tabs button[data-tab="' + b.dataset.attn + '"]').click(); };
   } catch (_) { $('bizBox').hidden = true; }
 }
+// --- Premium payments by bank transfer: confirm when the money is in your account ---
+async function renderBankPending() {
+  const box = $('bankPending'); if (!box) return;
+  let d; try { d = await api('/admin/bank-payments'); } catch (_) { box.innerHTML = ''; return; }
+  if (!d.payments.length) { box.innerHTML = ''; return; }
+  const E = JobChat.esc, J = n => 'J$' + Number(n).toLocaleString();
+  box.innerHTML = '<h3 class="biz-h">Payments to confirm (' + d.payments.length + ')</h3>' + d.payments.map(p =>
+    '<div class="review-row"><div><b>' + J(p.amount) + ' from ' + E(p.customer.name) + '</b><p>Premium for ' + E(p.vehicle ? p.vehicle.name + ' (' + p.vehicle.tier + ')' : 'a vehicle') + ' &middot; reference <strong>' + E(p.reference) + '</strong> &middot; ' + E(p.customer.phone || p.customer.email) + (p.hasProof ? ' &middot; <a href="' + E(p.proofUrl || '#') + '" target="_blank" rel="noopener">see their receipt</a>' : ' &middot; no receipt photo') + '<br><small>Look for ' + J(p.amount) + ' with this reference in your bank account before you confirm.</small></p></div>' +
+    '<div class="th-actions"><button class="btn small safety" type="button" data-bconfirm="' + p.id + '" data-amt="' + p.amount + '" data-who="' + E(p.customer.name) + '">Confirm: money received</button> <button class="btn small ghost" type="button" data-breject="' + p.id + '">Reject</button></div></div>').join('');
+}
+$('bankPending').addEventListener('click', async (e) => {
+  const c = e.target.closest('[data-bconfirm]'), j = e.target.closest('[data-breject]');
+  try {
+    if (c) { if (!confirm('Have you seen J$' + Number(c.dataset.amt).toLocaleString() + ' from ' + c.dataset.who + ' in your bank account? Confirming starts their Premium for a year.')) return; await api('/admin/bank-payments/' + c.dataset.bconfirm + '/confirm', { method: 'POST', body: {} }); }
+    else if (j) { const note = prompt('Why can you not confirm it? (the customer is told)'); if (!note) return; await api('/admin/bank-payments/' + j.dataset.breject + '/reject', { method: 'POST', body: { note } }); }
+    else return;
+    await loadBiz(); await load();
+  } catch (err) { $('appError').textContent = err.message; }
+});
+async function loadBankDetails() {
+  const box = $('bankBox'); if (!box) return;
+  const d = await api('/admin/bank-details').catch(() => ({ text: '' }));
+  box.hidden = false;
+  box.innerHTML = '<h3>Bank details for Premium payments</h3><p class="hint">Customers see this when they choose to pay Premium by bank transfer. Put the bank, account name, account number and branch.</p><textarea id="bankText" rows="4" maxlength="800" placeholder="e.g. NCB Jamaica, Savings, Account name: AutoAid 24/7, Account number: 123456789, Branch: Half Way Tree"></textarea><button class="btn safety small" type="button" id="bankSave">Save bank details</button> <span id="bankMsg" role="status"></span>';
+  $('bankText').value = d.text || '';
+  $('bankSave').addEventListener('click', async () => { try { await api('/admin/bank-details', { method: 'PUT', body: JSON.stringify({ text: $('bankText').value }) }); $('bankMsg').textContent = 'Saved.'; } catch (err) { $('bankMsg').textContent = err.message; } });
+}
+
 // --- Typical prices shown to customers while booking ---
 async function loadGuide() {
   const box = $('guideBox'); if (!box) return;
@@ -390,7 +429,7 @@ function startJobs() {
 function setOnlineUI(on) {
   $('onlineToggle').checked = on;
   $('jobsTop').classList.toggle('on', on);
-  $('onlineLabel').textContent = on ? 'You are ONLINE: new jobs will ring here' : 'You are offline';
+  $('onlineLabel').textContent = on ? 'You are AVAILABLE: new jobs will ring here' : 'You are NOT available: no jobs are sent to you';
   $('onlineHint').textContent = on ? 'Keep this page open with the sound on. Switch off when you are not available.' : 'Switch on to receive new jobs for your departments. Keep this page open and your sound on.';
 }
 async function pollJobs() {
@@ -814,6 +853,48 @@ function customerCell(account, fallbackOwner) {
   out.push(el('br'), photo);
   return out;
 }
+const whoLabel = u => u.providerType === 'company' ? 'Company' : u.providerType === 'sole'
+  ? 'Sole person: ' + (u.identityStatus === 'approved' ? 'face check approved' : u.identityStatus === 'rejected' ? 'face check rejected' : 'face check to review') : '';
+async function viewProfile(id) {
+  const dlg = $('profileDlg'), body = $('profileBody');
+  body.replaceChildren(el('p', { className: 'empty', textContent: 'Loading…' }));
+  if (!dlg.open) dlg.showModal();
+  let p;
+  try { p = await api('/admin/users/' + id + '/profile'); } catch (err) { body.replaceChildren(el('p', { className: 'error', textContent: err.message })); return; }
+  const u = p.user, pic = (url, label) => url ? el('figure', { className: 'pf-pic' }, el('a', { href: url, target: '_blank', rel: 'noopener' }, el('img', { src: url, alt: label })), el('figcaption', { textContent: label })) : null;
+  const row = (k, v) => v ? el('div', { className: 'pf-row' }, el('span', { textContent: k }), el('b', { textContent: v })) : null;
+  $('profileTitle').textContent = u.name;
+  const kids = [
+    el('div', { className: 'pf-photos' }, pic(p.photos.face, 'Profile photo'), pic(p.photos.vehicle, 'Photo of the vehicle'), pic(p.photos.licence, 'Licence')),
+    el('div', { className: 'pf-card' },
+      row('Account type', { customer: 'Customer', staff: 'Technician', vendor: 'Business (parts, accessories, rentals)', admin: 'Admin' }[u.role] || u.role),
+      row('Email', u.email), row('Phone', u.phone), row('Address', u.address), row('Parish', u.parish),
+      row('Joined', fmtDate(p.joined)), row('Status', u.active ? (u.approved ? 'Active' : 'Waiting for approval') : 'Disabled'),
+      row('Business name', u.businessName), row('Does', u.specialties.join(', ')), row('Experience', u.experience))
+  ];
+  if (u.role === 'staff' || u.role === 'vendor') {
+    const who = el('div', { className: 'pf-card' }, el('h4', { textContent: 'Who is behind this account' }),
+      row('Company or sole person', u.providerType === 'company' ? 'A company' : u.providerType === 'sole' ? 'A sole person' : 'Not said yet'));
+    if (u.providerType === 'sole') {
+      who.append(el('div', { className: 'pf-photos' }, pic(p.photos.selfie1, 'Photo 1: looking straight'), pic(p.photos.selfie2, 'Photo 2: the move we asked for')),
+        el('p', { className: 'hint', textContent: 'Check that it is a real, live person, the same in both photos, and that the second photo shows the move we asked for. Compare with their ID and profile photo.' }));
+      const note = el('input', { type: 'text', placeholder: 'If rejecting, say why', maxLength: 300, style: 'flex:1;min-width:160px' });
+      const yes = el('button', { className: 'btn safety small', textContent: 'Approve: this is a real person' });
+      const no = el('button', { className: 'btn danger small', textContent: 'Reject' });
+      const decide = async d => { try { await api('/admin/users/' + id + '/identity', { method: 'POST', body: JSON.stringify({ decision: d, note: note.value }) }); await load(); await viewProfile(id); } catch (err) { msg.textContent = err.message; } };
+      yes.addEventListener('click', () => decide('approve')); no.addEventListener('click', () => decide('reject'));
+      const msg = el('p', { className: 'error', role: 'alert' });
+      who.append(row('Face check', u.identityStatus === 'approved' ? 'Approved' : u.identityStatus === 'rejected' ? 'Rejected: ' + (u.identityNote || '') : 'Waiting for you'),
+        el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px' }, yes, note, no), msg);
+    }
+    kids.push(who);
+  }
+  if (p.vehicles.length) kids.push(el('div', { className: 'pf-card' }, el('h4', { textContent: 'Vehicles' }),
+    ...p.vehicles.map(v => el('div', { className: 'pf-car' }, el('b', { textContent: v.year + ' ' + v.type }),
+      row('Chassis number', v.chassis), row('Colour', v.colour), row('Number plate', v.plate), row('About the car', v.about)))));
+  body.replaceChildren(...kids.filter(Boolean));
+}
+$('profileClose').addEventListener('click', () => $('profileDlg').close());
 async function openPhoto(userId) {
   const w = window.open('', '_blank'); // opened first so the browser doesn't block it
   try {
@@ -998,14 +1079,16 @@ function renderPending() {
         ok.addEventListener('click', () => patchUser(u.id, { approved: true }));
         const no = el('button', { className: 'btn danger small', textContent: 'Reject' });
         armDelete(no, async () => { await api('/admin/users/' + u.id, { method: 'DELETE' }); await load(); }, 'Confirm reject?');
+        const look = el('button', { className: 'btn small', textContent: 'View profile' });
+        look.addEventListener('click', () => viewProfile(u.id));
         return el('div', { className: 'app' },
           el('div', {},
-            el('strong', { textContent: u.name }), u.businessName ? ' \u00b7 ' + u.businessName : '', ' ', el('span', { className: 'badge completed', textContent: 'Email verified' }), el('br'),
+            el('strong', { textContent: u.name }), u.providerType ? ' ' : null, u.providerType ? el('span', { className: 'badge ' + (u.providerType === 'sole' && u.identityStatus !== 'approved' ? 'off' : 'completed'), textContent: whoLabel(u) }) : null, u.businessName ? ' \u00b7 ' + u.businessName : '', ' ', el('span', { className: 'badge completed', textContent: 'Email verified' }), el('br'),
             el('span', { className: 'who', textContent: u.email + ' \u00b7 ' + u.phone }),
             el('span', { className: 'who', textContent: u.address + (u.parish ? ', ' + u.parish : '') }),
             el('span', { className: 'who' }, u.role === 'vendor' ? 'Parts vendor, sells: ' + (u.experience || '') : 'Does: ' + u.specialties.join(', ')),
             el('small', { className: 'who', textContent: u.experience })),
-          el('div', { className: 'acts', style: 'display:flex;flex-direction:column;gap:6px' }, ok, no));
+          el('div', { className: 'acts', style: 'display:flex;flex-direction:column;gap:6px' }, look, ok, no));
       }));
   }
   if (unverified.length) {
@@ -1070,17 +1153,20 @@ function renderUsers() {
     verifyBtn.addEventListener('click', () => markVerified(u.id));
     const jobsBtn = el('button', { className: 'btn ghost small', textContent: 'Jobs & photos', hidden: u.role !== 'staff' });
     jobsBtn.addEventListener('click', () => viewTechnician(u.id));
+    const profileBtn = el('button', { className: 'btn small', textContent: 'View profile' });
+    profileBtn.addEventListener('click', () => viewProfile(u.id));
     const photo = el('button', { className: 'btn ghost small', textContent: 'Vehicle photo', hidden: !u.hasChassisPhoto });
     photo.addEventListener('click', () => openPhoto(u.id));
     return el('tr', {},
       el('td', {}, el('strong', { textContent: u.name + (isMe ? ' (you)' : '') }), el('br'), el('small', { textContent: 'Joined ' + fmtDate(u.createdAt) }),
         u.emailVerified === false ? el('br') : null, u.emailVerified === false ? el('span', { className: 'badge off', textContent: 'Email not verified' }) : null,
-        u.role === 'staff' ? el('br') : null, u.role === 'staff' ? el('span', { className: u.proVerified ? 'badge completed' : 'badge off', textContent: u.proVerified ? 'ID checked' : 'ID not checked: no emergencies' }) : null),
+        u.role === 'staff' ? el('br') : null, u.role === 'staff' ? el('span', { className: u.proVerified ? 'badge completed' : 'badge off', textContent: u.proVerified ? 'ID checked' : 'ID not checked: no emergencies' }) : null,
+        u.providerType ? el('br') : null, u.providerType ? el('span', { className: 'badge ' + (u.providerType === 'sole' && u.identityStatus !== 'approved' ? 'off' : 'completed'), textContent: whoLabel(u) }) : null),
       el('td', {}, el('span', { className: 'who', textContent: u.email }), u.phone ? el('span', { className: 'who', textContent: u.phone }) : null, u.address ? el('small', { className: 'who', textContent: u.address }) : null),
       el('td', {}, role),
       el('td', {}, parish),
       el('td', {}, el('span', { className: u.active ? 'badge completed' : 'badge off', textContent: u.active ? 'Active' : 'Disabled' }), (subText) ? el('br') : null, (subText) ? el('small', { textContent: subText }) : null),
-      el('td', { className: 'act' }, idBtn, ' ', verifyBtn, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
+      el('td', { className: 'act' }, profileBtn, ' ', idBtn, ' ', verifyBtn, ' ', addDays, ' ', jobsBtn, ' ', photo, ' ', toggle, ' ', reset, ' ', del));
   }));
 }
 async function patchUser(id, body) {

@@ -52,7 +52,7 @@
       <p class="welcome-sub">Everything your car needs, all in one place.</p>
     </div>
     <div class="welcome-actions">
-      <button class="btn ghost" type="button" data-go="assistant"><span class="ic" style="--m: var(--d-chat)"></span>Ask a mechanic</button>
+      <button class="btn ghost" type="button" data-go="assistant"><span class="ic" style="--m: var(--d-chat)"></span>AutoAid AI</button>
       <button class="btn" type="button" data-go="request-form"><span class="ic" style="--m: var(--d-cal)"></span>Book a service</button>
     </div>
   </section>
@@ -123,7 +123,7 @@
     <div class="page-head">
       <div><p class="eyebrow">Services</p><h1>Service requests</h1><p class="welcome-sub">Book a service and follow it from request to done.</p></div>
       <div class="welcome-actions">
-        <button class="btn ghost" type="button" data-go="assistant"><span class="ic" style="--m: var(--d-chat)"></span>Ask a mechanic</button>
+        <button class="btn ghost" type="button" data-go="assistant"><span class="ic" style="--m: var(--d-chat)"></span>AutoAid AI</button>
         <button class="btn" type="button" data-go="request-form"><span class="ic" style="--m: var(--d-cal)"></span>Book a service</button>
       </div>
     </div>
@@ -239,12 +239,14 @@
 </main>
 <footer class="legal-foot"><a href="/privacy.html">Privacy Notice</a> &middot; <a href="/terms.html">Terms of Use</a> &middot; <a href="/agreements.html">Agreements</a></footer>
 
+<button class="ai-fab" type="button" data-go="assistant" aria-label="Chat with AutoAid AI"><span class="ic" style="--m: var(--d-chat)"></span><span class="ai-fab-text">AutoAid AI</span></button>
+
 <nav class="bottom-nav" aria-label="Main">
   <a href="#overview" data-view="overview" style="--i: var(--i-home)">Home</a>
   <a href="#garage" data-view="garage" style="--i: var(--i-car)">Garage</a>
   <a href="#emergency" data-view="emergency" class="sos-link" style="--i: var(--i-siren)">Help</a>
   <a href="#services" data-view="services" style="--i: var(--i-clipboard)">Requests</a>
-  <a href="#" data-go="assistant" style="--i: var(--i-chat)">Mechanic</a>
+  <a href="#" data-go="assistant" style="--i: var(--i-chat)">AutoAid AI</a>
 </nav>
 
 <!-- Pop-up forms -->
@@ -365,8 +367,14 @@
       </div>
       <label for="year">Year</label>
       <input id="year" name="year" type="number" inputmode="numeric" placeholder="2016" required>
-      <label for="vin">VIN (optional)</label>
-      <input id="vin" name="vin" maxlength="17" placeholder="17 characters" style="text-transform:uppercase">
+      <label for="vin">Chassis number</label>
+      <input id="vin" name="vin" maxlength="25" placeholder="As written on the car (on the registration paper)" style="text-transform:uppercase">
+      <label for="colour">Colour</label>
+      <input id="colour" name="colour" maxlength="30" placeholder="Silver">
+      <label for="plate">Number plate (optional)</label>
+      <input id="plate" name="plate" maxlength="12" placeholder="1234 AB" style="text-transform:uppercase">
+      <label for="about">A few words about the car (optional)</label>
+      <textarea id="about" name="about" maxlength="300" placeholder="For example: automatic, petrol, small dent on the left door"></textarea>
       <button class="btn" type="submit">Add vehicle</button>
       <button class="btn ghost" id="add-vehicle-cancel" type="button" hidden>Cancel</button>
       <p class="error" id="vehicle-error" role="alert"></p>
@@ -376,10 +384,10 @@
 <dialog class="modal wide" id="dlg-ai" aria-labelledby="ai-h">
   <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
   <section id="assistant" aria-labelledby="ai-h">
-    <h2 id="ai-h">Ask a mechanic</h2>
+    <h2 id="ai-h">AutoAid AI</h2>
     <div class="panel">
       <div class="chat" id="chat" role="log" aria-live="polite">
-        <div class="msg bot">Describe a symptom, like "truck sags at the back when loaded" or "temperature gauge keeps rising". Pick your vehicle first for advice that fits it. You can keep chatting: I'll ask follow-up questions, go as technical as you need, and suggest what to book.</div>
+        <div class="msg bot">Hi, I am AutoAid AI, your 24/7 vehicle helper. Describe a symptom, like "truck sags at the back when loaded" or "temperature gauge keeps rising". Pick your vehicle first for advice that fits it. You can keep chatting: I'll ask follow-up questions, go as technical as you need, and suggest what to book.</div>
       </div>
       <form id="ai-form" novalidate>
         <label for="ai-vehicle">About which vehicle?</label>
@@ -617,7 +625,10 @@ function renderVehicles() {
     const rm = '<button class="remove" data-remove="' + v.id + '" aria-label="Remove ' + esc(v.type) + '" title="Remove vehicle">Remove</button>';
     return '<div class="vehicle feat"><div class="vtile"><span class="ic" style="--m: var(--d-car)"></span><em>' + esc(brand) + '</em></div>' +
       '<h3>' + esc(v.year) + ' ' + esc(v.type) + '</h3><small>' + esc(labelOf(state.categories.vehicle, v.category)) + '</small>' + (v.premium && v.premium.status === 'active' ? '<span class="due ok" style="margin:4px 0 0">Premium until ' + esc(new Date(v.premium.paidUntil).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })) + '</span>' : '') +
-      '<div class="vmeta"><div>' + I('doc') + '<span><small>VIN</small><b>' + (v.vin ? esc(v.vin) : 'Not added') + '</b></span></div>' +
+      '<div class="vmeta"><div>' + I('doc') + '<span><small>Chassis number</small><b>' + (v.vin ? esc(v.vin) : 'Not added') + '</b></span></div>' +
+      (v.colour ? '<div>' + I('car') + '<span><small>Colour</small><b>' + esc(v.colour) + '</b></span></div>' : '') +
+      (v.plate ? '<div>' + I('doc') + '<span><small>Number plate</small><b>' + esc(v.plate) + '</b></span></div>' : '') +
+      (v.about ? '<div>' + I('doc') + '<span><small>About</small><b>' + esc(v.about) + '</b></span></div>' : '') +
       '<div>' + I('user') + '<span><small>Owner</small><b>' + esc(v.owner) + '</b></span></div></div>' + remindersBlock(v) + rm + '</div>';
   }).join('') + '</div>';
 }
@@ -679,7 +690,7 @@ function renderRequests() {
   if (!items.length) {
     list.innerHTML = '<p class="empty">' + (state.requests.length
       ? 'No requests with this status.'
-      : 'No service requests yet. Book a service, or ask the mechanic what your car might need.') + '</p>';
+      : 'No service requests yet. Book a service, or ask AutoAid AI what your car might need.') + '</p>';
     return;
   }
   list.innerHTML = items.map(r => {
@@ -732,7 +743,7 @@ $('vehicle-form').addEventListener('submit', async (e) => {
   }
   try {
     const v = await api('/vehicle', { method: 'POST', body: {
-      owner: f.owner.value, type: picked ? picked.name : f.type.value, year: f.year.value, vin: f.vin.value.trim(),
+      owner: f.owner.value, type: picked ? picked.name : f.type.value, year: f.year.value, vin: f.vin.value.trim(), colour: f.colour.value, plate: f.plate.value, about: f.about.value,
       ...(custom ? { category: $('type-cat').value } : {})
     }});
     state.vehicles.push(v);
@@ -1007,6 +1018,27 @@ document.addEventListener('click', async (e) => {
 let premiumBook = null;   // the vehicle a free service is being booked for: { id, name }
 const longDate = iso => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 
+// How a customer pays: by card online when that is switched on, and by bank transfer when the admin has set up bank details.
+function joinButtons(p, v, label) {
+  const mine = premiumBank.requests.find(q => q.vehicleId === v.id && q.status === 'pending');
+  if (mine) return bankBox(p, v, false);
+  const online = p.canPayOnline ? '<button class="btn small" type="button" data-join="' + v.id + '">' + label + ' for this vehicle</button> ' : '';
+  const bank = premiumBank.details ? '<button class="btn ' + (p.canPayOnline ? 'ghost ' : '') + 'small" type="button" data-bank="' + v.id + '">' + (p.canPayOnline ? 'Pay by bank transfer instead' : label + ' by bank transfer') + '</button>' : '';
+  const rejected = premiumBank.requests.find(q => q.vehicleId === v.id && q.status === 'rejected');
+  return (rejected ? '<p class="error" style="margin:0 0 8px">Your last payment could not be confirmed: ' + esc(rejected.decisionNote || 'please try again') + '</p>' : '') + (online + bank || '<p class="error" style="margin:0">Payment is not set up yet. Please contact AutoAid 24/7 to join.</p>');
+}
+// the waiting bank-transfer request for a vehicle: what to pay, where, and the reference
+function bankBox(p, v) {
+  const q = premiumBank.requests.find(x => x.vehicleId === v.id && x.status === 'pending');
+  if (!q) return '';
+  return '<div class="bankbox"><b>Pay J$' + Number(q.amount).toLocaleString() + ' by bank transfer</b>' +
+    '<pre class="bankdet">' + esc(premiumBank.details) + '</pre>' +
+    '<p>Put this reference on your transfer: <strong class="bankref">' + esc(q.reference) + '</strong></p>' +
+    '<p class="empty" style="font-size:13.5px">When we see your money, we start your Premium and tell you. You can add a photo of your receipt to help us find it.</p>' +
+    '<div class="th-actions"><label class="btn small ghost shot-more">' + (q.hasProof ? 'Replace my receipt photo' : 'Add my receipt photo') + '<input type="file" accept="image/*" data-bankproof="' + q.id + '"></label> <button class="linkbtn" type="button" data-bankcancel="' + q.id + '">Cancel this</button></div>' +
+    '<p class="found" data-bankmsg="' + q.id + '" role="status" ' + (q.hasProof ? '' : 'hidden') + '>' + (q.hasProof ? 'Receipt photo added. We will confirm your payment soon.' : '') + '</p></div>';
+}
+
 function premiumVehicleCard(p, v) {
   const head = '<div class="pv-head"><div><b>' + esc(v.name) + '</b><small>' + esc(v.tier || 'Not covered') + '</small></div>';
   if (!v.covered) return '<div class="pv">' + head + '</div><p class="empty">Premium does not cover this type of vehicle.</p></div>';
@@ -1015,14 +1047,14 @@ function premiumVehicleCard(p, v) {
     const expired = v.status === 'expired';
     return '<div class="pv">' + head + '<span class="pv-price"><b>' + esc(v.priceLabel) + '</b><small>for 12 months</small></span></div>' +
       (expired ? '<p class="empty" style="margin:0 0 8px">Ended on ' + esc(longDate(v.paidUntil)) + '. Renew to use your free services again.</p>' : '') +
-      '<button class="btn small" type="button" data-join="' + v.id + '"' + (p.canPayOnline ? '' : ' disabled') + '>' + (expired ? 'Renew Premium' : 'Join Premium') + ' for this vehicle</button></div>';
+      joinButtons(p, v, expired ? 'Renew Premium' : 'Join Premium') + '</div>';
   }
   const s = v.services, note = s.left === 0 ? 'All used for this membership year.' : s.nextAvailable ? 'Next one available from ' + esc(longDate(s.nextAvailable)) + '.' : 'Available now.';
   return '<div class="pv on">' + head + '<span class="pv-member">Member</span></div>' +
     '<p style="margin:0 0 6px">Active until <strong>' + esc(longDate(v.paidUntil)) + '</strong> (' + v.daysLeft + ' day' + (v.daysLeft === 1 ? '' : 's') + ' left).</p>' +
     '<div class="perk"><strong>Free services</strong><div class="count">' + s.used + ' of ' + s.limit + ' used</div><p>' + note + '</p>' +
       '<button class="btn small safety" type="button" data-svc="' + v.id + '" data-name="' + esc(v.name) + '"' + (s.canBook ? '' : ' disabled') + '>Book a free service</button></div>' +
-    '<button class="linkbtn" type="button" data-join="' + v.id + '"' + (p.canPayOnline ? '' : ' disabled') + '>Add another 12 months</button></div>';
+    (p.canPayOnline ? '<button class="linkbtn" type="button" data-join="' + v.id + '">Add another 12 months</button>' : '') + bankBox(p, v, true) + '</div>';
 }
 
 function renderPremium(p) {
@@ -1030,7 +1062,8 @@ function renderPremium(p) {
   const intro = '<h2 id="premium-h">AutoAid Premium</h2><p style="margin:0 0 6px">Keep each vehicle serviced all year. For every vehicle you join, you get <strong>' + p.servicesPerYear + ' services</strong> a year. Each service is a <strong>diagnostic check, then servicing</strong> (an oil and filter change), done by an AutoAid technician.</p>' +
     '<p class="empty" style="font-size:14px;margin:0 0 12px">You supply the oil and filter. If the technician supplies them, agree the price in the chat first. Services are at least ' + p.gapDays + ' days apart.</p>';
   const list = p.vehicles.length ? p.vehicles.map(v => premiumVehicleCard(p, v)).join('') : '<p class="empty">Add your vehicle in <a href="#garage">My garage</a> first, then join Premium for it.</p>';
-  const pay = p.canPayOnline ? '<p class="empty" style="font-size:14px;margin-top:10px">You pay securely by card on the payment page. Premium starts for that vehicle as soon as the payment goes through.</p>' : '<p class="error" style="margin-top:10px">Online payment is not set up yet. Please contact AutoAid 24/7 to join.</p>';
+  const pay = p.canPayOnline ? '<p class="empty" style="font-size:14px;margin-top:10px">You can pay securely by card on the payment page' + (premiumBank.details ? ', or by bank transfer' : '') + '. Premium starts for that vehicle as soon as the payment goes through' + (premiumBank.details ? ' (bank transfers start once we see the money)' : '') + '.</p>'
+    : premiumBank.details ? '<p class="empty" style="font-size:14px;margin-top:10px">You pay by bank transfer. Premium starts for that vehicle as soon as we see your money.</p>' : '<p class="error" style="margin-top:10px">Payment is not set up yet. Please contact AutoAid 24/7 to join.</p>';
   box.innerHTML = intro + '<div class="pvlist">' + list + '</div>' + pay +
     '<form id="perk-form" hidden novalidate><h3 id="perk-title"></h3>' +
       '<label for="perk-note">Anything the technician should know? (optional)</label><input id="perk-note" maxlength="300" placeholder="e.g. the oil I use, or a noise or warning light">' +
@@ -1040,9 +1073,11 @@ function renderPremium(p) {
   if (premiumBook) openPerkForm(premiumBook);
 }
 
+let premiumBank = { details: '', requests: [] };
 async function loadPremium() {
   let p;
   try { p = await api('/premium'); } catch (_) { return; }
+  try { premiumBank = await api('/premium/bank'); } catch (_) { premiumBank = { details: '', requests: [] }; }
   updateMember(p);
   const box = $('premium-box');
   if (!p.enabled) { box.hidden = true; return; }
@@ -1074,6 +1109,18 @@ function openPerkForm(v) {
 }
 
 $('premium-box').addEventListener('click', async (e) => {
+  const bank = e.target.closest('[data-bank]'), bcancel = e.target.closest('[data-bankcancel]');
+  if (bank) {
+    bank.disabled = true;
+    try { await api('/premium/bank-request', { method: 'POST', body: { vehicleId: Number(bank.dataset.bank) } }); await loadPremium(); }
+    catch (err) { alert(err.message); bank.disabled = false; }
+    return;
+  }
+  if (bcancel) {
+    if (!confirm('Cancel this payment request? If you already sent money, do not cancel: contact AutoAid 24/7.')) return;
+    try { await api('/premium/bank-request/' + bcancel.dataset.bankcancel + '/cancel', { method: 'POST' }); await loadPremium(); } catch (err) { alert(err.message); }
+    return;
+  }
   const join = e.target.closest('[data-join]');
   if (join) {
     join.disabled = true;
@@ -1084,6 +1131,16 @@ $('premium-box').addEventListener('click', async (e) => {
   const svc = e.target.closest('[data-svc]');
   if (svc) { openPerkForm({ id: Number(svc.dataset.svc), name: svc.dataset.name }); $('perk-form').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); return; }
   if (e.target.id === 'perk-cancel') { premiumBook = null; $('perk-form').hidden = true; }
+});
+$('premium-box').addEventListener('change', async (e) => {
+  const inp = e.target.closest('input[data-bankproof]'); if (!inp || !inp.files[0]) return;
+  const msg = document.querySelector('[data-bankmsg="' + inp.dataset.bankproof + '"]');
+  try {
+    msg.hidden = false; msg.textContent = 'Sending your receipt...';
+    const image = await prepareImage(inp.files[0]);
+    await api('/premium/bank-request/' + inp.dataset.bankproof + '/proof', { method: 'POST', body: { image } });
+    await loadPremium();
+  } catch (err) { if (msg) { msg.hidden = false; msg.textContent = err.message; } }
 });
 $('premium-box').addEventListener('submit', async (e) => {
   if (e.target.id !== 'perk-form') return;

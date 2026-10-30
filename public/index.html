@@ -92,6 +92,24 @@
           </div>
           <p class="hint">A clear photo of the whole vehicle, so the technician can recognise it and bring the right equipment.</p>
         </div>
+        <div id="carFields" class="car-box">
+          <h4>About your motor vehicle</h4>
+          <label for="carType">Brand and model</label>
+          <input id="carType" list="carList" placeholder="Start typing, e.g. Toyota Corolla" autocomplete="off">
+          <datalist id="carList"></datalist>
+          <div id="carCatRow" hidden><label for="carCat">What type of vehicle is it?</label><select id="carCat"></select></div>
+          <label for="carYear">Year</label>
+          <input id="carYear" type="number" inputmode="numeric" placeholder="2016">
+          <label for="carVin">Chassis number</label>
+          <input id="carVin" maxlength="25" placeholder="As written on the car" autocapitalize="characters" style="text-transform:uppercase">
+          <p class="hint">It is on your registration paper (RC) and stamped on the car, often at the base of the windscreen or inside the driver's door.</p>
+          <label for="carColour">Colour</label>
+          <input id="carColour" maxlength="30" placeholder="Silver">
+          <label for="carPlate">Number plate (optional)</label>
+          <input id="carPlate" maxlength="12" placeholder="1234 AB" style="text-transform:uppercase">
+          <label for="carAbout">A few words about the car (optional)</label>
+          <textarea id="carAbout" maxlength="300" placeholder="For example: automatic, petrol, has a small dent on the left door, fitted with a tow bar"></textarea>
+        </div>
       </div>
       <div id="techFields" hidden>
         <label>The work you do</label>
@@ -115,6 +133,15 @@
         <label for="vstock">Tell us about your business</label>
         <textarea id="vstock" placeholder="Parts: makes and models you stock, new or used. Rentals: the kinds of vehicles you rent out."></textarea>
         <p class="hint approval-hint">An admin reviews every application. You can sign in once you are approved.</p>
+      </div>
+      <div id="whoFields" hidden>
+        <label>Are you a company or a sole person?</label>
+        <div class="who-opts" id="whoOpts">
+          <label><input type="radio" name="ptype" value="company"> A company (a registered business with staff)</label>
+          <label><input type="radio" name="ptype" value="sole"> A sole person (I work on my own)</label>
+        </div>
+        <p class="hint" id="whoHint">A company is checked by an admin. A sole person also takes two live photos of their face, so customers know a real person is coming.</p>
+        <div id="selfieBox" hidden></div>
       </div>
       <label for="pw">Password</label>
       <div class="pw">
@@ -180,6 +207,7 @@
     </section>
   </div>
 </main>
+<script src="/selfie.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 
@@ -321,6 +349,8 @@ function setMode(m) {
   $('photoRow').hidden = m === 'tech' || m === 'vendor';
   $('vendorFields').hidden = m !== 'vendor';
   $('techFields').hidden = m !== 'tech';
+  $('whoFields').hidden = !(m === 'tech' || m === 'vendor');
+  $('carFields').hidden = m !== 'register';
   $('nameRow').hidden = !creating;
   $('pwHint').hidden = !creating;
   $('agreeRow').hidden = !creating;
@@ -391,9 +421,51 @@ $('resetForm').addEventListener('submit', async e => {
   finally { $('resetBtn').disabled = false; }
 });
 
+// ---- the vehicle details asked for at sign-up ----
+let signupCar = null, CATALOG_NAMES = [];
+const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+fetch('/vehicle-catalog').then(r => r.json()).then(c => {
+  CATALOG_NAMES = Object.entries(c).flatMap(([cat, names]) => names.map(n => ({ n, cat })));
+  $('carList').innerHTML = CATALOG_NAMES.map(x => '<option value="' + x.n.replace(/"/g, '&quot;') + '"></option>').join('');
+}).catch(() => {});
+fetch('/categories').then(r => r.json()).then(c => { $('carCat').innerHTML = '<option value="">Choose…</option>' + c.vehicle.map(v => '<option value="' + v.value + '">' + v.label + '</option>').join(''); }).catch(() => {});
+$('carType').addEventListener('input', () => { $('carCatRow').hidden = !$('carType').value.trim() || CATALOG_NAMES.some(x => norm(x.n) === norm($('carType').value)); });
+function carData() {
+  const type = $('carType').value.trim(), listed = CATALOG_NAMES.find(x => norm(x.n) === norm(type));
+  if (!type) throw new Error('Enter the brand and model of your motor vehicle, for example Toyota Corolla.');
+  if (!listed && !$('carCat').value) throw new Error('Choose what type of vehicle it is.');
+  const y = Number($('carYear').value);
+  if (!Number.isInteger(y) || y < 1900 || y > new Date().getFullYear() + 1) throw new Error('Enter the year of your vehicle, for example 2016.');
+  const vin = $('carVin').value.trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9-]{3,23}[A-Z0-9]$/.test(vin)) throw new Error('Enter the chassis number exactly as it is on the car (5 to 25 letters, numbers and dashes).');
+  if (!$('carColour').value.trim()) throw new Error('Enter the colour of your vehicle.');
+  return { owner: $('name').value.trim(), type: listed ? listed.n : type, ...(listed ? {} : { category: $('carCat').value }), year: y, vin, colour: $('carColour').value, plate: $('carPlate').value, about: $('carAbout').value };
+}
+
+// ---- service providers: company or sole person (with a live face check) ----
+const selfie = SelfieCheck.mount($('selfieBox'));
+document.querySelectorAll('input[name="ptype"]').forEach(r => r.addEventListener('change', () => { $('selfieBox').hidden = !document.querySelector('input[name="ptype"][value="sole"]').checked; if ($('selfieBox').hidden) selfie.reset(); }));
+function whoData(vendor) {
+  const t = (document.querySelector('input[name="ptype"]:checked') || {}).value;
+  if (!t) throw new Error('Say whether you are a company or a sole person.');
+  if (t === 'company') {
+    if (($(vendor ? 'vbusiness' : 'business').value || '').trim().length < 2) throw new Error('Enter your company name.');
+    return { providerType: 'company' };
+  }
+  if (!selfie.ready()) throw new Error('Take the two live photos of your face with the camera.');
+  return { providerType: 'sole', ...selfie.data() };
+}
+
 // Signed in: keep the session, send the vehicle photo (customers), and go to the right page
 async function finishSignIn(token, role, image) {
   localStorage.setItem('authToken', token);
+  if (signupCar) {
+    // The vehicle they told us about while signing up. If it fails the app asks them to add it, so carry on.
+    try {
+      await fetch('/vehicle', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(signupCar) });
+    } catch (e) {}
+    signupCar = null;
+  }
   if (image) {
     // Account is made: now send the photo. If it fails the app asks for it again, so carry on.
     try {
@@ -495,7 +567,7 @@ $('form').addEventListener('submit', async e => {
     if (mode === 'vendor') {
       Object.assign(body, { agreed: true, name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value,
         businessName: $('vbusiness').value, experience: $('vstock').value,
-        offers: [...document.querySelectorAll('#offers input:checked')].map(c => c.value) });
+        offers: [...document.querySelectorAll('#offers input:checked')].map(c => c.value), ...whoData(true) });
       const res = await fetch('/auth/register-vendor', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || 'Could not submit your application.');
@@ -506,7 +578,7 @@ $('form').addEventListener('submit', async e => {
       Object.assign(body, { agreed: true,
         name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value,
         specialties: [...document.querySelectorAll('#specialties input:checked')].map(c => c.value),
-        businessName: $('business').value, experience: $('experience').value
+        businessName: $('business').value, experience: $('experience').value, ...whoData(false)
       });
       const res = await fetch('/auth/register-technician', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
@@ -520,6 +592,7 @@ $('form').addEventListener('submit', async e => {
       Object.assign(body, { agreed: true, name: $('name').value, phone: $('phone').value, address: $('address').value, parish: $('parish').value });
       if (!$('photo').files[0]) throw new Error("Add a photo of your motor vehicle.");
       image = await prepareImage($('photo').files[0]); // check the photo first so we don't create an account that can't finish
+      signupCar = carData();
     }
     const res = await fetch(mode === 'register' ? '/auth/register' : '/auth/login', {
       method: 'POST',

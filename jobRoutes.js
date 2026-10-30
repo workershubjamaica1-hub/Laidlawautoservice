@@ -225,6 +225,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   router.post('/jobs/online', ...techOnly, handle(async (req, res) => {
     const online = !!(req.body && req.body.online);
     if (online && !specialtiesOf(req.user).length) return res.status(400).json({ error: 'Add the kinds of work you do in My account first, so we know which jobs to send you.' });
+    if (online && req.user.provider_type === 'sole' && req.user.identity_status !== 'approved') return res.status(403).json({ error: req.user.identity_status === 'rejected' ? 'Your face check was not accepted. Do it again in My account, then you can go online.' : 'Your face check is still being reviewed by AutoAid 24/7. You can go online as soon as it is approved.', code: 'identity' });
     const { error } = await supabase.from('users').update({ online, online_at: new Date().toISOString() }).eq('id', req.user.id);
     if (error) throw error;
     res.json({ online });

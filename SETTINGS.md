@@ -17,7 +17,7 @@ After changing a setting in Render, save and let it redeploy.
 | Name | What it is |
 |---|---|
 | `ADMIN_SECRET` | a long random text. Without it, everyone is signed out every time the site restarts. |
-| `AI_API_KEY` | your Anthropic key for the "Ask the mechanic" chat (without it the chat gives basic canned answers) |
+| `AI_API_KEY` | your Anthropic key for the "AutoAid AI" chat (without it the chat gives basic canned answers) |
 | `CORS_ORIGIN` | leave **empty**. Only fill it (e.g. `https://your-other-site.com`) if another website or app must call your API. |
 | `BUSINESS_NAME` | `AutoAid 24/7` |
 

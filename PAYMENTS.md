@@ -87,7 +87,13 @@ Each membership year gives **2 services** for that vehicle. A service is a **dia
 done by a technician. **AutoAid provides the technician. The customer supplies the oil and filter**, or agrees a price with the technician in the
 job chat if the technician supplies them (the technician records it as the job amount). Services must be at least 60 days apart.
 
-Premium uses the **same Fygaro account, button and keys** as the other online payments (see above), so set that up first.
+Premium can be paid **by card (Fygaro)** or **by bank transfer**. While Fygaro is paused, bank transfer is the way:
+
+1. In the admin portal, **Users > Settings > Bank details**, type the account customers should pay into.
+2. The customer taps **Join Premium by bank transfer** on the Premium page and sees the amount, your bank details and a reference (like AA-12-X7K). They pay with that reference and can upload a photo of the receipt.
+3. You get an email, and the payment shows on the Overview under **Payments to confirm**. When the money is in your account, press **Confirm**: the vehicle becomes Premium for a year and the customer is emailed. Press **Reject** (with a reason) if it never arrived.
+
+Card payment uses the same Fygaro account, button and keys as the other online payments (see above).
 It is **off** until you set `PREMIUM_ENABLED=true`, and a vehicle type is only offered when it has a price.
 
 ## How it works for the customer

@@ -242,3 +242,34 @@ body:not([data-tab="requests"]):not([data-tab="emergencies"]):not([data-tab="veh
 .users-table td.act { min-width: 0; text-align: left; }
 .users-table td.act .btn { margin: 3px 4px 3px 0; white-space: nowrap; font-size: 12.5px; padding: 6px 10px; }
 @media (max-width: 640px) { .users-table { table-layout: auto; } .users-table th:nth-child(n) { width: auto; } }
+
+#bankPending { display: none; }
+body[data-tab="dashboard"]:not(.viewing-tech) #bankPending { display: block; margin-bottom: 14px; }
+
+/* live face check (selfie.js) */
+.selfie { margin: 6px 0 10px; }
+.selfie .sf-stage video { width: 100%; max-height: 340px; background: #000; border-radius: 12px; transform: scaleX(-1); object-fit: cover; }
+.selfie .sf-prompt { margin: 8px 0; font-weight: 700; }
+.selfie .sf-shots { display: flex; gap: 8px; margin: 8px 0; }
+.selfie .sf-shots img { width: 48%; max-width: 200px; border-radius: 10px; transform: scaleX(-1); }
+.selfie .sf-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.selfie .sf-error:empty { display: none; }
+.who-opts label { display: block; margin: 6px 0; font-weight: 600; }
+.car-box { border: 1px solid #D5DEE9; border-radius: 12px; padding: 4px 12px 12px; margin: 10px 0; }
+.car-box h4 { margin: 10px 0 0; }
+
+/* admin: one person's profile */
+.profile-dlg { width: min(720px, 94vw); max-height: 90vh; border: 0; border-radius: 16px; padding: 16px; overflow: auto; }
+.profile-dlg::backdrop { background: rgba(8, 20, 40, .55); }
+.profile-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.profile-head h3 { margin: 0; }
+.pf-photos { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+.pf-pic { margin: 0; width: 200px; max-width: 46%; }
+.pf-pic img { width: 100%; border-radius: 10px; display: block; }
+.pf-pic figcaption { font-size: .8rem; color: #5B6B80; margin-top: 4px; }
+.pf-card { border: 1px solid #D5DEE9; border-radius: 12px; padding: 10px 12px; margin: 10px 0; }
+.pf-card h4 { margin: 0 0 6px; }
+.pf-row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px dashed #E3EAF3; }
+.pf-row span { color: #5B6B80; }
+.pf-row b { text-align: right; overflow-wrap: anywhere; }
+.pf-car { padding: 6px 0 10px; }

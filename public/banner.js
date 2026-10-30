@@ -16,7 +16,7 @@
       i: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>' },
     { t: 'Routine maintenance', d: 'Oil changes, filters, fluids and safety inspections.',
       i: '<rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9.5 14l2 2 3.5-4"/>' },
-    { t: 'Ask the mechanic, 24/7', d: 'Chat about any vehicle problem, any time of day or night.',
+    { t: 'AutoAid AI, 24/7', d: 'Chat about any vehicle problem, any time of day or night.',
       i: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>' },
     { t: 'Technicians in your parish', d: 'Skilled professionals across all 14 parishes, close to you.',
       i: '<path d="M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>' }

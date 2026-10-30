@@ -30,7 +30,7 @@ app.use((req, res, next) => {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
+    'Permissions-Policy': 'geolocation=(self), camera=(self), microphone=(), payment=()',
     'Content-Security-Policy': CSP
   });
   if (req.get('x-forwarded-proto') === 'https') res.set('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
@@ -44,8 +44,9 @@ if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 
 // The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
 const smallJson = express.json();
-const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|jobs\/\d+\/photo|rentals\/(licence|my-vehicles\/\d+\/photos?(\/(front|back|left|right))?|bookings\/\d+\/photos)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
-app.use((req, res, next) => (bigBodyPaths.test(req.path) ? next() : smallJson(req, res, next)));
+const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|jobs\/\d+\/photo|premium\/bank-request\/\d+\/proof|rentals\/(licence|my-vehicles\/\d+\/photos?(\/(front|back|left|right))?|bookings\/\d+\/photos)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
+const applyJson = express.json({ limit: '6mb' });   // an application can carry two live photos
+app.use((req, res, next) => (bigBodyPaths.test(req.path) ? next() : /^\/auth\/register-(technician|vendor)$/.test(req.path) ? applyJson(req, res, next) : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
@@ -62,7 +63,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SEC
 // Database columns are snake_case; the API keeps camelCase for the frontend
 const { premiumStatusOf, tierOfCategory } = require('./subscriptionConfig');
 const dateOnly = v => (v ? String(v).slice(0, 10) : null);
-const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.category, year: r.year, vin: r.vin, createdAt: r.created_at,
+const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.category, year: r.year, vin: r.vin, colour: r.colour || '', plate: r.plate || '', about: r.about || '', createdAt: r.created_at,
   reminders: { fitness: dateOnly(r.fitness_due), registration: dateOnly(r.registration_due), insurance: dateOnly(r.insurance_due), oil: dateOnly(r.oil_due) },
   premium: (st => ({ status: st.status, paidUntil: st.paidUntil, daysLeft: st.daysLeft, tier: (tierOfCategory(r.category) || {}).label || null }))(premiumStatusOf(r)) });   // this vehicle's Premium membership
 const toRequest = r => ({
@@ -207,6 +208,33 @@ app.get('/vehicles', ...noVendor, handle(async (req, res) => {
   res.json(data.map(toVehicle));
 }));
 
+// Chassis numbers: a 17-character VIN, or the shorter chassis number on many Japanese imports (for example NZE141-1234567)
+const CHASSIS_ERROR = 'Enter the chassis number exactly as it is on the car (5 to 25 letters, numbers and dashes).';
+const cleanChassis = v => { const t = String(v || '').trim().toUpperCase(); return !t ? '' : /^[A-Z0-9][A-Z0-9-]{3,23}[A-Z0-9]$/.test(t) ? t : false; };
+// The little profile of the car: colour, number plate and a few words about it
+function cleanProfile(b) {
+  const out = {};
+  for (const [key, col, max] of [['colour', 'colour', 30], ['plate', 'plate', 12], ['about', 'about', 300]]) {
+    if (b[key] === undefined) continue;
+    const t = String(b[key] || '').trim().replace(/\s+/g, ' ').slice(0, max + 1);
+    if (t.length > max) return { error: 'The ' + key + ' is too long (at most ' + max + ' characters).' };
+    out[col] = col === 'plate' ? t.toUpperCase() : t;
+  }
+  return { value: out };
+}
+app.patch('/vehicle/:id(\\d+)/profile', ...noVendor, handle(async (req, res) => {
+  if (req.user.role !== 'customer') return res.status(403).json({ error: 'Only the owner can change this.' });
+  const { data: v } = await supabase.from('vehicles').select('id, user_id').eq('id', Number(req.params.id)).maybeSingle();
+  if (!v || v.user_id !== req.user.id) return res.status(404).json({ error: 'Vehicle not found.' });
+  const patch = cleanProfile(req.body || {});
+  if (patch.error) return res.status(400).json({ error: patch.error });
+  if (req.body && req.body.vin !== undefined) { const c = cleanChassis(req.body.vin); if (c === false) return res.status(400).json({ error: CHASSIS_ERROR }); patch.value.vin = c; }
+  if (!Object.keys(patch.value).length) return res.status(400).json({ error: 'Nothing to change.' });
+  const { data, error } = await supabase.from('vehicles').update(patch.value).eq('id', v.id).select().single();
+  if (error) throw error;
+  res.json(toVehicle(data));
+}));
+
 app.post('/vehicle', ...noVendor, handle(async (req, res) => {
   const { year, vin } = req.body;
   const owner = String(req.body.owner || req.user.name || '').trim();
@@ -237,16 +265,18 @@ app.post('/vehicle', ...noVendor, handle(async (req, res) => {
   if (!Number.isInteger(y) || y < 1900 || y > maxYear) {
     return res.status(400).json({ error: `Year must be between 1900 and ${maxYear}.` });
   }
-  if (vin && !/^[A-HJ-NPR-Z0-9]{17}$/i.test(vin)) {
-    return res.status(400).json({ error: 'A VIN has 17 letters and numbers (no I, O or Q).' });
-  }
+  const chassis = cleanChassis(vin);
+  if (chassis === false) return res.status(400).json({ error: CHASSIS_ERROR });
+  const profile = cleanProfile(req.body);
+  if (profile.error) return res.status(400).json({ error: profile.error });
   const { data, error } = await supabase.from('vehicles').insert({
     owner,
     user_id: req.user.id,
     type,                // must match vehicleCatalog.js exactly
     category,            // e.g. "small-truck"
     year: y,
-    vin: (vin || '').toUpperCase()
+    vin: chassis,
+    ...profile.value
   }).select().single();
   if (error) throw error;
   res.status(201).json(toVehicle(data));
@@ -501,6 +531,10 @@ app.use(parts.router);
 
 // --- Vehicle rentals: rental companies list vehicles, customers book them (rentalRoutes.js). Off until RENTALS_ENABLED=true. ---
 const rentals = require('./rentalRoutes')({ supabase, handle, auth, push, subs });
+
+// --- Premium paid by bank transfer: the customer asks, the admin confirms when the money arrives (bankRoutes.js) ---
+const bank = require('./bankRoutes')({ supabase, handle, auth, push, subs });
+app.use(bank.router);
 if (process.env.PUSH_FAKE === '1') app.post('/_parts_sweep', handle(async (req, res) => res.json(await parts.sweep(Number(req.body && req.body.ageMs) || undefined))));   // tests only
 if (process.env.PUSH_FAKE === '1') {   // tests only: move a booking's dates back, and run the overdue / auto-agree check now
   app.post('/_rentals_backdate/:id', handle(async (req, res) => { const { error } = await supabase.from('rental_bookings').update({ start_date: req.body.start, end_date: req.body.end, ...(req.body.returnedAt ? { returned_at: req.body.returnedAt } : {}) }).eq('id', Number(req.params.id)); if (error) throw error; res.json({ ok: true }); }));

@@ -86,5 +86,30 @@
     });
   }
 
-  window.AccountUI = { mountSecurity, mountDetails };
+  // Company or sole person, with the live face check (selfie.js). Shown to technicians and businesses.
+  function mountIdentity(el, { api, user, onSaved }) {
+    const status = u => u.providerType === 'company' ? 'You are registered as a company.'
+      : u.providerType === 'sole' ? (u.identityStatus === 'approved' ? 'You are a sole person and your face check is approved.'
+        : u.identityStatus === 'rejected' ? 'Your face check was not accepted' + (u.identityNote ? ': ' + u.identityNote : '') + '. Please do it again below.'
+        : 'You are a sole person. Your face check is waiting for an admin to review it.') : 'Tell us whether you are a company or a sole person.';
+    const done = user.providerType === 'company' || (user.providerType === 'sole' && user.identityStatus !== 'rejected');
+    el.innerHTML = '<section class="acct-block"><h3>Who you are</h3><p class="acct-note" id="idn-status">' + esc(status(user)) + '</p>' +
+      (done ? '' : '<div class="who-opts"><label><input type="radio" name="idn-type" value="company"> A company</label><label><input type="radio" name="idn-type" value="sole"> A sole person (I work on my own)</label></div>' +
+        '<div id="idn-selfie" hidden></div><button class="btn" id="idn-save" type="button">Save</button> <span class="acct-status" id="idn-msg" role="status"></span>') + '</section>';
+    if (done) return;
+    const check = window.SelfieCheck.mount(el.querySelector('#idn-selfie'));
+    el.querySelectorAll('input[name="idn-type"]').forEach(r => r.addEventListener('change', () => { el.querySelector('#idn-selfie').hidden = el.querySelector('input[name="idn-type"]:checked').value !== 'sole'; }));
+    el.querySelector('#idn-save').addEventListener('click', async () => {
+      const t = (el.querySelector('input[name="idn-type"]:checked') || {}).value, msg = el.querySelector('#idn-msg');
+      msg.textContent = '';
+      if (!t) { msg.textContent = 'Choose company or sole person.'; return; }
+      if (t === 'sole' && !check.ready()) { msg.textContent = 'Take the two live photos first.'; return; }
+      try {
+        const r = await api('/auth/identity', { method: 'POST', body: { providerType: t, ...(t === 'sole' ? check.data() : {}) } });
+        if (onSaved) onSaved(r.user);
+        mountIdentity(el, { api, user: r.user, onSaved });
+      } catch (err) { msg.textContent = err.message; }
+    });
+  }
+  window.AccountUI = { mountSecurity, mountDetails, mountIdentity };
 })();
