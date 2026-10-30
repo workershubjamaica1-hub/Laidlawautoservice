@@ -551,6 +551,13 @@ $('verifyForm').addEventListener('submit', async e => {
   }
 });
 
+// the password box goes green when it is right and red when it is wrong
+function markPw(good, el) { el = el || $('pw'); el.classList.toggle('pw-good', good === true); el.classList.toggle('pw-bad', good === false); }
+$('pw').addEventListener('input', () => {
+  if (mode === 'register') markPw($('pw').value ? $('pw').value.length >= 8 : null);   // while creating: green once it is long enough
+  else markPw(null);
+});
+$('rPw').addEventListener('input', () => markPw($('rPw').value ? $('rPw').value.length >= 8 : null, $('rPw')));
 // the page opens on Sign in: let the browser fill and save the password, and bring back the last email used on this device
 $('email').autocomplete = 'username';
 try { if (!$('email').value) $('email').value = localStorage.getItem('rememberedEmail') || ''; } catch (_) {}
@@ -601,7 +608,8 @@ $('form').addEventListener('submit', async e => {
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 403 && data.code === 'email_unverified') return showVerify(data.email || body.email, true, null);   // signed up earlier but never verified
-    if (!res.ok) throw new Error(data.error || 'Could not sign in.');
+    if (!res.ok) { if (res.status === 401) markPw(false); throw new Error(data.error || 'Could not sign in.'); }
+    markPw(true);
     if (data.verificationRequired) return showVerify(body.email, data.emailSent, image);
     try {
       if ($('remember').checked) { localStorage.setItem('rememberedEmail', body.email.trim()); if (window.PasswordCredential) await navigator.credentials.store(new PasswordCredential({ id: body.email.trim(), password: body.password, name: data.user.name })); }

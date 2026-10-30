@@ -115,3 +115,7 @@ main { place-items: start center; }
 .who-opts label { display: block; margin: 6px 0; font-weight: 600; }
 .car-box { border: 1px solid #D5DEE9; border-radius: 12px; padding: 4px 12px 12px; margin: 10px 0; }
 .car-box h4 { margin: 10px 0 0; }
+
+/* password box: green when right, red when wrong */
+input.pw-good { border-color: #1a8f4c !important; background: #eaf8f0 !important; box-shadow: 0 0 0 3px rgba(26, 143, 76, .18); }
+input.pw-bad { border-color: #d12c2c !important; background: #fdecec !important; box-shadow: 0 0 0 3px rgba(209, 44, 44, .18); }
