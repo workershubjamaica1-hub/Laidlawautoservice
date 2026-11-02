@@ -1717,14 +1717,20 @@ const visibleText = t => t.replace(BOOK_TAG, '').replace(/\[\[[^\]]*$/, '').trim
 function addBookButton(_msgDiv, tag, question) {
   const category = tag[1], urgency = tag[2];
   if (!state.categories.service.some(c => c.value === category)) return;
-  const catLabel = labelOf(state.categories.service, category);
+  const svc = state.categories.service;
+  const hasTow = svc.some(c => c.value === 'towing');
+  const wantsTow = category === 'towing';
+  const mechCat = wantsTow ? (svc.find(c => c.value === 'mechanical') || svc[0]).value : category;   // what the mechanic would do
+  const catLabel = labelOf(svc, mechCat);
   const urg = { high: 'Get it checked soon', medium: 'Book when you can', low: 'Routine' }[urgency];
   const bar = $('ai-actions');
   bar.hidden = false;
-  bar.innerHTML = '<div class="ai-rec"><span class="ai-rec-label">Recommended for you</span><strong>' + esc(catLabel) + '</strong>' +
+  const mechBtn = '<button class="btn' + (wantsTow ? ' ghost' : ' safety') + '" type="button" data-cat="' + esc(mechCat) + '">A mechanic comes to me</button>';
+  const towBtn = hasTow ? '<button class="btn' + (wantsTow ? ' safety' : ' ghost') + '" type="button" data-cat="towing">A tow truck takes it to the nearest mechanic</button>' : '';
+  bar.innerHTML = '<div class="ai-rec"><span class="ai-rec-label">' + (wantsTow ? 'I recommend a tow truck' : 'I recommend a mechanic') + '</span>' +
+    '<strong>' + (wantsTow ? 'Tow to the nearest mechanic' : esc(catLabel)) + '</strong>' +
     (urg ? '<span class="urgency ' + esc(urgency) + '">' + urg + '</span>' : '') + '</div>' +
-    '<div class="ai-rec-btns"><button class="btn safety" type="button" data-cat="' + esc(category) + '">Book ' + esc(catLabel.toLowerCase()) + ' service</button>' +
-    (category !== 'towing' && state.categories.service.some(c => c.value === 'towing') ? '<button class="btn ghost" type="button" data-cat="towing">Tow truck to the nearest mechanic</button>' : '') + '</div>';
+    '<div class="ai-rec-btns">' + (wantsTow ? towBtn + mechBtn : mechBtn + towBtn) + '</div>';
   bar.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async () => {
     const aiVehicle = $('ai-vehicle').value;
     let newVehicle = null;
