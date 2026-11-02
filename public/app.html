@@ -396,9 +396,10 @@
         <select id="ai-vehicle"></select>
         <div class="ai-other-row" id="ai-other-row" hidden>
           <div><label for="ai-year">Year</label><select id="ai-year"></select></div>
-          <div><label for="ai-type">Type of vehicle</label><select id="ai-type"></select></div>
+          <div><label for="ai-brand">Brand</label><select id="ai-brand"></select></div>
+          <div><label for="ai-type">Type / model</label><select id="ai-type" disabled></select></div>
         </div>
-        <input id="ai-other" maxlength="60" autocomplete="off" placeholder="Type the make and model, e.g. Honda Fit" aria-label="Type the make and model" hidden>
+        <input id="ai-other" maxlength="60" autocomplete="off" placeholder="Type it here, e.g. Honda Fit" aria-label="Type the make and model" hidden>
       </div>
       <div class="chat" id="chat" role="log" aria-live="polite">
         <div class="msg bot">Hi, I am AutoAid AI, your 24/7 vehicle helper. Tell me what is going on with your vehicle, like "truck sags at the back when loaded" or "temperature gauge keeps rising", and I will help you work out what to do next.</div>
@@ -676,11 +677,8 @@ function renderSelects() {
     state.vehicles.map(v => `<option value="${v.id}">${esc(v.year)} ${esc(v.type)} (${esc(labelOf(state.categories.vehicle, v.category))})</option>`).join('') +
     '<option value="other">A different vehicle</option>';
   const yr = new Date().getFullYear() + 1;
-  $('ai-year').innerHTML = '<option value="">Choose the year</option>' + Array.from({ length: yr - 1969 }, (_, i) => '<option>' + (yr - i) + '</option>').join('');
-  $('ai-type').innerHTML = '<option value="">Choose the type</option>' +
-    state.categories.vehicle.filter(c => (state.catalog || {})[c.value] && state.catalog[c.value].length).map(c =>
-      '<optgroup label="' + esc(c.label) + '">' + state.catalog[c.value].slice().sort().map(n => '<option>' + esc(n) + '</option>').join('') + '</optgroup>').join('') +
-    '<option value="__other">Other (I will type it)</option>';
+  if (!$('ai-year').options.length) $('ai-year').innerHTML = '<option value="">Choose the year</option>' + Array.from({ length: yr - 1969 }, (_, i) => '<option>' + (yr - i) + '</option>').join('');
+  if (!$('ai-brand').options.length) fillAiBrands();   // fill once, so a re-draw does not wipe what was chosen
   if (state.vehicles.some(v => String(v.id) === aCurrent)) aSel.value = aCurrent;
 }
 
@@ -1571,10 +1569,40 @@ let chatHistory = [];
 let chatBusy = false;
 let chatVehicleLabel = null;   // which vehicle the last question was about, so a change mid-chat is told to the AI
 
+// The catalog lists whole names ("Toyota Corolla"): split them into a brand and a model so the lists narrow as you choose
+const TWO_WORD_BRANDS = ['Land Rover', 'Alfa Romeo', 'Great Wall', 'Royal Enfield', 'Western Star', 'King Long', 'Golden Dragon', 'Blue Bird', 'New Holland', 'John Deere', 'Massey Ferguson'];
+const BODY_WORDS = /^(Cement|Concrete|Garbage|Tanker|Water|Flatbed|Wrecker|Tow|Box|Refrigerated|Crane|Fire|Forklift)\b/;
+function brandOf(name) {
+  if (BODY_WORDS.test(name)) return 'Truck bodies and equipment';
+  const two = TWO_WORD_BRANDS.find(b => name.startsWith(b + ' ') || name === b);
+  return two || name.split(' ')[0];
+}
+function fillAiBrands() {
+  const names = [...new Set(Object.values(state.catalog || {}).flat())];
+  const by = {};
+  names.forEach(n => { (by[brandOf(n)] = by[brandOf(n)] || []).push(n); });
+  state.aiBrands = by;
+  $('ai-brand').innerHTML = '<option value="">Choose the brand</option>' +
+    Object.keys(by).sort((x, y) => x.localeCompare(y)).map(br => '<option>' + esc(br) + '</option>').join('') +
+    '<option value="__other">Other brand (I will type it)</option>';
+  fillAiModels();
+}
+function fillAiModels() {
+  const br = $('ai-brand').value, t = $('ai-type');
+  t.disabled = !br;
+  if (!br) { t.innerHTML = '<option value="">Choose the brand first</option>'; return; }
+  const list = br === '__other' ? [] : (state.aiBrands[br] || []).slice().sort((x, y) => x.localeCompare(y, undefined, { numeric: true }));
+  t.innerHTML = '<option value="">Choose the type / model</option>' +
+    list.map(n => '<option value="' + esc(n) + '">' + esc(n.slice(br.length).trim() || n) + '</option>').join('') +
+    '<option value="__other">Other (I will type it)</option>';
+  if (br === '__other') t.value = '__other';
+}
 const aiVehicleLabel = () => {
   const s = $('ai-vehicle');
   if (s.value === 'other') {
-    const t = $('ai-type').value === '__other' ? $('ai-other').value.trim() : $('ai-type').value;
+    const br = $('ai-brand').value, ty = $('ai-type').value;
+    const typed = $('ai-other').value.trim();
+    const t = ty === '__other' ? ((br && br !== '__other' ? br + ' ' : '') + typed).trim() : ty;
     return t && $('ai-year').value ? $('ai-year').value + ' ' + t : '';
   }
   return s.value ? s.options[s.selectedIndex].text : '';
@@ -1583,6 +1611,7 @@ const showOtherBoxes = () => {
   $('ai-other-row').hidden = $('ai-vehicle').value !== 'other';
   $('ai-other').hidden = $('ai-other-row').hidden || $('ai-type').value !== '__other';
 };
+$('ai-brand').addEventListener('change', () => { fillAiModels(); showOtherBoxes(); if (!$('ai-other').hidden) $('ai-other').focus({ preventScroll: true }); });
 $('ai-type').addEventListener('change', () => { showOtherBoxes(); if (!$('ai-other').hidden) $('ai-other').focus({ preventScroll: true }); });
 $('ai-vehicle').addEventListener('change', () => {
   showOtherBoxes();
@@ -1653,7 +1682,7 @@ async function sendChat() {
   $('ai-error').textContent = '';
   if (!q) { $('ai-error').textContent = 'Type a message first.'; return; }
   const label = aiVehicleLabel();
-  if ($('ai-vehicle').value === 'other' && !label) { $('ai-error').textContent = 'Choose the year and the type of vehicle first.'; (!$('ai-year').value ? $('ai-year') : $('ai-type').value === '__other' ? $('ai-other') : $('ai-type')).focus(); return; }
+  if ($('ai-vehicle').value === 'other' && !label) { $('ai-error').textContent = 'Choose the year, brand and type of vehicle first.'; (!$('ai-year').value ? $('ai-year') : !$('ai-brand').value ? $('ai-brand') : $('ai-type').value === '__other' ? $('ai-other') : $('ai-type')).focus(); return; }
   const changed = chatHistory.length && label !== chatVehicleLabel;
   chatHistory.push({ role: 'user', content: changed ? '(New vehicle for this question: ' + (label || 'no particular vehicle') + '.) ' + q : q });
   if (!chatHistory.length || chatHistory.length === 1) { $('ai-vehicle-box').hidden = true; if (label) addMsg('Talking about: ' + esc(label), 'note'); }   // once the chat starts it is just the conversation

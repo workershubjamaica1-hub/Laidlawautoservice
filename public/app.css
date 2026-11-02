@@ -271,3 +271,6 @@ main > section h2 { display: flex; align-items: center; gap: 10px; }
 .ai-composer textarea { flex: 1; border: 0; outline: 0; box-shadow: none; resize: none; background: transparent; font: inherit; padding: 8px 0; max-height: 120px; min-height: 24px; margin: 0; }
 .ai-send { width: 42px; height: 42px; border-radius: 50%; border: 0; background: linear-gradient(135deg, #2186F5, #0B5CC0); color: #fff; display: grid; place-items: center; cursor: pointer; flex: none; }
 .ai-send:disabled, .ai-send.busy { opacity: .55; cursor: wait; }
+
+.ai-other-row { grid-template-columns: 1fr 1.4fr 1.6fr; }
+@media (max-width: 520px) { .ai-other-row { grid-template-columns: 1fr; } }
