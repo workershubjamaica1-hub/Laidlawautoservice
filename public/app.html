@@ -390,10 +390,12 @@
         <div class="msg bot">Hi, I am AutoAid AI, your 24/7 vehicle helper. Describe a symptom, like "truck sags at the back when loaded" or "temperature gauge keeps rising". Pick your vehicle first for advice that fits it. You can keep chatting: I'll ask follow-up questions, go as technical as you need, and suggest what to book.</div>
       </div>
       <form id="ai-form" novalidate>
-        <label for="ai-vehicle">Which vehicle are we talking about? (you can change it any time)</label>
+        <div id="ai-vehicle-box">
+        <label for="ai-vehicle">Which vehicle are we talking about?</label>
         <select id="ai-vehicle"></select>
         <input id="ai-other" maxlength="80" list="ai-other-list" autocomplete="off" placeholder="Choose from the list or type it, e.g. 2012 Honda Fit" aria-label="Type or choose the vehicle" hidden>
         <datalist id="ai-other-list"></datalist>
+        </div>
         <label for="question">Your message</label>
         <textarea id="question" name="question" rows="2" maxlength="4000" placeholder="Type your question. Enter to send, Shift+Enter for a new line." required></textarea>
         <div class="chat-actions">
@@ -1636,6 +1638,7 @@ async function sendChat() {
   if ($('ai-vehicle').value === 'other' && !label) { $('ai-error').textContent = 'Type the year, make and model of the vehicle.'; $('ai-other').focus(); return; }
   const changed = chatHistory.length && label !== chatVehicleLabel;
   chatHistory.push({ role: 'user', content: changed ? '(New vehicle for this question: ' + (label || 'no particular vehicle') + '.) ' + q : q });
+  if (!chatHistory.length || chatHistory.length === 1) { $('ai-vehicle-box').hidden = true; if (label) addMsg('Talking about: ' + esc(label), 'note'); }   // once the chat starts it is just the conversation
   addMsg(esc(q), 'you');
   $('question').value = '';
   setBusy(true);
@@ -1687,6 +1690,7 @@ async function sendChat() {
       chatHistory.pop();            // nothing came back: let them send the question again
       $('question').value = q;
       $('chat').lastElementChild.remove(); // their unanswered message bubble
+      if (!chatHistory.length) { $('ai-vehicle-box').hidden = false; const n = $('chat').querySelector('.msg.note'); if (n) n.remove(); }   // first message failed: back to choosing the vehicle
     }
     $('ai-error').textContent = err.message;
   } finally {
@@ -1704,6 +1708,7 @@ $('ai-new').addEventListener('click', () => {
   chatHistory = []; chatVehicleLabel = null;
   $('chat').innerHTML = '<div class="msg bot">Hi, I am AutoAid AI. What is going on with your vehicle?</div>';
   $('ai-error').textContent = ''; $('question').value = '';
+  $('ai-vehicle-box').hidden = false;
   closeDlg('dlg-ai');   // ending the chat closes it; the next one starts fresh
 });
 
