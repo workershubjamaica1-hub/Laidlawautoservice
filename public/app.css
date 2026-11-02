@@ -274,3 +274,12 @@ main > section h2 { display: flex; align-items: center; gap: 10px; }
 
 .ai-other-row { grid-template-columns: 1fr 1.4fr 1.6fr; }
 @media (max-width: 520px) { .ai-other-row { grid-template-columns: 1fr; } }
+
+/* photos of the car and the chassis number */
+.vx-block { margin: 10px 0 4px; display: grid; gap: 8px; justify-items: start; }
+.vx-strip, .vx-photos { display: flex; gap: 8px; flex-wrap: wrap; }
+.vx-strip img { width: 64px; height: 48px; object-fit: cover; border-radius: 8px; border: 1px solid var(--brand-100, #dbe7f7); }
+.vx-why { color: var(--ink-soft, #5b6b7f); }
+.vx-photos figure { position: relative; margin: 0; }
+.vx-photos img { width: 96px; height: 72px; object-fit: cover; border-radius: 10px; border: 1px solid var(--brand-100, #dbe7f7); display: block; }
+.vx-photos button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: #d12c2c; color: #fff; cursor: pointer; line-height: 1; }

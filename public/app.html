@@ -414,6 +414,20 @@
   </section>
 </dialog>
 
+<dialog class="modal" id="dlg-vextra" aria-labelledby="vx-title">
+  <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
+  <h3 id="vx-title"></h3>
+  <p class="hint">A chassis number and a few photos let us (and the parts sellers) find the exact parts for your car, so you buy the right part the first time.</p>
+  <label for="vx-vin">Chassis number</label>
+  <input id="vx-vin" maxlength="25" autocomplete="off" placeholder="As written on the car or the registration paper" style="text-transform:uppercase">
+  <p class="hint" style="font-size:13px">On the registration paper. On the car it is stamped under the bonnet, in the door frame, or on a plate at the bottom of the windscreen.</p>
+  <label for="vx-file">Photos of the car (up to 4: the front, the back, the sides, the engine, the chassis plate)</label>
+  <div class="vx-photos" id="vx-photos"></div>
+  <input id="vx-file" type="file" accept="image/*" multiple>
+  <div class="chat-actions" style="margin-top:12px"><button class="btn" id="vx-save" type="button">Save</button></div>
+  <p class="error" id="vx-error" role="alert"></p>
+</dialog>
+
 <dialog class="modal" id="dlg-sos" aria-label="Request emergency help">
   <button class="modal-x" type="button" data-close aria-label="Close">&times;</button>
   <form class="sos-form" id="sos-form" novalidate>
@@ -623,6 +637,50 @@ function remindersBlock(v) {
     '<form data-rem="' + v.id + '">' + REMINDERS.map(([k, label]) => '<label>' + esc(label) + ' ' + dueChip(r[k]) + '<input type="date" name="' + k + '" value="' + esc(r[k] || '') + '"></label>').join('') +
     '<button class="btn small" type="submit">Save reminders</button><p class="rem-msg" role="status"></p></form><small>We email you and send a notification 14 days before, and again on the day.</small></details>';
 }
+// Photos of the car and the chassis number help when buying parts
+function vehicleExtrasBlock(v) {
+  const urls = v.photoUrls || [];
+  const done = v.vin && urls.length;
+  return '<div class="vx-block">' + (urls.length ? '<div class="vx-strip">' + urls.map(u => '<img src="' + esc(u) + '" alt="Photo of your ' + esc(v.type) + '" loading="lazy">').join('') + '</div>' : '') +
+    '<button class="btn small ' + (done ? 'ghost' : '') + '" type="button" data-extras="' + v.id + '">' + (done ? 'Edit chassis number and photos' : 'Add chassis number and photos') + '</button>' +
+    (done ? '' : '<small class="vx-why">Helps us find the right parts for your car.</small>') + '</div>';
+}
+async function refreshVehicles() { state.vehicles = await api('/vehicles'); render(); }
+let vxId = null;
+function drawVxPhotos(v) {
+  const urls = (v && v.photoUrls) || [];
+  $('vx-photos').innerHTML = urls.map((u, i) => '<figure><img src="' + esc(u) + '" alt="Photo ' + (i + 1) + '"><button type="button" data-vxdel="' + i + '" aria-label="Remove photo ' + (i + 1) + '">&times;</button></figure>').join('');
+  $('vx-file').disabled = urls.length >= 4;
+}
+function openVehicleExtras(id) {
+  const v = state.vehicles.find(x => x.id === Number(id)); if (!v) return;
+  vxId = v.id;
+  $('vx-title').textContent = 'Your ' + v.year + ' ' + v.type;
+  $('vx-vin').value = v.vin || ''; $('vx-file').value = ''; $('vx-error').textContent = '';
+  drawVxPhotos(v);
+  openDlg('dlg-vextra');
+}
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-extras]'); if (b) openVehicleExtras(b.dataset.extras); });
+$('vx-photos').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-vxdel]'); if (!b) return;
+  try { await api('/vehicle/' + vxId + '/photo/' + b.dataset.vxdel, { method: 'DELETE' }); await refreshVehicles(); drawVxPhotos(state.vehicles.find(x => x.id === vxId)); }
+  catch (err) { $('vx-error').textContent = err.message; }
+});
+$('vx-save').addEventListener('click', async () => {
+  const v = state.vehicles.find(x => x.id === vxId); if (!v) return;
+  $('vx-error').textContent = ''; $('vx-save').disabled = true;
+  try {
+    const vin = $('vx-vin').value.trim();
+    if (vin !== (v.vin || '')) await api('/vehicle/' + vxId + '/profile', { method: 'PATCH', body: { vin } });
+    const room = 4 - (v.photoUrls || []).length;
+    const files = [...$('vx-file').files].slice(0, room);
+    for (const file of files) await api('/vehicle/' + vxId + '/photo', { method: 'POST', body: { image: await prepareImage(file) } });
+    await refreshVehicles();
+    closeDlg('dlg-vextra');
+  } catch (err) { $('vx-error').textContent = err.message; try { await refreshVehicles(); drawVxPhotos(state.vehicles.find(x => x.id === vxId)); } catch (_) {} }
+  finally { $('vx-save').disabled = false; }
+});
+
 function renderVehicles() {
   const list = $('vehicle-list');
   syncGarageForm();
@@ -639,7 +697,7 @@ function renderVehicles() {
       (v.colour ? '<div>' + I('car') + '<span><small>Colour</small><b>' + esc(v.colour) + '</b></span></div>' : '') +
       (v.plate ? '<div>' + I('doc') + '<span><small>Number plate</small><b>' + esc(v.plate) + '</b></span></div>' : '') +
       (v.about ? '<div>' + I('doc') + '<span><small>About</small><b>' + esc(v.about) + '</b></span></div>' : '') +
-      '<div>' + I('user') + '<span><small>Owner</small><b>' + esc(v.owner) + '</b></span></div></div>' + remindersBlock(v) + rm + '</div>';
+      '<div>' + I('user') + '<span><small>Owner</small><b>' + esc(v.owner) + '</b></span></div></div>' + vehicleExtrasBlock(v) + remindersBlock(v) + rm + '</div>';
   }).join('') + '</div>';
 }
 
@@ -679,7 +737,7 @@ function renderSelects() {
   const yr = new Date().getFullYear() + 1;
   if (!$('ai-year').options.length) $('ai-year').innerHTML = '<option value="">Choose the year</option>' + Array.from({ length: yr - 1969 }, (_, i) => '<option>' + (yr - i) + '</option>').join('');
   if (!$('ai-brand').options.length) fillAiBrands();   // fill once, so a re-draw does not wipe what was chosen
-  if (state.vehicles.some(v => String(v.id) === aCurrent)) aSel.value = aCurrent;
+  if (aCurrent === 'other' || state.vehicles.some(v => String(v.id) === aCurrent)) aSel.value = aCurrent;
 }
 
 function showPriceHint() {
@@ -1567,7 +1625,9 @@ $('profile-box').addEventListener('submit', async (e) => {
 // Chat history sent with every message so the mechanic remembers the conversation
 let chatHistory = [];
 let chatBusy = false;
-let chatVehicleLabel = null;   // which vehicle the last question was about, so a change mid-chat is told to the AI
+let chatVehicleLabel = null;
+let chatNewVehicle = null;     // a vehicle just added to the garage from this chat: we suggest the chassis number and photos after the first answer
+let chatVehicle = null;        // { year, name } when the chat is about a vehicle that is not in the garage   // which vehicle the last question was about, so a change mid-chat is told to the AI
 
 // The catalog lists whole names ("Toyota Corolla"): split them into a brand and a model so the lists narrow as you choose
 const TWO_WORD_BRANDS = ['Land Rover', 'Alfa Romeo', 'Great Wall', 'Royal Enfield', 'Western Star', 'King Long', 'Golden Dragon', 'Blue Bird', 'New Holland', 'John Deere', 'Massey Ferguson'];
@@ -1665,10 +1725,26 @@ function addBookButton(_msgDiv, tag, question) {
     (urg ? '<span class="urgency ' + esc(urgency) + '">' + urg + '</span>' : '') + '</div>' +
     '<div class="ai-rec-btns"><button class="btn safety" type="button" data-cat="' + esc(category) + '">Book ' + esc(catLabel.toLowerCase()) + ' service</button>' +
     (category !== 'towing' && state.categories.service.some(c => c.value === 'towing') ? '<button class="btn ghost" type="button" data-cat="towing">Tow truck to the nearest mechanic</button>' : '') + '</div>';
-  bar.querySelectorAll('button').forEach(btn => btn.addEventListener('click', () => {
+  bar.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async () => {
     const aiVehicle = $('ai-vehicle').value;
+    let newVehicle = null;
+    if (aiVehicle === 'other' && chatVehicle && chatVehicle.id) newVehicle = { id: chatVehicle.id };   // already added from this chat
+    else if (aiVehicle === 'other' && chatVehicle) {
+      // a vehicle picked in the chat that is not in the garage yet: add it, so the booking is for that vehicle
+      bar.querySelectorAll('button').forEach(x => { x.disabled = true; });
+      try {
+        const cars = state.categories.vehicle.find(c => c.value === 'cars' || c.value === 'car') || state.categories.vehicle[0];
+        newVehicle = await api('/vehicle', { method: 'POST', body: { type: chatVehicle.name, year: chatVehicle.year, ...(cars ? { category: cars.value } : {}) } });
+        state.vehicles.push(newVehicle);
+        chatVehicle.id = newVehicle.id;
+        render();
+      } catch (err) { $('ai-error').textContent = 'Could not add the vehicle: ' + err.message; }
+      bar.querySelectorAll('button').forEach(x => { x.disabled = false; });
+      if (!newVehicle) return;
+    }
     $('category').value = btn.dataset.cat;
-    if (/^\d+$/.test(aiVehicle)) $('vehicleId').value = aiVehicle;
+    if (newVehicle) $('vehicleId').value = newVehicle.id;
+    else if (/^\d+$/.test(aiVehicle)) $('vehicleId').value = aiVehicle;
     $('description').value = question;
     closeDlg('dlg-ai'); openBook();
     (state.vehicles.length ? $('description') : $('owner')).focus({ preventScroll: true });
@@ -1683,6 +1759,18 @@ async function sendChat() {
   if (!q) { $('ai-error').textContent = 'Type a message first.'; return; }
   const label = aiVehicleLabel();
   if ($('ai-vehicle').value === 'other' && !label) { $('ai-error').textContent = 'Choose the year, brand and type of vehicle first.'; (!$('ai-year').value ? $('ai-year') : !$('ai-brand').value ? $('ai-brand') : $('ai-type').value === '__other' ? $('ai-other') : $('ai-type')).focus(); return; }
+  const prevVehicle = chatVehicle;
+  chatVehicle = $('ai-vehicle').value === 'other' && label ? { year: $('ai-year').value, name: label.slice($('ai-year').value.length + 1) } : null;
+  if (prevVehicle && prevVehicle.id && chatVehicle && prevVehicle.name === chatVehicle.name && prevVehicle.year === chatVehicle.year) chatVehicle.id = prevVehicle.id;
+  if (chatVehicle && !chatVehicle.id) {
+    setBusy(true);
+    try {
+      const cars = state.categories.vehicle.find(c => c.value === 'cars' || c.value === 'car') || state.categories.vehicle[0];
+      const added = await api('/vehicle', { method: 'POST', body: { type: chatVehicle.name, year: chatVehicle.year, ...(cars ? { category: cars.value } : {}) } });
+      state.vehicles.push(added); chatVehicle.id = added.id; chatNewVehicle = added;
+      render();
+    } catch (err) { setBusy(false); $('ai-error').textContent = 'Could not add the vehicle to your garage: ' + err.message; return; }
+  }
   const changed = chatHistory.length && label !== chatVehicleLabel;
   chatHistory.push({ role: 'user', content: changed ? '(New vehicle for this question: ' + (label || 'no particular vehicle') + '.) ' + q : q });
   if (!chatHistory.length || chatHistory.length === 1) { $('ai-vehicle-box').hidden = true; if (label) addMsg('Talking about: ' + esc(label), 'note'); }   // once the chat starts it is just the conversation
@@ -1726,6 +1814,10 @@ async function sendChat() {
     chatHistory.push({ role: 'assistant', content: visibleText(reply) });
     chatVehicleLabel = label;
     bubble.innerHTML = formatReply(visibleText(reply));
+    if (chatNewVehicle) {
+      const nv = chatNewVehicle; chatNewVehicle = null;
+      addMsg('<p>I added your <strong>' + esc(nv.year + ' ' + nv.type) + '</strong> to your garage.</p><p>If you can, add the chassis number and a few photos of the car. It helps us find the right parts for it, so you buy the correct part the first time.</p><button class="btn small" type="button" data-extras="' + nv.id + '">Add chassis number and photos</button>', 'bot');
+    }
     const tag = reply.match(BOOK_TAG);
     if (tag) addBookButton(bubble, tag, chatHistory.filter(m => m.role === 'user').map(m => m.content).join('. ').slice(0, 1000));
   } catch (err) {
@@ -1752,7 +1844,7 @@ $('question').addEventListener('keydown', (e) => {
 });
 $('ai-new').addEventListener('click', () => {
   if (chatBusy) return;
-  chatHistory = []; chatVehicleLabel = null;
+  chatHistory = []; chatVehicleLabel = null; chatVehicle = null;
   $('chat').innerHTML = '<div class="msg bot">Hi, I am AutoAid AI. What is going on with your vehicle?</div>';
   $('ai-error').textContent = ''; $('question').value = '';
   $('ai-vehicle-box').hidden = false; $('ai-actions').hidden = true; $('ai-actions').innerHTML = '';

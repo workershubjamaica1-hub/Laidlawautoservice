@@ -44,7 +44,7 @@ if (corsOrigins.length) app.use(cors({ origin: corsOrigins }));
 
 // The chassis photo upload (auth.js) has its own larger limit, so skip the small default for that one path
 const smallJson = express.json();
-const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|jobs\/\d+\/photo|premium\/bank-request\/\d+\/proof|rentals\/(licence|my-vehicles\/\d+\/photos?(\/(front|back|left|right))?|bookings\/\d+\/photos)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
+const bigBodyPaths = /^\/(auth\/(chassis-photo|avatar)|jobs\/\d+\/photo|vehicle\/\d+\/photo|premium\/bank-request\/\d+\/proof|rentals\/(licence|my-vehicles\/\d+\/photos?(\/(front|back|left|right))?|bookings\/\d+\/photos)|admin\/jobs\/(service|emergency)\/\d+\/photo|webhooks\/fygaro)$/;
 const applyJson = express.json({ limit: '6mb' });   // an application can carry two live photos
 app.use((req, res, next) => (bigBodyPaths.test(req.path) ? next() : /^\/auth\/register-(technician|vendor)$/.test(req.path) ? applyJson(req, res, next) : smallJson(req, res, next)));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -63,7 +63,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SEC
 // Database columns are snake_case; the API keeps camelCase for the frontend
 const { premiumStatusOf, tierOfCategory } = require('./subscriptionConfig');
 const dateOnly = v => (v ? String(v).slice(0, 10) : null);
-const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.category, year: r.year, vin: r.vin, colour: r.colour || '', plate: r.plate || '', about: r.about || '', createdAt: r.created_at,
+const toVehicle = r => ({ id: r.id, owner: r.owner, type: r.type, category: r.category, year: r.year, vin: r.vin, photoCount: Array.isArray(r.photos) ? r.photos.length : 0, colour: r.colour || '', plate: r.plate || '', about: r.about || '', createdAt: r.created_at,
   reminders: { fitness: dateOnly(r.fitness_due), registration: dateOnly(r.registration_due), insurance: dateOnly(r.insurance_due), oil: dateOnly(r.oil_due) },
   premium: (st => ({ status: st.status, paidUntil: st.paidUntil, daysLeft: st.daysLeft, tier: (tierOfCategory(r.category) || {}).label || null }))(premiumStatusOf(r)) });   // this vehicle's Premium membership
 const toRequest = r => ({
@@ -205,7 +205,38 @@ app.get('/vehicles', ...noVendor, handle(async (req, res) => {
   if (isCustomer(req)) query = query.eq('user_id', req.user.id);
   const { data, error } = await query;
   if (error) throw error;
-  res.json(data.map(toVehicle));
+  // short-lived links to the photos of each car (the bucket stays private)
+  res.json(await Promise.all(data.map(async r => ({ ...toVehicle(r), photoUrls: (await Promise.all((Array.isArray(r.photos) ? r.photos : []).map(p => auth.signedPhotoUrl(p).catch(() => null)))).filter(Boolean) }))));
+}));
+
+// Photos of the car (to help find the right parts): up to MAX_VEHICLE_PHOTOS, the owner only
+const MAX_VEHICLE_PHOTOS = 4;
+const bigPhotoJson = express.json({ limit: '6mb' });
+app.post('/vehicle/:id(\\d+)/photo', ...noVendor, bigPhotoJson, handle(async (req, res) => {
+  if (req.user.role !== 'customer') return res.status(403).json({ error: 'Only the owner can add photos.' });
+  const { data: v } = await supabase.from('vehicles').select('id, user_id, photos').eq('id', Number(req.params.id)).maybeSingle();
+  if (!v || v.user_id !== req.user.id) return res.status(404).json({ error: 'Vehicle not found.' });
+  const photos = Array.isArray(v.photos) ? v.photos : [];
+  if (photos.length >= MAX_VEHICLE_PHOTOS) return res.status(400).json({ error: 'You can add up to ' + MAX_VEHICLE_PHOTOS + ' photos of a car. Remove one first.' });
+  const img = auth.readImage(req.body);
+  if (img.error) return res.status(img.status).json({ error: img.error });
+  const path = 'vehicles/' + v.id + '-' + Date.now();
+  await auth.storePhoto(path, img.buf, img.type);
+  const { data, error } = await supabase.from('vehicles').update({ photos: [...photos, path] }).eq('id', v.id).select().single();
+  if (error) { await auth.removePhoto(path).catch(() => {}); throw error; }
+  res.status(201).json({ photoCount: data.photos.length });
+}));
+app.delete('/vehicle/:id(\\d+)/photo/:n(\\d+)', ...noVendor, handle(async (req, res) => {
+  if (req.user.role !== 'customer') return res.status(403).json({ error: 'Only the owner can remove photos.' });
+  const { data: v } = await supabase.from('vehicles').select('id, user_id, photos').eq('id', Number(req.params.id)).maybeSingle();
+  if (!v || v.user_id !== req.user.id) return res.status(404).json({ error: 'Vehicle not found.' });
+  const photos = Array.isArray(v.photos) ? v.photos.slice() : [], n = Number(req.params.n);
+  if (n >= photos.length) return res.status(404).json({ error: 'Photo not found.' });
+  const [gone] = photos.splice(n, 1);
+  const { error } = await supabase.from('vehicles').update({ photos }).eq('id', v.id);
+  if (error) throw error;
+  await auth.removePhoto(gone).catch(() => {});
+  res.json({ photoCount: photos.length });
 }));
 
 // Chassis numbers: a 17-character VIN, or the shorter chassis number on many Japanese imports (for example NZE141-1234567)
@@ -311,7 +342,8 @@ app.delete('/vehicle/:id', ...noVendor, handle(async (req, res) => {
   // Its service requests are removed automatically (ON DELETE CASCADE)
   let query = supabase.from('vehicles').delete().eq('id', id);
   if (isCustomer(req)) query = query.eq('user_id', req.user.id);
-  const { data, error } = await query.select('id');
+  const { data, error } = await query.select('id, photos');
+  if (!error) for (const row of data || []) for (const p of Array.isArray(row.photos) ? row.photos : []) await auth.removePhoto(p).catch(() => {});
   if (error) throw error;
   if (!data.length) return res.status(404).json({ error: 'Vehicle not found.' });
   res.json({ deleted: id });

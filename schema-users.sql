@@ -494,4 +494,5 @@ schema-users
 
 -- Vehicle profile and service-provider identity (company or sole person, with a live selfie check)
 alter table public.vehicles add column if not exists colour text, add column if not exists plate text, add column if not exists about text;
+alter table public.vehicles add column if not exists photos jsonb not null default '[]'::jsonb;
 alter table public.users add column if not exists provider_type text, add column if not exists selfie_path text, add column if not exists selfie2_path text, add column if not exists identity_status text, add column if not exists identity_note text, add column if not exists identity_at timestamptz;
