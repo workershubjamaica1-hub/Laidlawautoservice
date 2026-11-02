@@ -237,3 +237,6 @@ main > section h2 { display: flex; align-items: center; gap: 10px; }
 .ai-fab .ic { width: 22px; height: 22px; background: currentColor; -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; display: inline-block; }
 .ai-fab:hover { filter: brightness(1.08); }
 @media (max-width: 720px) { .ai-fab { bottom: 84px; right: 12px; padding: 12px; } .ai-fab-text { display: none; } .ai-fab .ic { width: 26px; height: 26px; } }
+
+/* "Now talking about: ..." marker when the vehicle is changed in the middle of a chat */
+.msg.note { align-self: center; background: none; border: 0; padding: 2px 8px; font-size: .85rem; color: var(--muted, #5b6b7f); text-align: center; }

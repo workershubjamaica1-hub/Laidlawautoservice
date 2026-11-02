@@ -390,13 +390,15 @@
         <div class="msg bot">Hi, I am AutoAid AI, your 24/7 vehicle helper. Describe a symptom, like "truck sags at the back when loaded" or "temperature gauge keeps rising". Pick your vehicle first for advice that fits it. You can keep chatting: I'll ask follow-up questions, go as technical as you need, and suggest what to book.</div>
       </div>
       <form id="ai-form" novalidate>
-        <label for="ai-vehicle">About which vehicle?</label>
+        <label for="ai-vehicle">Which vehicle are we talking about? (you can change it any time)</label>
         <select id="ai-vehicle"></select>
+        <input id="ai-other" maxlength="80" list="ai-other-list" autocomplete="off" placeholder="Choose from the list or type it, e.g. 2012 Honda Fit" aria-label="Type or choose the vehicle" hidden>
+        <datalist id="ai-other-list"></datalist>
         <label for="question">Your message</label>
         <textarea id="question" name="question" rows="2" maxlength="4000" placeholder="Type your question. Enter to send, Shift+Enter for a new line." required></textarea>
         <div class="chat-actions">
           <button class="btn" id="ai-send" type="submit">Send</button>
-          <button class="btn ghost" id="ai-new" type="button">New chat</button>
+          <button class="btn ghost" id="ai-new" type="button">End chat</button>
         </div>
         <p class="error" id="ai-error" role="alert"></p>
       </form>
@@ -664,7 +666,9 @@ function renderSelects() {
   const aSel = $('ai-vehicle');
   const aCurrent = aSel.value;
   aSel.innerHTML = '<option value="">Not specific to a vehicle</option>' +
-    state.vehicles.map(v => `<option value="${v.id}">${esc(v.year)} ${esc(v.type)} (${esc(labelOf(state.categories.vehicle, v.category))})</option>`).join('');
+    state.vehicles.map(v => `<option value="${v.id}">${esc(v.year)} ${esc(v.type)} (${esc(labelOf(state.categories.vehicle, v.category))})</option>`).join('') +
+    '<option value="other">A different vehicle (choose or type it)</option>';
+  $('ai-other-list').innerHTML = [...new Set(Object.values(state.catalog || {}).flat())].sort().map(n => '<option value="' + esc(n) + '"></option>').join('');
   if (state.vehicles.some(v => String(v.id) === aCurrent)) aSel.value = aCurrent;
 }
 
@@ -1553,6 +1557,18 @@ $('profile-box').addEventListener('submit', async (e) => {
 // Chat history sent with every message so the mechanic remembers the conversation
 let chatHistory = [];
 let chatBusy = false;
+let chatVehicleLabel = null;   // which vehicle the last question was about, so a change mid-chat is told to the AI
+
+const aiVehicleLabel = () => {
+  const s = $('ai-vehicle');
+  if (s.value === 'other') return $('ai-other').value.trim().slice(0, 80);
+  return s.value ? s.options[s.selectedIndex].text : '';
+};
+$('ai-vehicle').addEventListener('change', () => {
+  $('ai-other').hidden = $('ai-vehicle').value !== 'other';
+  if (!$('ai-other').hidden) $('ai-other').focus({ preventScroll: true });
+  if (chatHistory.length) addMsg('Now talking about: ' + esc(aiVehicleLabel() || 'no particular vehicle'), 'note');
+});
 
 const BOOK_TAG = /\[\[BOOK:([a-z-]+)\|([a-z]+)\]\]/;
 
@@ -1616,7 +1632,10 @@ async function sendChat() {
   const q = $('question').value.trim();
   $('ai-error').textContent = '';
   if (!q) { $('ai-error').textContent = 'Type a message first.'; return; }
-  chatHistory.push({ role: 'user', content: q });
+  const label = aiVehicleLabel();
+  if ($('ai-vehicle').value === 'other' && !label) { $('ai-error').textContent = 'Type the year, make and model of the vehicle.'; $('ai-other').focus(); return; }
+  const changed = chatHistory.length && label !== chatVehicleLabel;
+  chatHistory.push({ role: 'user', content: changed ? '(New vehicle for this question: ' + (label || 'no particular vehicle') + '.) ' + q : q });
   addMsg(esc(q), 'you');
   $('question').value = '';
   setBusy(true);
@@ -1626,7 +1645,7 @@ async function sendChat() {
     const res = await fetch('/ai-chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-      body: JSON.stringify({ messages: chatHistory, vehicleId: Number($('ai-vehicle').value) || undefined })
+      body: JSON.stringify({ messages: chatHistory, vehicleId: Number($('ai-vehicle').value) || undefined, otherVehicle: $('ai-vehicle').value === 'other' ? label : undefined })
     });
     if (res.status === 401) { leave(); return; }
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Request failed (' + res.status + ').');
@@ -1655,6 +1674,7 @@ async function sendChat() {
     bubble.classList.remove('typing');
     if (failure) throw new Error(failure);
     chatHistory.push({ role: 'assistant', content: visibleText(reply) });
+    chatVehicleLabel = label;
     bubble.innerHTML = formatReply(visibleText(reply));
     const tag = reply.match(BOOK_TAG);
     if (tag) addBookButton(bubble, tag, chatHistory.filter(m => m.role === 'user').map(m => m.content).join('. ').slice(0, 1000));
@@ -1681,9 +1701,10 @@ $('question').addEventListener('keydown', (e) => {
 });
 $('ai-new').addEventListener('click', () => {
   if (chatBusy) return;
-  chatHistory = [];
-  $('chat').innerHTML = '<div class="msg bot">New chat started. What is going on with your vehicle?</div>';
-  $('ai-error').textContent = '';
+  chatHistory = []; chatVehicleLabel = null;
+  $('chat').innerHTML = '<div class="msg bot">Hi, I am AutoAid AI. What is going on with your vehicle?</div>';
+  $('ai-error').textContent = ''; $('question').value = '';
+  closeDlg('dlg-ai');   // ending the chat closes it; the next one starts fresh
 });
 
 load();
