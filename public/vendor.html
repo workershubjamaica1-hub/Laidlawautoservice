@@ -230,6 +230,8 @@ function showView(v) {
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+// the AutoAid logo always goes back to the home screen
+document.querySelector('.brand').addEventListener('click', (e) => { e.preventDefault(); if (location.hash) location.hash = ''; showView(''); });
 
 let me = null, cfg = {}, offersParts = false, offersRentals = false, pchat = null, rchat = null;
 let orders = [], ofilter = 'open', bookings = [], bfilter = 'open', vehicles = [], parishes = [];

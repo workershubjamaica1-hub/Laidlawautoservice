@@ -481,6 +481,8 @@ function showView(v) {
 function goView(v) { if (location.hash === '#' + v) showView(v); else location.hash = v; }
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
 showView(location.hash.slice(1));
+// the AutoAid logo always goes back to the home screen
+document.querySelector('.brand').addEventListener('click', (e) => { e.preventDefault(); document.querySelectorAll('dialog[open]').forEach(d => d.close()); goView('overview'); window.scrollTo(0, 0); });
 
 // Pop-up forms
 function openDlg(id) { const d = $(id); if (d && !d.open) d.showModal(); return d; }
