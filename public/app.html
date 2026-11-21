@@ -458,6 +458,7 @@
 </dialog>
 
 
+<script src="/ping.js"></script>
 <script src="/parts.js"></script>
 <script src="/rentals.js"></script>
 <script src="/account.js"></script>
@@ -1372,6 +1373,7 @@ async function loadParts() {
   let orders = [];
   try { orders = (await api('/parts/orders')).filter(o => o.kind !== 'accessory'); } catch (_) { return; }
   chat.renderList($('parts-list'), orders, 'No part orders yet. Tap "Order a part" to ask a vendor.');
+  Ping.watch('parts', orders, 'Update on your part order', 'A seller sent an offer or message.');
   const unread = orders.filter(o => o.unread).length;
   $('parts-badge').hidden = !unread; $('parts-badge').textContent = unread;
 }
@@ -1421,6 +1423,7 @@ async function loadAccessories() {
   let orders = [];
   try { orders = (await api('/parts/orders')).filter(o => o.kind === 'accessory'); } catch (_) { return; }
   accChat.renderList($('acc-list'), orders, 'No accessory requests yet. Tap "Ask for an accessory" to start.');
+  Ping.watch('acc', orders, 'Update on your accessory request', 'A seller sent an offer or message.');
   const unread = orders.filter(o => o.unread).length;
   $('acc-badge').hidden = !unread; $('acc-badge').textContent = unread;
 }
@@ -1469,6 +1472,7 @@ async function loadRentals() {
   let list = [];
   try { list = await api('/rentals/bookings'); } catch (_) { return; }
   rchat.renderList($('rentals-list'), list, 'No rentals yet. Find a vehicle and send a request.');
+  Ping.watch('rentals', list, 'Update on your rental', 'The company sent an update or message.');
   const unread = list.filter(b => b.unread).length;
   for (const id of ['rentals-badge', 'rentals-badge2']) { $(id).hidden = !unread; $(id).textContent = unread; }
 }

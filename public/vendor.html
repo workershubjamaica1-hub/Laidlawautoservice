@@ -189,6 +189,7 @@
   </form>
 </dialog>
 
+<script src="/ping.js"></script>
 <script src="/parts.js"></script>
 <script src="/rentals.js"></script>
 <script src="/selfie.js"></script>
@@ -241,7 +242,7 @@ function drawOrders() {
   const unread = orders.filter(o => o.unread).length;
   $('orders-badge').hidden = !unread; $('orders-badge').textContent = unread;
 }
-async function loadOrders() { if (!offersParts) return; try { orders = await api('/parts/orders'); drawOrders(); } catch (_) {} }
+async function loadOrders() { if (!offersParts) return; try { orders = await api('/parts/orders'); drawOrders(); Ping.watch('orders', orders, 'New parts activity', 'A customer sent a request or message.'); } catch (_) {} }
 
 // ---------- rental bookings ----------
 const isOpenBooking = b => ['requested', 'accepted', 'picked_up'].includes(b.status);
@@ -251,7 +252,7 @@ function drawBookings() {
   const unread = bookings.filter(b => b.unread).length;
   $('rentals-badge').hidden = !unread; $('rentals-badge').textContent = unread;
 }
-async function loadBookings() { if (!offersRentals) return; try { bookings = await api('/rentals/bookings'); drawBookings(); } catch (_) {} }
+async function loadBookings() { if (!offersRentals) return; try { bookings = await api('/rentals/bookings'); drawBookings(); Ping.watch('bookings', bookings, 'New rental activity', 'A renter sent a request or message.'); } catch (_) {} }
 
 // ---------- my rental vehicles ----------
 const CAT = { car: 'Car', suv: 'SUV', truck: 'Truck', van: 'Van', minibus: 'Minibus', other: 'Other' };
