@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /app.html
+Disallow: /admin.html
+Disallow: /vendor.html
+
+Sitemap: https://autoaid247.com/sitemap.xml
