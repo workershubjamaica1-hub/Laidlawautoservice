@@ -12,7 +12,7 @@
 
   // ------------------------------------------------------------ alerts
   const JobAlerts = (function () {
-    let ctx = null, ringTimer = null, flashTimer = null, stopTimer = null, baseTitle = '';
+    let ctx = null, ringTimer = null, flashTimer = null, stopTimer = null, baseTitle = '', constant = false;
     function audio() {
       if (!ctx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) { try { ctx = new AC(); } catch (_) {} } }
       if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
@@ -36,16 +36,17 @@
       const t = ctx.currentTime; tone(660, t, 0.18, 0.3, 'sine'); tone(880, t + 0.2, 0.3, 0.3, 'sine');
     }
     function stop() {
-      clearInterval(ringTimer); clearInterval(flashTimer); clearTimeout(stopTimer); ringTimer = flashTimer = stopTimer = null;
+      clearInterval(ringTimer); clearInterval(flashTimer); clearTimeout(stopTimer); ringTimer = flashTimer = stopTimer = null; constant = false;
       if (baseTitle) { document.title = baseTitle; baseTitle = ''; }
       try { if (navigator.vibrate) navigator.vibrate(0); } catch (_) {}
     }
-    function start(label) {
-      stop();
+    function start(label, nonStop) {   // nonStop (emergencies, wreckers): rings without a break until someone accepts the job or taps Silence
+      const keep = constant;
+      stop(); constant = !!nonStop || keep;
       baseTitle = document.title; let on = false;
-      siren(); ringTimer = setInterval(siren, 2400);
+      siren(); ringTimer = setInterval(siren, constant ? 1700 : 2400);
       flashTimer = setInterval(() => { on = !on; document.title = on ? '\u{1F6A8} ' + (label || 'NEW JOB') : baseTitle; }, 700);
-      stopTimer = setTimeout(stop, 90000);   // never ring forever
+      if (!constant) stopTimer = setTimeout(stop, 90000);   // an ordinary job never rings forever
     }
     function notify(title, body) {
       try { if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body, tag: 'autoaid-job', requireInteraction: true }); } catch (_) {}

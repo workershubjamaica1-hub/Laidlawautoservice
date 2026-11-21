@@ -443,7 +443,8 @@ async function pollJobs() {
   seenIncoming = new Set(feed.incoming.map(j => j.id));
   if (feed.online && fresh.length) {
     const urgent = fresh.some(j => j.urgent);
-    JobAlerts.start(urgent ? 'URGENT JOB' : 'NEW JOB');
+    const nonStop = fresh.some(j => j.urgent || j.category === 'towing' || j.category === 'roadside');
+    JobAlerts.start(urgent ? 'URGENT JOB' : 'NEW JOB', nonStop);
     const lbl = await JobChat.catLabel(fresh[0].category);
     $('alertText').textContent = '\u{1F6A8} ' + (urgent ? 'URGENT: ' : 'New ') + lbl + ' job' + (fresh.length > 1 ? 's (' + fresh.length + ')' : '') + ': ' + (fresh[0].locationText || fresh[0].parish);
     $('alertBanner').hidden = false;
