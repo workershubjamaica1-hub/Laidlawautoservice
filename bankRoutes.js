@@ -10,7 +10,7 @@
 // The bank details come from the admin page (Users > Settings) or, if none were saved there, the BANK_DETAILS setting in Render.
 const express = require('express');
 const mailer = require('./mailer');
-const { premium, premiumPlanFor, premiumStatusOf, tierOfCategory } = require('./subscriptionConfig');
+const { premium, premiumPlanFor, premiumStatusOf, tierOfCategory, serviceFee } = require('./subscriptionConfig');
 
 const MAX_PENDING_PER_CUSTOMER = 5;
 const money = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
@@ -43,7 +43,7 @@ module.exports = function bankRoutes({ supabase, handle, auth, push, subs }) {
     } catch (e) { console.error('Could not tell the customer about their payment:', e.message); }
   }
   const vehicleName = v => v.year + ' ' + v.type;
-  const shape = r => ({ id: r.id, vehicleId: r.vehicle_id, amount: Number(r.amount), reference: r.reference, status: r.status, note: r.customer_note || '', hasProof: !!r.proof_path, decisionNote: r.decision_note || '', createdAt: r.created_at });
+  const shape = r => ({ id: r.id, vehicleId: r.vehicle_id, amount: Number(r.amount), price: Math.round(Number(r.amount) / (1 + serviceFee.percent / 100)), serviceFee: Math.round((Number(r.amount) - Math.round(Number(r.amount) / (1 + serviceFee.percent / 100))) * 100) / 100, feePercent: serviceFee.percent, reference: r.reference, status: r.status, note: r.customer_note || '', hasProof: !!r.proof_path, decisionNote: r.decision_note || '', createdAt: r.created_at });
   const ref = vehicleId => 'AA-' + vehicleId + '-' + Math.random().toString(36).slice(2, 5).toUpperCase().replace(/[^A-Z0-9]/g, 'X');
 
   // ---------- customer ----------
@@ -70,11 +70,11 @@ module.exports = function bankRoutes({ supabase, handle, auth, push, subs }) {
     const note = String((req.body && req.body.note) || '').trim().slice(0, 200);
     let row = null;
     for (let i = 0; i < 5 && !row; i++) {
-      const ins = await supabase.from('bank_payments').insert({ user_id: req.user.id, vehicle_id: v.data.id, kind: 'premium', amount: plan.price, reference: ref(v.data.id), customer_note: note || null, status: 'pending' }).select().single();
+      const ins = await supabase.from('bank_payments').insert({ user_id: req.user.id, vehicle_id: v.data.id, kind: 'premium', amount: serviceFee.total(plan.price), reference: ref(v.data.id), customer_note: note || null, status: 'pending' }).select().single();
       if (!ins.error) row = ins.data; else if (ins.error.code !== '23505') throw ins.error;   // 23505: that reference was taken, try another
     }
     if (!row) return res.status(500).json({ error: 'Could not make a payment reference. Try again.' });
-    alertAdmins('Premium payment coming by bank transfer', req.user.name + ' wants to join Premium for their ' + vehicleName(v.data) + ' (' + money(plan.price) + ', reference ' + row.reference + '). Check your bank account for the transfer, then confirm it on the Overview.');
+    alertAdmins('Premium payment coming by bank transfer', req.user.name + ' wants to join Premium for their ' + vehicleName(v.data) + ' (' + money(serviceFee.total(plan.price)) + ' including the ' + serviceFee.percent + '% service fee, reference ' + row.reference + '). Check your bank account for the transfer, then confirm it on the Overview.');
     res.status(201).json({ ...shape(row), details });
   }));
 

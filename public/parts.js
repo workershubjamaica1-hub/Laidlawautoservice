@@ -43,7 +43,7 @@
       const fit = o.kind === 'accessory' && o.installMode;
       if (o.paid) return '<div class="deal"><b>Paid: ' + jmd(o.paidAmount) + '</b><p>AutoAid 24/7 is holding it. ' + esc(o.vendor.name) + (o.vendor.address ? ', ' + esc(o.vendor.address) : '') + (o.vendor.phone ? '<br>Phone: <a href="tel:' + esc(String(o.vendor.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.vendor.phone) + '</a>' : '') + '</p><p>' + (o.installMode === 'mobile' ? 'Agree a time in the chat for the seller to come and fit it.' : fit ? 'Take your vehicle to the shop to have it fitted.' : 'Collect it from the ' + who(o) + '.') + ' Afterwards, confirm here that you are happy so the ' + who(o) + ' is paid.</p></div>';
       return '<div class="deal"><b>Pay to confirm your order</b><p><strong>' + jmd(o.offer.total) + '</strong>, paid securely through Fygaro. AutoAid 24/7 holds it, and the ' + who(o) + ' is paid only after you confirm you are happy.</p>' +
-        (o.payUrl ? '<div class="th-actions"><a class="btn" href="' + esc(o.payUrl) + '" target="_blank" rel="noopener">Pay ' + jmd(o.offer.total) + ' securely</a></div><p class="th-hint">After paying, come back here. The payment shows within a minute.</p>' : '<p class="th-hint">Online payment is not available right now. Ask the ' + who(o) + ' in the chat.</p>') + '</div>';
+        (o.payUrl ? '<div class="th-actions"><a class="btn" href="' + esc(o.payUrl) + '" target="_blank" rel="noopener">Pay ' + jmd(o.serviceFee ? o.serviceFee.total : o.offer.total) + ' securely</a></div>' + (o.serviceFee ? '<p class="th-hint feebreak">Offer ' + jmd(o.offer.total) + ' + ' + o.serviceFee.percent + '% service fee ' + jmd(o.serviceFee.amount) + ' = <strong>' + jmd(o.serviceFee.total) + '</strong>. The ' + who(o) + ' receives the full ' + jmd(o.offer.total) + '.</p>' : '') + '<p class="th-hint">After paying, come back here. The payment shows within a minute.</p>' : '<p class="th-hint">Online payment is not available right now. Ask the ' + who(o) + ' in the chat.</p>') + '</div>';
     }
     function confirmBox(o) {
       if (role !== 'customer' || o.status !== 'completed' || o.payMode !== 'platform' || !o.paid || o.settled || o.dispute) return '';
@@ -54,7 +54,7 @@
       const p = [];
       if (o.dispute) p.push('<div class="deal late"><b>' + (o.dispute.resolvedAt ? 'Problem decided' : 'Problem reported') + '</b><p>' + esc(o.dispute.note) + '</p><p>' + (o.dispute.resolvedAt ? 'Decision: ' + esc(o.dispute.outcome) : 'The payment is held. AutoAid 24/7 will contact the customer and the ' + who(o) + '.') + '</p></div>');
       if (o.status === 'completed' && !o.settled && !o.dispute && role !== 'customer') p.push('<p class="th-hint">AutoAid 24/7 holds ' + jmd(o.paidAmount) + ' until the customer confirms (or 3 days pass).</p>');
-      if (o.settled && o.payout && role !== 'customer') p.push('<p class="th-hint"><strong>Payout: ' + jmd(o.payout.amount) + '</strong> (price less commission) &middot; ' + (o.payout.settled ? 'paid' : 'AutoAid 24/7 will send it to the bank account') + '.</p>');
+      if (o.settled && o.payout && role !== 'customer') p.push('<p class="th-hint"><strong>Payout: ' + jmd(o.payout.amount) + '</strong> (the full price: the customer paid the service fee on top) &middot; ' + (o.payout.settled ? 'paid' : 'AutoAid 24/7 will send it to the bank account') + '.</p>');
       if (o.refund && role !== 'vendor') p.push('<p class="th-hint"><strong>Refund: ' + jmd(o.refund.amount) + '</strong> &middot; ' + (o.refund.status === 'done' ? 'sent to the card' : 'AutoAid 24/7 will send it to the card') + '.</p>');
       if (role === 'admin' && o.dispute && !o.dispute.resolvedAt) p.push('<div class="th-actions"><button class="btn" type="button" data-act="resolve-release">Decide: pay the ' + who(o) + '</button><button class="btn ghost" type="button" data-act="resolve-refund">Decide: refund the customer</button></div>');
       return p.join('');
@@ -65,7 +65,7 @@
       const closed = o.status === 'completed' || o.status === 'cancelled';
       if (role === 'customer') {
         if (o.status === 'chatting') out.push('<p class="th-hint">Chat with the ' + (o.kind === 'accessory' ? 'seller' : 'vendor') + '. They will send you an offer with the price' + (o.kind === 'accessory' && o.installMode ? ' (and the fitting charge)' : '') + '. You only pay when you ' + (o.kind === 'accessory' && o.installMode ? 'get it fitted' : 'collect it') + '.</p>');
-        if (o.status === 'offered') out.push(summary(o) + '<div class="th-actions"><button class="btn" type="button" data-act="accept">Accept offer</button><button class="btn ghost" type="button" data-act="decline">Decline</button></div>');
+        if (o.status === 'offered') out.push(summary(o) + (o.serviceFee ? '<p class="th-hint feebreak">Paying through the app: ' + jmd(o.offer.total) + ' + ' + o.serviceFee.percent + '% service fee ' + jmd(o.serviceFee.amount) + ' = <strong>' + jmd(o.serviceFee.total) + '</strong>.</p>' : '') + '<div class="th-actions"><button class="btn" type="button" data-act="accept">Accept offer</button><button class="btn ghost" type="button" data-act="decline">Decline</button></div>');
         if (o.status === 'accepted' && o.payMode === 'platform') out.push(summary(o) + payBox(o));
         else if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>' + (o.kind === 'accessory' ? (o.installMode === 'mobile' ? 'Agree a time for the fitting' : o.installMode === 'shop' ? 'Take your vehicle to the shop for fitting' : 'Collect your item') : 'Collect your part') + '</b><p>' + esc(o.vendor.name) + (o.vendor.address ? ', ' + esc(o.vendor.address) : '') + (o.vendor.phone ? '<br>Phone: <a href="tel:' + esc(String(o.vendor.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.vendor.phone) + '</a>' : '') +
           '</p><p>Pay <strong>' + jmd(o.offer.total) + '</strong> to the ' + (o.kind === 'accessory' ? 'seller' : 'vendor') + (o.kind === 'accessory' && o.installMode ? ' when it is fitted.' : ' when you collect it.') + '</p></div>');
@@ -90,9 +90,9 @@
         }
         if (o.status === 'accepted' && o.payMode === 'platform' && !o.paid) out.push(summary(o) + '<p class="th-hint"><strong>Waiting for the customer to pay</strong> (' + jmd(o.offer.total) + ' through the app). Hand it over once the payment shows here.</p>');
         else if (o.status === 'accepted') out.push(summary(o) + '<div class="deal"><b>' + (o.kind === 'accessory' ? (o.installMode === 'mobile' ? 'The customer accepted. Agree a time to go and fit it.' : o.installMode === 'shop' ? 'The customer accepted. They will bring the vehicle to your shop for fitting.' : 'The customer accepted. They will collect it from you.') : 'The customer accepted. They will collect the part from you.') + '</b><p>Customer: ' + esc(o.customer.name) + (o.customer.phone ? ' &middot; <a href="tel:' + esc(String(o.customer.phone).replace(/[^\d+]/g, '')) + '">' + esc(o.customer.phone) + '</a>' : '') + '</p>' +
-          '<p>They pay you <strong>' + jmd(o.offer.total) + '</strong> in person.' + (o.commission ? ' AutoAid commission (' + o.commission.percent + '%): <strong>' + jmd(o.commission.amount) + '</strong>, due once you mark it picked up.' : '') + '</p></div>' +
+          '<p>They pay you <strong>' + jmd(o.offer.total) + '</strong> in person. AutoAid 24/7 charges you nothing.</p></div>' +
           (role === 'vendor' ? '<div class="th-actions"><button class="btn" type="button" data-act="complete">' + (o.kind === 'accessory' && o.installMode ? 'Mark fitted and paid' : 'Mark picked up and paid') + '</button></div>' : ''));
-        if (o.status === 'completed') out.push(summary(o) + (o.commission ? '<p class="th-hint">AutoAid commission (' + o.commission.percent + '%): ' + jmd(o.commission.amount) + (o.commission.settled ? ' &middot; settled' : ' &middot; due') + '.</p>' : '') +
+        if (o.status === 'completed') out.push(summary(o) + '' +
           (o.rating ? '<p class="th-hint">Customer rating <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span>' + (o.review ? ' "' + esc(o.review) + '"' : '') + '</p>' : ''));
       }
       out.push(moneyPanel(o));
@@ -125,7 +125,7 @@
       const t = dlg.querySelector('#of-total'); if (!t) return;
       const num = s => Number(String(s).replace(/[,\sJ$]/g, '')) || 0;
       const q = Number(dlg.querySelector('#of-qty').value), p = num(dlg.querySelector('#of-price').value), f = dlg.querySelector('#of-install') ? num(dlg.querySelector('#of-install').value) : 0, all = q * p + f;
-      t.textContent = q > 0 && p > 0 ? 'Total ' + jmd(all) + (commissionPercent ? '. AutoAid commission (' + commissionPercent + '%): ' + jmd(Math.round(all * commissionPercent) / 100) + '.' : '') : '';
+      t.textContent = q > 0 && p > 0 ? 'Total ' + jmd(all) + '. You receive all of it: AutoAid 24/7 charges you nothing.' + (commissionPercent ? ' If the customer pays through the app, a ' + commissionPercent + '% service fee is added to their price.' : '') : '';
     }
 
     async function refresh(keepScroll) {

@@ -53,12 +53,12 @@ See **EMAIL.md**. A 6-digit code is emailed when customers and service providers
 ## Live repair jobs
 
 Customers post a job, online technicians in that department hear a loud alert, the first to accept chats with the customer, sends a price and an arrival time, and the customer agrees.
-The customer pays the technician in person for now. AutoAid's fee is worked out when the customer agrees, counted when they confirm the job is done, and settled by the admin
-in the **Fees & orders** tab. Technicians choose their departments in **My account** and switch **Online** in the **Jobs** tab.
+The customer pays the technician in person for now, with no fee to anyone: technicians pay AutoAid nothing. (When customers pay through the app, a 3% service fee is added to
+their price, see PAYMENTS.md.) Technicians choose their departments in **My account** and switch **Online** in the **Jobs** tab.
 
 | Name | Default | What it is |
 |---|---|---|
-| `JOBS_FEE_PERCENT` | `5` | AutoAid's share of each completed repair job (0 to 50) |
+| `SERVICE_FEE_PERCENT` | `3` | the service fee the customer pays on top of the price on payments made through the app, for jobs, parts, rentals (rent only) and Premium (0 to 20). Providers pay nothing |
 | `JOBS_ONLINE_PAYMENT` | off | `true` makes customers pay online (Fygaro) when they agree the price. Needs the `FYGARO_*` settings in PAYMENTS.md |
 | `RENTALS_ONLINE_PAYMENT` | `true` | rentals are paid through the app (Fygaro): rent plus deposit are held by AutoAid 24/7, then the company is paid and the deposit refunded. Needs the Fygaro settings |
 | `PARTS_ONLINE_PAYMENT` | `true` | parts and accessories are paid through the app (Fygaro): the customer pays when they accept an offer, AutoAid 24/7 holds it, and the seller is paid after the customer confirms. Needs the Fygaro settings |
@@ -67,8 +67,8 @@ Run `schema-users.sql` in the Supabase SQL Editor once (safe to run again). Onli
 
 ## Parts ordering (optional, off until you switch it on)
 
-Customers order parts from approved parts vendors in a chat. Customers collect the part from the vendor and pay the vendor in person; AutoAid's commission is
-counted when the vendor marks the order picked up and paid, and the admin marks it settled in the **Parts** tab after the vendor pays it.
+Customers order parts from approved parts vendors in a chat. Customers collect the part from the vendor and pay the vendor in person with no fee; vendors pay AutoAid nothing.
+(When the customer pays through the app, the service fee is added to their price.)
 
 1. Run `schema-users.sql` in the Supabase SQL Editor (safe to run again). It adds the vendor account type and the order tables.
 2. In Render > Environment add `PARTS_ENABLED` = `true` and save.
@@ -77,13 +77,12 @@ counted when the vendor marks the order picked up and paid, and the admin marks 
 | Name | Default | What it is |
 |---|---|---|
 | `PARTS_ENABLED` | off | turns parts ordering on |
-| `PARTS_COMMISSION_PERCENT` | `3` | AutoAid's share of each completed parts order (0 to 50) |
 
 ## Vehicle rentals (optional, off until you switch it on)
 
 Rental companies join as vendors ("I run a business", then tick **Vehicle rentals**), list vehicles with a daily rate (at least 3 days), and customers
-request dates. Customers pay the company in person. AutoAid's commission is worked out on the rent (not the deposit) when the company accepts, counted when the
-vehicle is returned, and settled by the admin in the **Parts & rentals** tab.
+request dates. Customers pay the company in person with no fee; rental companies pay AutoAid nothing.
+(When the renter pays through the app, the service fee is added to the rent, not the deposit.)
 
 1. Run `schema-users.sql` in the Supabase SQL Editor (safe to run again).
 2. In Render > Environment add `RENTALS_ENABLED` = `true` and save.
@@ -91,7 +90,6 @@ vehicle is returned, and settled by the admin in the **Parts & rentals** tab.
 | Name | Default | What it is |
 |---|---|---|
 | `RENTALS_ENABLED` | off | turns vehicle rentals on |
-| `RENTALS_COMMISSION_PERCENT` | `5` | AutoAid's share of each completed rental (0 to 50) |
 
 Card on file is not built yet: it needs a payment provider that can save cards (see PAYMENTS.md). For now the customer agrees the company may charge for damage up to the deposit,
 and the company takes the card or deposit at pick-up. Cars 10 years or older get a deposit of one day's rent if the company leaves the deposit blank.

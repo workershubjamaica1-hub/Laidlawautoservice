@@ -115,3 +115,8 @@
 .shot-add input, .shot-more input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; font-size: 0; }
 .shot-extras { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; margin: 6px 0; }
 @media (max-width: 520px) { .shots { grid-template-columns: repeat(2, 1fr); } }
+
+/* the customer's photos of their car, shown to the provider */
+.carphotos { margin: 8px 0; }
+.carphotos > div { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.carphotos img { width: 110px; height: 80px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line, #E3E9F2); display: block; }

@@ -375,6 +375,9 @@
       <input id="plate" name="plate" maxlength="12" placeholder="1234 AB" style="text-transform:uppercase">
       <label for="about">A few words about the car (optional)</label>
       <textarea id="about" name="about" maxlength="300" placeholder="For example: automatic, petrol, small dent on the left door"></textarea>
+      <label for="vehicle-photos">Photos of the motor car (up to 4, optional)</label>
+      <input id="vehicle-photos" type="file" accept="image/*" multiple>
+      <p class="hint" style="font-size:13px;margin:4px 0 0">The tow truck or mechanic on your job sees these, so they can be sure they have the right car. They also help when buying parts.</p>
       <button class="btn" type="submit">Add vehicle</button>
       <button class="btn ghost" id="add-vehicle-cancel" type="button" hidden>Cancel</button>
       <p class="error" id="vehicle-error" role="alert"></p>
@@ -819,12 +822,17 @@ $('vehicle-form').addEventListener('submit', async (e) => {
       ...(custom ? { category: $('type-cat').value } : {})
     }});
     state.vehicles.push(v);
+    const pics = [...$('vehicle-photos').files].slice(0, 4);
+    let picFail = '';
+    for (const pic of pics) { try { await api('/vehicle/' + v.id + '/photo', { method: 'POST', body: { image: await prepareImage(pic) } }); } catch (err) { picFail = err.message; break; } }
+    if (pics.length) { try { await refreshVehicles(); } catch (_) {} }
     f.reset();
     f.owner.value = $('who').textContent;
     clearPick(); showCustom(false);
     render();
     $('vehicleId').value = v.id;
     $('ai-vehicle').value = v.id;
+    if (picFail) { $('vehicle-error').textContent = 'The vehicle is added, but a photo could not be saved: ' + picFail + ' You can add photos from My garage.'; return; }
     closeDlg('dlg-vehicle');
   } catch (err) { $('vehicle-error').textContent = err.message; }
 });
@@ -1103,7 +1111,7 @@ function joinButtons(p, v, label) {
 function bankBox(p, v) {
   const q = premiumBank.requests.find(x => x.vehicleId === v.id && x.status === 'pending');
   if (!q) return '';
-  return '<div class="bankbox"><b>Pay J$' + Number(q.amount).toLocaleString() + ' by bank transfer</b>' +
+  return '<div class="bankbox"><b>Pay J$' + Number(q.amount).toLocaleString() + ' by bank transfer</b>' + (q.serviceFee ? '<p class="empty" style="font-size:13.5px;margin:2px 0 6px">Premium J$' + Number(q.price).toLocaleString() + ' + ' + q.feePercent + '% service fee J$' + Number(q.serviceFee).toLocaleString() + '.</p>' : '') +
     '<pre class="bankdet">' + esc(premiumBank.details) + '</pre>' +
     '<p>Put this reference on your transfer: <strong class="bankref">' + esc(q.reference) + '</strong></p>' +
     '<p class="empty" style="font-size:13.5px">When we see your money, we start your Premium and tell you. You can add a photo of your receipt to help us find it.</p>' +
@@ -1117,7 +1125,7 @@ function premiumVehicleCard(p, v) {
   if (!v.offered) return '<div class="pv">' + head + '</div><p class="empty">Premium for this type of vehicle is coming soon.</p></div>';
   if (v.status !== 'active') {
     const expired = v.status === 'expired';
-    return '<div class="pv">' + head + '<span class="pv-price"><b>' + esc(v.priceLabel) + '</b><small>for 12 months</small></span></div>' +
+    return '<div class="pv">' + head + '<span class="pv-price"><b>' + esc(v.priceLabel) + '</b><small>for 12 months' + (v.serviceFee ? ' + ' + v.feePercent + '% service fee J$' + Number(v.serviceFee).toLocaleString() + ' = <strong>J$' + Number(v.total).toLocaleString() + '</strong>' : '') + '</small></span></div>' +
       (expired ? '<p class="empty" style="margin:0 0 8px">Ended on ' + esc(longDate(v.paidUntil)) + '. Renew to use your free services again.</p>' : '') +
       joinButtons(p, v, expired ? 'Renew Premium' : 'Join Premium') + '</div>';
   }

@@ -102,6 +102,19 @@ function serviceAllowance(rows, status, now = Date.now()) {
   return { used, limit: premium.servicesPerYear, left, nextAvailable: next > now ? new Date(next).toISOString() : null, canBook: left > 0 && next <= now };
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// The service fee: providers (technicians, tow trucks, sellers, rental companies) pay AutoAid nothing. On every payment made
+// THROUGH the app, the customer pays the provider's price plus a service fee of SERVICE_FEE_PERCENT (default 3) on top; the provider
+// receives the full agreed price and AutoAid keeps the fee. Jobs paid in person carry no fee (AutoAid cannot collect it).
+// ---------------------------------------------------------------------------------------------------------------------
+const serviceFee = (() => {
+  const n = Number(process.env.SERVICE_FEE_PERCENT);
+  const percent = process.env.SERVICE_FEE_PERCENT !== undefined && process.env.SERVICE_FEE_PERCENT !== '' && Number.isFinite(n) && n >= 0 && n <= 20 ? n : 3;
+  const round = x => Math.round(Number(x) * 100) / 100;
+  const on = amount => round(Number(amount) * percent / 100);
+  return { percent, on, total: amount => round(Number(amount) + on(amount)) };
+})();
+module.exports.serviceFee = serviceFee;
 module.exports.premium = premium;
 module.exports.premiumTiers = premiumTiers;
 module.exports.tierOfCategory = tierOfCategory;

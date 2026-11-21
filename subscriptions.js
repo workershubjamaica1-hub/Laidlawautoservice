@@ -14,7 +14,7 @@
 // Setup steps are in PAYMENTS.md. Fygaro's JWT links and notifications need their Pro plan.
 const crypto = require('crypto');
 const express = require('express');
-const { config, statusOf, priceLabel, DAY, premium, tierOfCategory, premiumPlanFor, premiumStatusOf, serviceAllowance, PERK } = require('./subscriptionConfig');
+const { config, statusOf, priceLabel, DAY, premium, tierOfCategory, premiumPlanFor, premiumStatusOf, serviceAllowance, PERK, serviceFee } = require('./subscriptionConfig');
 
 const FYGARO = {
   buttonUrl: process.env.FYGARO_BUTTON_URL || '',
@@ -165,7 +165,7 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
     const rows = await premiumRows(v.data.map(x => x.id));
     const vehicles = v.data.map(x => {
       const tier = tierOfCategory(x.category), plan = premiumPlanFor(x), st = premiumStatusOf(x);
-      return { id: x.id, name: vehicleName(x), category: x.category, covered: !!tier, tier: tier ? tier.label : null, price: plan ? plan.price : null, priceLabel: plan ? plan.priceLabel : '', offered: !!plan,
+      return { id: x.id, name: vehicleName(x), category: x.category, covered: !!tier, tier: tier ? tier.label : null, price: plan ? plan.price : null, priceLabel: plan ? plan.priceLabel : '', serviceFee: plan ? serviceFee.on(plan.price) : null, total: plan ? serviceFee.total(plan.price) : null, feePercent: serviceFee.percent, offered: !!plan,
         ...st, services: st.status === 'active' ? serviceAllowance(rows.filter(r => r.vehicle_id === x.id), st) : null };
     });
     res.json({ enabled: true, currency: config.currency, canPayOnline: gatewayReady(), servicesPerYear: premium.servicesPerYear, gapDays: premium.gapDays,
@@ -180,7 +180,7 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
     const plan = premiumPlanFor(v.data);
     if (!plan) return res.status(400).json({ error: 'Premium is not offered for this type of vehicle yet.' });
     if (!gatewayReady()) return res.status(503).json({ error: 'Online payment is not set up yet. Please contact AutoAid 24/7.' });
-    res.json({ url: checkoutUrl({ amount: plan.price.toFixed(2), currency: config.currency, custom_reference: 'premv-' + v.data.id + '-' + req.user.id + '-' + Date.now() }) });
+    res.json({ url: checkoutUrl({ amount: serviceFee.total(plan.price).toFixed(2), currency: config.currency, custom_reference: 'premv-' + v.data.id + '-' + req.user.id + '-' + Date.now() }) });
   }));
 
   // Book a free service for a member vehicle: creates a job that a technician can take. Uses up one service until it is cancelled.
@@ -252,7 +252,7 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
       const { data: veh } = await supabase.from('vehicles').select('*').eq('id', Number(premV[1])).maybeSingle();
       const plan = veh && veh.user_id === Number(premV[2]) ? premiumPlanFor(veh) : null;
       if (!premium.enabled || !plan) { console.warn('Fygaro payment ' + p.transactionId + ': Premium is not on offer for vehicle ' + premV[1]); return res.json({ ok: true, ignored: true }); }
-      if (cur !== config.currency || !(paid >= plan.price - 0.005)) { console.warn('Fygaro payment ' + p.transactionId + ' not credited: got ' + p.amount + ' ' + p.currency + ', expected ' + plan.price + ' ' + config.currency); return res.json({ ok: true, ignored: true }); }
+      if (cur !== config.currency || !(paid >= serviceFee.total(plan.price) - 0.005)) { console.warn('Fygaro payment ' + p.transactionId + ' not credited: got ' + p.amount + ' ' + p.currency + ', expected ' + serviceFee.total(plan.price) + ' ' + config.currency); return res.json({ ok: true, ignored: true }); }
       await creditVehicle({ vehicleId: veh.id, userId: veh.user_id, provider: 'fygaro', transactionId: String(p.transactionId), amount: paid, currency: cur, days: plan.days });
       return res.json({ ok: true });
     }

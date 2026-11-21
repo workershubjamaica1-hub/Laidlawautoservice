@@ -185,8 +185,11 @@
     const photoBlock = (o) => (o.photoUrl ? '<a class="jphoto-link" href="' + esc(o.photoUrl) + '" target="_blank" rel="noopener"><img class="jphoto" src="' + esc(o.photoUrl) + '" alt="Photo from the customer" loading="lazy" onerror="this.outerHTML=\'Open the photo\'"></a>' : '') +
       (isCustomer && ['searching', 'matched', 'quoted', 'agreed', 'working'].includes(o.stage) && o.urgent
         ? '<label class="btn ghost small photo-add">' + (o.photoUrl ? 'Change the photo' : 'Add a photo of where you are') + '<input type="file" accept="image/*" capture="environment" data-photo hidden></label><span class="th-hint photo-status" role="status"></span>' : '');
+    // photos of the car from the customer, for the provider to be sure of the vehicle
+    const carPhotos = o => (!isCustomer && o.vehicle && o.vehicle.photoUrls && o.vehicle.photoUrls.length)
+      ? '<div class="carphotos"><small>Photos of the car from the customer:</small><div>' + o.vehicle.photoUrls.map(u => '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="The customer\'s car" loading="lazy"></a>').join('') + '</div></div>' : '';
     const summary = (o, dept) => '<div class="offer"><div><b>' + esc(dept) + ' &middot; ' + esc(o.vehicle ? o.vehicle.name : '') + '</b><small>' + esc(o.description) + '</small>' +
-      '<small>' + esc(o.locationText ? 'At: ' + o.locationText : '') + (o.parish ? ' (' + esc(o.parish) + ')' : '') + '</small></div></div>' + photoBlock(o);
+      '<small>' + esc(o.locationText ? 'At: ' + o.locationText : '') + (o.parish ? ' (' + esc(o.parish) + ')' : '') + '</small></div></div>' + carPhotos(o) + photoBlock(o);
     const quoteCard = o => o.quote ? '<div class="offer"><div><b>Price: ' + jmd(o.quote.amount) + (o.premiumPerk ? ' (parts and extras)' : '') + '</b><small>Arrives within ' + o.quote.etaMinutes + ' minutes after you agree</small>' + (o.quote.note ? '<small>' + esc(o.quote.note) + '</small>' : '') + '</div></div>' : '';
 
     function quoteForm(o) {
@@ -215,9 +218,10 @@
         if (o.stage === 'quoted') {
           const pay = o.payUrl
             ? '<p class="th-hint">Pay securely on Fygaro. <strong>AutoAid 24/7 holds your payment</strong> and only pays <strong>' + esc(o.technician.name) + '</strong> after you confirm the job is done. If it does not go ahead, you are refunded.</p>' +
-              '<div class="th-actions"><a class="btn" href="' + esc(o.payUrl) + '" target="_blank" rel="noopener">Agree and pay ' + jmd(o.quote.amount) + ' securely</a><button class="btn ghost" type="button" data-act="decline">Not this price</button><button class="btn ghost small" type="button" data-act="change">Different technician</button></div>' +
+              (o.serviceFee ? '<p class="th-hint feebreak">Price ' + jmd(o.quote.amount) + ' + ' + o.serviceFee.percent + '% service fee ' + jmd(o.serviceFee.amount) + ' = <strong>' + jmd(o.serviceFee.total) + '</strong>. The technician receives the full ' + jmd(o.quote.amount) + '.</p>' : '') +
+              '<div class="th-actions"><a class="btn" href="' + esc(o.payUrl) + '" target="_blank" rel="noopener">Agree and pay ' + jmd(o.serviceFee ? o.serviceFee.total : o.quote.amount) + ' securely</a><button class="btn ghost" type="button" data-act="decline">Not this price</button><button class="btn ghost small" type="button" data-act="change">Different technician</button></div>' +
               '<p class="th-hint">After you pay, come back to this window. It updates by itself.</p>'
-            : '<p class="th-hint">You pay <strong>' + esc(o.technician.name) + '</strong> in person when the job is done. Nothing is charged online.</p>' +
+            : '<p class="th-hint">You pay <strong>' + esc(o.technician.name) + '</strong> in person when the job is done. Nothing is charged online and there is no service fee.</p>' +
               '<div class="th-actions"><button class="btn" type="button" data-act="agree">Agree and book</button><button class="btn ghost" type="button" data-act="decline">Not this price</button><button class="btn ghost small" type="button" data-act="change">Different technician</button></div>';
           out.push(quoteCard(o) + pay);
         }
@@ -237,8 +241,8 @@
         if (o.urgent && ['matched', 'quoted'].includes(o.stage)) out.push('<div class="deal"><b>URGENT: ' + esc(o.customer.name) + ' needs help now</b><p>' + (o.customer.phone ? 'Phone: <a href="tel:' + tel(o.customer.phone) + '">' + esc(o.customer.phone) + '</a>. ' : '') + 'Location: ' + esc(o.locationText) + ' (<a href="' + mapsLink(o) + '" target="_blank" rel="noopener">open in maps</a>)</p></div>');
         if (['agreed', 'working', 'done_pending'].includes(o.stage)) {
           out.push('<div class="deal"><b>Customer: ' + esc(o.customer.name) + '</b><p>' + (phone ? 'Phone: <a href="tel:' + tel(phone) + '">' + esc(phone) + '</a>. ' : '') + 'Location: ' + esc(o.locationText) + ' (<a href="' + mapsLink(o) + '" target="_blank" rel="noopener">open in maps</a>)</p>' +
-            (o.paid ? '<p><strong>The customer has paid ' + jmd(o.paidAmount) + ' online.</strong> Do not take cash. After they confirm the job you are paid <strong>' + jmd(o.paidAmount - (o.fee ? o.fee.amount : 0)) + '</strong> (price minus the AutoAid fee of ' + (o.fee ? o.fee.percent : 0) + '%).</p>'
-              : '<p>Agreed price <strong>' + jmd(o.quote.amount) + '</strong>, collected in person.' + (o.fee ? ' AutoAid fee (' + o.fee.percent + '%): <strong>' + jmd(o.fee.amount) + '</strong>, counted once the customer confirms.' : '') + '</p>') +
+            (o.paid ? '<p><strong>The customer has paid ' + jmd(o.paidAmount) + ' online.</strong> Do not take cash. After they confirm the job you are paid <strong>' + jmd(o.paidAmount - (o.fee ? o.fee.amount : 0)) + '</strong>, the full price you agreed. AutoAid 24/7 charges you nothing (the customer paid the service fee on top).</p>'
+              : '<p>Agreed price <strong>' + jmd(o.quote.amount) + '</strong>, collected in person. AutoAid 24/7 charges you nothing.</p>') +
             (o.stage === 'agreed' ? '<p>You promised to arrive in <strong class="countdown" data-until="' + esc(o.etaDeadline) + '"></strong> (by ' + clock(o.etaDeadline) + ').</p>' : '') + '</div>');
         }
         if (o.stage === 'matched' || o.stage === 'quoted') {
@@ -248,7 +252,7 @@
         if (o.stage === 'agreed') out.push('<div class="th-actions"><button class="btn" type="button" data-act="arrived">I have arrived</button><button class="btn ghost" type="button" data-act="done">Mark the job done</button><button class="btn ghost small" type="button" data-act="release">I cannot make it</button></div>');
         if (o.stage === 'working') out.push('<div class="th-actions"><button class="btn" type="button" data-act="done">Mark the job done</button></div>');
         if (o.stage === 'done_pending') out.push('<p class="th-hint">' + (o.paid ? 'Waiting for the customer to confirm. Their payment is held by AutoAid 24/7 and is released to you once they confirm.' : 'Waiting for the customer to confirm. Collect <strong>' + jmd(o.quote ? o.quote.amount : 0) + '</strong> from them in person.') + '</p>' + (o.disputed ? '<div class="deal"><b>The customer reported a problem</b><p>' + esc(o.disputeNote) + '</p><p>AutoAid 24/7 will contact you both. The payment stays held until then.</p></div>' : ''));
-        if (o.stage === 'closed') out.push('<p class="th-hint">Job complete' + (o.payout ? '. Your payout: <strong>' + jmd(o.payout.amount) + '</strong>' + (o.payout.settled ? ' (paid to you)' : ' (AutoAid will transfer it to your bank account)') : o.fee ? '. AutoAid fee: ' + jmd(o.fee.amount) + (o.fee.settled ? ' (settled)' : ' (due)') : '') + '.' + (o.rating ? ' Customer rating: <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span>' : '') + '</p>');
+        if (o.stage === 'closed') out.push('<p class="th-hint">Job complete' + (o.payout ? '. Your payout: <strong>' + jmd(o.payout.amount) + '</strong>' + (o.payout.settled ? ' (paid to you)' : ' (AutoAid will transfer it to your bank account)') : '') + '.' + (o.rating ? ' Customer rating: <span class="rated">' + '★'.repeat(o.rating) + '☆'.repeat(5 - o.rating) + '</span>' : '') + '</p>');
       }
       if (o.stage === 'cancelled') out.push('<p class="th-hint">This job was cancelled.</p>');
       return out.join('');
@@ -276,7 +280,7 @@
       countdowns();
       const offer = dlg.querySelector('#push-offer'); if (offer && JobPush.supported()) JobPush.state().then(st => { if (st === 'off') JobPush.mountCard(offer, { api, audience: 'customer', compact: true }); });
       const fee = dlg.querySelector('#q-fee'), amt = dlg.querySelector('#q-amount');
-      if (fee && amt) { const upd = () => { const v = Number(String(amt.value).replace(/[,\sJ$]/g, '')); fee.textContent = v > 0 && !o.premiumPerk ? 'AutoAid fee ' + (typeof data.feePercent === 'number' ? data.feePercent : 5) + '%: ' + jmd(Math.round(v * (typeof data.feePercent === 'number' ? data.feePercent : 5)) / 100) + ' (you keep ' + jmd(v - Math.round(v * (typeof data.feePercent === 'number' ? data.feePercent : 5)) / 100) + ').' + (data.onlinePayment ? ' The customer pays online first, and you are paid after they confirm.' : ' The customer pays you in person.') : ''; }; amt.addEventListener('input', upd); upd(); }
+      if (fee && amt) { const upd = () => { const v = Number(String(amt.value).replace(/[,\sJ$]/g, '')); fee.textContent = v > 0 && !o.premiumPerk ? 'You receive the full ' + jmd(v) + '. AutoAid 24/7 charges you nothing.' + (data.onlinePayment ? ' If the customer pays through the app, a ' + (typeof data.feePercent === 'number' ? data.feePercent : 3) + '% service fee is added to their price, and you are paid after they confirm.' : ' The customer pays you in person.') : ''; }; amt.addEventListener('input', upd); upd(); }
     }
 
     async function refresh(keepScroll) {

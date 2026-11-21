@@ -9,18 +9,17 @@
 // Stages:  searching -> matched -> quoted -> agreed -> working -> done_pending -> closed        (or cancelled)
 //   status (what older screens use):  searching, matched, quoted = pending | agreed, working, done_pending = in-progress | closed = completed
 // Payment, two ways (the same job code handles both):
-//   in person (the default)  the customer pays the technician; the technician owes AutoAid its fee (JOBS_FEE_PERCENT, default 5), settled in the ledger.
-//   online (JOBS_ONLINE_PAYMENT=true and Fygaro set up)  the customer pays on Fygaro when they agree the price; AutoAid holds the money,
-//     and after the customer confirms the job it owes the technician price minus fee (a "payout"). A cancelled paid job is refunded,
+//   in person (the default)  the customer pays the technician the agreed price. There is no fee: AutoAid charges the technician nothing.
+//   online (JOBS_ONLINE_PAYMENT=true and Fygaro set up)  the customer pays the price plus the service fee (SERVICE_FEE_PERCENT, default 3, paid by
+//     the customer) on Fygaro when they agree the price; AutoAid holds the money, and after the customer confirms the job it owes the
+//     technician the full agreed price (a "payout"). A cancelled paid job is refunded in full,
 //     and a complaint holds the payout until the admin decides.
 const express = require('express');
 const events = require('./jobEvents');
 const bigJson = express.json({ limit: '6mb' });
 
-const feePercent = (() => {
-  const n = Number(process.env.JOBS_FEE_PERCENT);
-  return Number.isFinite(n) && n >= 0 && n <= 50 ? n : 5;
-})();
+const { serviceFee } = require('./subscriptionConfig');
+const feePercent = serviceFee.percent;   // the service fee the customer pays on top when they pay through the app (technicians pay nothing)
 const ONLINE_WINDOW_MS = 150 * 1000;         // a technician counts as online while their screen keeps checking in
 const WIDEN_AFTER_MS = 2 * 60 * 1000;       // jobs reach technicians in other parishes after this long
 const WIDEN_URGENT_MS = 30 * 1000;          // emergencies spread much faster
@@ -57,7 +56,17 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   async function vehiclesById(ids) {
     const list = [...new Set(ids.filter(Boolean))];
     if (!list.length) return new Map();
-    return new Map((await rows(supabase.from('vehicles').select('id, type, year, owner, user_id').in('id', list))).map(v => [v.id, v]));
+    return new Map((await rows(supabase.from('vehicles').select('id, type, year, owner, user_id, photos').in('id', list))).map(v => [v.id, v]));
+  }
+  // The customer's photos of the car, for the tow truck or technician on the job (short-lived links; the bucket stays private)
+  async function addCarPhotos(map, viewer) {
+    if (viewer.role === 'customer') return map;
+    const out = new Map();
+    await Promise.all([...map.entries()].map(async ([id, v]) => {
+      const photoUrls = (await Promise.all((Array.isArray(v.photos) ? v.photos : []).slice(0, 4).map(p => auth.signedPhotoUrl(p).catch(() => null)))).filter(Boolean);
+      out.set(id, { ...v, photoUrls });
+    }));
+    return out;
   }
   async function usersById(ids) {
     const list = [...new Set(ids.filter(Boolean))];
@@ -151,8 +160,9 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
 
   // The price is agreed: the arrival clock starts and the fee is worked out
   async function agreeJob(row, extra = {}) {
-    const fee = row.premium_perk ? 0 : money(Number(row.quote_amount) * feePercent / 100);
-    return setJob(row, { stage: 'agreed', agreed_at: new Date().toISOString(), eta_deadline: new Date(Date.now() + row.quote_eta_minutes * 60000).toISOString(), fee_percent: row.premium_perk ? 0 : feePercent, fee_amount: fee, tech_unread: true, ...extra });
+    const online = extra.pay_mode === 'platform' && !row.premium_perk;   // the service fee exists only on a payment made through the app
+    const fee = online ? serviceFee.on(row.quote_amount) : 0;
+    return setJob(row, { stage: 'agreed', agreed_at: new Date().toISOString(), eta_deadline: new Date(Date.now() + row.quote_eta_minutes * 60000).toISOString(), fee_percent: online ? feePercent : 0, fee_amount: fee, tech_unread: true, ...extra });
   }
   // The job is finished and accepted (by the customer, automatically, or by the admin after a complaint)
   async function closeJob(row, note) {
@@ -179,29 +189,30 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     const sharePhones = deal(r) || (!!r.urgent && !!r.technician_id);   // emergencies share phone numbers as soon as a technician accepts
     return {
       id: r.id, stage: r.stage, status: r.status, category: r.category, description: r.description, premiumPerk: r.premium_perk || null,
-      vehicle: veh ? { id: veh.id, name: veh.year + ' ' + veh.type } : null,
+      vehicle: veh ? { id: veh.id, name: veh.year + ' ' + veh.type, ...(veh.photoUrls && veh.photoUrls.length ? { photoUrls: veh.photoUrls } : {}) } : null,
       parish: r.parish || '', locationText: r.location_text || '', hasCoords: r.latitude != null && r.longitude != null,
       ...(!isCustomer && r.latitude != null ? { latitude: r.latitude, longitude: r.longitude } : {}),
       createdAt: r.created_at, updatedAt: r.updated_at, acceptedAt: r.accepted_at || null,
       quote: r.quote_amount == null ? null : { amount: Number(r.quote_amount), etaMinutes: r.quote_eta_minutes, note: r.quote_note || '' },
+      ...(r.quote_amount != null && !r.premium_perk ? { serviceFee: { percent: feePercent, amount: serviceFee.on(r.quote_amount), total: serviceFee.total(r.quote_amount) } } : {}),
       agreedAt: r.agreed_at || null, etaDeadline: r.eta_deadline || null, arrivedAt: r.arrived_at || null, doneAt: r.done_at || null, completedAt: r.completed_at || null,
       amount: r.amount == null ? null : Number(r.amount), rating: r.rating || null, review: r.review || '',
       technician: t ? { id: t.id, name: t.name, verified: !!t.pro_verified, rating: t.stats ? t.stats.average : null, ratings: t.stats ? t.stats.ratings : 0, jobsDone: t.stats ? t.stats.jobs : 0, ...(sharePhones || !isCustomer ? { phone: t.phone || '' } : {}) } : null,
       ...(r.tech_lat != null && r.tech_loc_at && Date.now() - Date.parse(r.tech_loc_at) < TECH_LOC_FRESH_MS && ['matched', 'quoted', 'agreed'].includes(r.stage) ? { techLocation: { latitude: r.tech_lat, longitude: r.tech_lng, at: r.tech_loc_at } } : {}),
       customer: !isCustomer ? { name: c ? c.name : (veh ? veh.owner : ''), ...(sharePhones ? { phone: r.contact_phone || (c ? c.phone : '') || '' } : {}) } : { name: c ? c.name : '' },
       urgent: !!r.urgent,
-      ...(!isCustomer && r.fee_amount != null ? { fee: { percent: Number(r.fee_percent), amount: Number(r.fee_amount), settled: !!r.fee_settled_at } } : {}),
+      ...(!isCustomer && Number(r.fee_amount) > 0 ? { fee: { percent: Number(r.fee_percent), amount: Number(r.fee_amount), settled: !!r.fee_settled_at } } : {}),
       payMode: r.pay_mode || 'in_person', paid: r.pay_status === 'paid', paidAmount: r.paid_amount == null ? null : Number(r.paid_amount),
       refund: r.refund_status && r.refund_status !== 'none' ? r.refund_status : null, disputed: !!r.disputed_at, disputeNote: r.disputed_at ? (r.dispute_note || '') : '',
       ...(!isCustomer && r.payout_amount != null ? { payout: { amount: Number(r.payout_amount), settled: !!r.payout_settled_at } } : {}),
       ...(isCustomer && r.stage === 'quoted' && r.quote_amount != null && Number(r.quote_amount) > 0 && !r.premium_perk && onlinePayment()
-        ? { payUrl: subs.checkoutUrl({ amount: Number(r.quote_amount).toFixed(2), currency: subs.config.currency, custom_reference: 'job-' + r.id + '-' + Date.parse(r.quoted_at || r.updated_at || r.created_at) }, 3 * 3600) } : {}),
+        ? { payUrl: subs.checkoutUrl({ amount: serviceFee.total(r.quote_amount).toFixed(2), currency: subs.config.currency, custom_reference: 'job-' + r.id + '-' + Date.parse(r.quoted_at || r.updated_at || r.created_at) }, 3 * 3600) } : {}),
       unread: isCustomer ? !!r.customer_unread : isTech ? !!r.tech_unread : false,
       ...extra
     };
   }
   async function shapeMany(list, viewer, extras = () => ({})) {
-    const vehicles = await vehiclesById(list.map(r => r.vehicle_id));
+    const vehicles = await addCarPhotos(await vehiclesById(list.map(r => r.vehicle_id)), viewer);
     const users = await usersById([...list.map(r => r.technician_id), ...list.map(r => r.customer_id), ...[...vehicles.values()].map(v => v.user_id)]);
     const urls = new Map(await Promise.all(list.filter(r => r.photo_path).map(async r => [r.id, await auth.signedPhotoUrl(r.photo_path).catch(() => null)])));
     return list.map(r => shape(r, viewer, vehicles.get(r.vehicle_id), users, { ...(urls.get(r.id) ? { photoUrl: urls.get(r.id) } : {}), ...extras(r) }));
@@ -243,7 +254,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
       incoming = open.filter(r => !r.parish || r.parish === u.parish || Date.now() - Date.parse(r.created_at) >= (r.urgent ? WIDEN_URGENT_MS : WIDEN_AFTER_MS));
     }
     const mineAll = await rows(supabase.from('service_requests').select('fee_amount, fee_settled_at, stage, pay_mode, payout_amount, payout_settled_at').eq('technician_id', u.id));
-    const ledger = mineAll.filter(r => r.stage === 'closed' && r.pay_mode !== 'platform' && r.fee_amount && !r.fee_settled_at);
+    const ledger = [];   // technicians owe AutoAid nothing any more: the fee is paid by the customer, through the app
     const payouts = mineAll.filter(r => r.stage === 'closed' && r.pay_mode === 'platform' && r.payout_amount != null && !r.payout_settled_at);
     res.json({
       online: !!u.online, specialties: specialtiesOf(u), feePercent, emergenciesLocked: !u.pro_verified,
@@ -397,7 +408,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     const mine = j.isCustomer ? 'customer_unread' : j.isTech ? 'tech_unread' : null;
     if (mine && row[mine]) { const { data } = await supabase.from('service_requests').update({ [mine]: false }).eq('id', row.id).select().single(); if (data) row = data; }
     const msgs = await rows(supabase.from('job_messages').select('*').eq('job_id', row.id).order('id', { ascending: true }));
-    const vehicles = await vehiclesById([row.vehicle_id]);
+    const vehicles = await addCarPhotos(await vehiclesById([row.vehicle_id]), req.user);
     const users = await usersById([row.technician_id, ...[...vehicles.values()].map(v => v.user_id), ...msgs.map(m => m.sender_id)]);
     let onlineTechs = null;
     if (row.stage === 'searching') {
@@ -435,7 +446,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   router.get('/jobs/ledger', auth.requireRole('staff', 'admin'), handle(async (req, res) => {
     let q = supabase.from('service_requests').select('*').eq('stage', 'closed');
     if (req.user.role === 'staff') q = q.eq('technician_id', req.user.id);
-    const data = (await rows(q)).filter(r => r.fee_amount != null && r.pay_mode !== 'platform');
+    const data = [];   // nothing is owed by technicians any more
     const users = await usersById(data.map(r => r.technician_id));
     const by = new Map();
     for (const r of data) {
@@ -465,14 +476,14 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
       if (dup.length) return;                                  // Fygaro sent the same notification twice
       const row = (await rows(supabase.from('service_requests').select('*').eq('id', jobId)))[0];
       if (!row) { console.warn('Fygaro job payment for a job that does not exist:', jobId, transactionId); return; }
-      const fits = row.stage === 'quoted' && row.quote_amount != null && currency === subs.config.currency && Math.abs(amount - Number(row.quote_amount)) < 0.01;
+      const fits = row.stage === 'quoted' && row.quote_amount != null && currency === subs.config.currency && Math.abs(amount - serviceFee.total(row.quote_amount)) < 0.01;
       const payFields = { pay_mode: 'platform', pay_status: 'paid', paid_at: new Date().toISOString(), paid_amount: amount, transaction_id: transactionId };
       try {
         if (fits) {
           await agreeJob(row, payFields);
           await addMessage(row.id, null, 'system', 'Payment of ' + jmd(amount) + ' received. AutoAid 24/7 holds it until you confirm the job is done. The technician should arrive within ' + row.quote_eta_minutes + ' minutes. Phone numbers are now showing.');
         } else {
-          console.warn(`Fygaro job payment ${transactionId} could not be used: job ${jobId} is "${row.stage}", got ${amount} ${currency}, price ${row.quote_amount}`);
+          console.warn(`Fygaro job payment ${transactionId} could not be used: job ${jobId} is "${row.stage}", got ${amount} ${currency}, price ${row.quote_amount} plus the service fee = ${serviceFee.total(row.quote_amount)}`);
           await setJob(row, { ...payFields, refund_status: 'due', refund_note: 'Payment arrived when the job was not waiting for it (or the price changed).', customer_unread: true });
           await addMessage(row.id, null, 'system', 'A payment of ' + jmd(amount) + ' arrived, but the job could not use it (the price or the job changed). It will be refunded in full. Nothing else is needed from you.');
         }

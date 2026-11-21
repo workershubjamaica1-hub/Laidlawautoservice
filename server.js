@@ -602,6 +602,7 @@ app.get('/config', (req, res) => res.json({
   businessName: process.env.BUSINESS_NAME || 'AutoAid 24/7', shopPhone: process.env.SHOP_PHONE || '',
   legalName: process.env.LEGAL_NAME || '', contactEmail: process.env.CONTACT_EMAIL || '',   // shown on the privacy notice and terms
   subscription: { enabled: subs.config.enabled, priceLabel: subCfg.priceLabel(), days: subs.config.days },
+  serviceFeePercent: subCfg.serviceFee.percent,   // paid by the customer on top of the price when they pay through the app; providers pay nothing
   jobs: { feePercent: jobs.feePercent, onlinePayment: jobs.onlinePayment() },
   parts: { enabled: auth.PARTS.enabled, commissionPercent: parts.commissionPercent, onlinePayment: parts.onlinePayment() },
   rentals: { enabled: auth.RENTALS.enabled, commissionPercent: rentals.commissionPercent, onlinePayment: rentals.onlinePayment() },

@@ -227,12 +227,12 @@ const ROLE_INFO = {
     'Get new jobs and emergencies on your phone, for your kind of work in your parish.',
     'Set your own price and arrival time, and chat with the customer first.',
     'Build your name with ratings. Emergency jobs go to technicians whose ID AutoAid 24/7 has checked.',
-    (pct(CFG.jobs && CFG.jobs.feePercent, 5) > 0 ? 'AutoAid 24/7 keeps ' + pct(CFG.jobs && CFG.jobs.feePercent, 5) + '% of each job. ' : 'There is no AutoAid fee on jobs at the moment. ') + (CFG.subscription && CFG.subscription.enabled && CFG.subscription.priceLabel ? 'There is also a monthly subscription of ' + CFG.subscription.priceLabel + '.' : 'There is no monthly subscription at the moment.')
+    'AutoAid 24/7 charges you nothing. ' + (pct(CFG.serviceFeePercent, 3) > 0 ? 'When a customer pays through the app, a ' + pct(CFG.serviceFeePercent, 3) + '% service fee is added to their price (not taken from you), and you receive the full price you agreed. ' : '') + (CFG.subscription && CFG.subscription.enabled && CFG.subscription.priceLabel ? 'There is also a monthly subscription of ' + CFG.subscription.priceLabel + '.' : 'There is no monthly subscription at the moment.')
   ], 'Only choose the kinds of work you can really do. You agree to the Service Provider Agreement below.'],
   vendor: () => ['What you are signing up for', [
     'Receive customers in a chat, send them an offer, and get paid for what you sell or rent out.',
-    '<b>Parts and accessories:</b> offer fitting too, if you do it. ' + (pct(CFG.parts && CFG.parts.commissionPercent, 3) > 0 ? 'AutoAid 24/7 keeps ' + pct(CFG.parts && CFG.parts.commissionPercent, 3) + '% of each sale.' : 'There is no AutoAid commission at the moment.'),
-    '<b>Rentals:</b> list vehicles with four photos, set your own rules (no smoking, no pets and so on) and a deposit. ' + (pct(CFG.rentals && CFG.rentals.commissionPercent, 5) > 0 ? 'AutoAid 24/7 keeps ' + pct(CFG.rentals && CFG.rentals.commissionPercent, 5) + '% of the rent.' : 'There is no AutoAid commission at the moment.'),
+    '<b>Parts and accessories:</b> offer fitting too, if you do it. ' + 'AutoAid 24/7 charges you nothing: you receive the full price you offer.' + (pct(CFG.serviceFeePercent, 3) > 0 ? ' When a customer pays through the app, a ' + pct(CFG.serviceFeePercent, 3) + '% service fee is added to their price.' : ''),
+    '<b>Rentals:</b> list vehicles with four photos, set your own rules (no smoking, no pets and so on) and a deposit. ' + 'AutoAid 24/7 charges you nothing: you receive the full rent.' + (pct(CFG.serviceFeePercent, 3) > 0 ? ' When a renter pays through the app, a ' + pct(CFG.serviceFeePercent, 3) + '% service fee is added to the rent (not the deposit).' : ''),
     'You agree to a clear agreement for each thing you offer, shown below.'
   ], 'Add your bank details later, in My account, so we can pay you.']
 };

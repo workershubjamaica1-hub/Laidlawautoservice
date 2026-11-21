@@ -134,18 +134,25 @@ Premium payments reach the site through the same Hook URL as every other payment
 * **Vehicles** shows each vehicle's membership and has **Add Premium days** (cash payments, gifts, or fixing a missed payment).
   **Recent payments** shows Premium payments too.
 
-## Turning off the fees
+## The service fee (what AutoAid earns)
 
-To stop charging fees, set `JOBS_FEE_PERCENT`, `PARTS_COMMISSION_PERCENT` and `RENTALS_COMMISSION_PERCENT` to `0` in Render. Everything keeps working and the screens show no fee.
-Without any fee, online payment for ordinary jobs, parts and rentals only costs you card charges and admin work, so leave `JOBS_ONLINE_PAYMENT`,
-`PARTS_ONLINE_PAYMENT` and `RENTALS_ONLINE_PAYMENT` off (people pay in person) and use Fygaro only for Premium.
+Technicians, tow operators, sellers and rental companies pay AutoAid **nothing**. Instead, on every payment made **through the app** (repair jobs and
+emergencies, parts and accessories, rentals, and Premium), the **customer pays the price plus a 3% service fee**, shown to them before they pay.
+The provider receives the full agreed price; AutoAid keeps the 3%. Jobs paid in person carry no fee (AutoAid cannot collect it).
+
+* The rate is `SERVICE_FEE_PERCENT` in Render (default `3`, from 0 to 20). It replaces the old `JOBS_FEE_PERCENT`, `PARTS_COMMISSION_PERCENT` and
+  `RENTALS_COMMISSION_PERCENT`, which are no longer used.
+* On a rental the fee is on the rent only, never on the deposit. On Premium it is added to the yearly price (for example J$12,000 + J$360 = J$12,360).
+* The payment must match the total exactly. If a customer pays the old price without the fee, the app treats it as the wrong amount and it is refunded.
+* Fygaro takes its own charge from each payment, so check that the 3% covers it. Where people pay in person, AutoAid earns nothing, so the
+  more payments go through the app, the more AutoAid earns.
 
 # Paying for repair jobs online (Fygaro)
 
 When this is on, a customer pays when they agree a technician's price, **AutoAid holds the money**, and after the customer confirms the job
-you pay the technician **price minus your fee** (default 5%) by bank transfer. If the job does not go ahead, you refund the customer.
+you pay the technician **the full agreed price** by bank transfer (the customer paid the 3% service fee on top, which you keep). If the job does not go ahead, you refund the customer.
 It uses the same Fygaro account and the same three settings as the subscription (`FYGARO_BUTTON_URL`, `FYGARO_KEY_ID`, `FYGARO_SECRET`).
-It is **off** until you set `JOBS_ONLINE_PAYMENT=true`. While it is off, customers pay technicians in person and technicians owe you the fee.
+It is **off** until you set `JOBS_ONLINE_PAYMENT=true`. While it is off, customers pay technicians in person, with no fee to anyone.
 
 ## Setup
 
@@ -165,7 +172,7 @@ It is **off** until you set `JOBS_ONLINE_PAYMENT=true`. While it is off, custome
   transaction number is shown), then press **Mark refunded**.
 * **Customer complaints**: a customer reported a problem before confirming. The payment is held. Talk to both people, then press
   **Pay the technician** or **Refund the customer**.
-* Fygaro takes its own fee from each payment. Your 5% job fee is what is left to you after paying the technician, so check that it covers Fygaro's charge.
+* Fygaro takes its own fee from each payment. Your 3% service fee is what is left to you after paying the technician the full price, so check that it covers Fygaro's charge.
 
 ## If something looks wrong
 
@@ -180,7 +187,7 @@ Set `RENTALS_ONLINE_PAYMENT=true` (with the Fygaro settings above) to take renta
 1. The renter asks for a vehicle. The company accepts. The booking now shows **Pay J$... securely**: rent plus deposit in one payment, on a signed Fygaro link (reference `rent-<booking>-<time>`, same Hook URL as every other payment).
 2. When Fygaro reports the payment, the booking shows **Paid**. The company cannot mark the vehicle handed over until it is paid.
 3. After the return check is settled (the renter agrees, or 3 days pass, or you decide a dispute), the app works out:
-   * **Company payout** = rent − AutoAid commission + late fee taken from the deposit + any amount you decide to keep from the deposit.
+   * **Company payout** = the full rent + late fee taken from the deposit + any amount you decide to keep from the deposit.
    * **Renter refund** = deposit − the late fee taken − the amount kept.
 4. In **Fees & orders**, **Rental returns to review** lists *Pay (company) J$...* with their bank details, and *Refund J$... to (renter)* with the Fygaro transaction number. Pay the company by bank transfer, then press **Mark paid**. Refund the renter in the Fygaro dashboard, then press **Mark refunded**.
 5. If a paid booking is cancelled before pick-up, the full amount shows as a refund to send.
@@ -196,7 +203,7 @@ Set `PARTS_ONLINE_PAYMENT=true` (with the Fygaro settings above).
 
 1. The customer accepts the seller's offer (for accessories, the total includes any fitting charge). The order now shows **Pay J$... securely** on a signed Fygaro link (reference `part-<order>-<time>`, same Hook URL).
 2. When Fygaro reports the payment the order shows **Paid**. The seller cannot mark it handed over or fitted until it is paid.
-3. After the seller marks it done, the customer is asked to **confirm they are happy**. If they do not answer in 3 days it is confirmed for them. Then the seller's payout is the price less the commission (3% by default).
+3. After the seller marks it done, the customer is asked to **confirm they are happy**. If they do not answer in 3 days it is confirmed for them. Then the seller's payout is the full price (the customer paid the 3% service fee on top).
 4. If the customer **reports a problem**, the money stays held. In **Fees & orders**, *Parts and accessories to settle* shows the problem with both phone numbers: call both, open the order, and press *Decide: pay the seller* or *Decide: refund the customer*, with a note.
 5. In the same list: *Pay (seller) J$...* with their bank details (press **Mark paid** after you transfer it), and *Refund J$... to (customer)* with the Fygaro transaction number (refund in Fygaro, then **Mark refunded**).
 6. A paid order that is cancelled before it is handed over shows as a full refund to send.

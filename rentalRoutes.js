@@ -8,9 +8,8 @@
 // Admin:      GET /rentals/bookings (all), GET /rentals/ledger (every vendor), POST /rentals/vendors/:id/settle
 //
 // A booking moves: requested -> accepted (vendor) -> picked_up (vendor) -> returned (vendor). It can end as declined or cancelled.
-// The customer pays the vendor in person (rent and deposit are the vendor's business). AutoAid's commission (RENTALS_COMMISSION_PERCENT,
-// default 5) is worked out on the rental total (not the deposit) when the vendor accepts, counted when the vehicle is returned,
-// and settled by the admin from the ledger.
+// The customer pays the vendor in person (rent and deposit are the vendor's business). Companies pay AutoAid nothing. When the renter pays through the app,
+// a service fee (SERVICE_FEE_PERCENT, default 3) is added to the rent (not the deposit), paid by the renter; the company receives the full rent.
 const express = require('express');
 const mailer = require('./mailer');
 
@@ -22,10 +21,8 @@ const MIN_DAYS = 3;          // the shortest rental a vendor may offer; each ven
 const OLD_CAR_YEARS = 10;    // a vehicle this old gets a deposit of one day's rent unless the vendor sets another amount
 const MAX_DAYS = 60;
 const MAX_MESSAGES = 500;
-const commissionPercent = (() => {
-  const n = Number(process.env.RENTALS_COMMISSION_PERCENT);
-  return Number.isFinite(n) && n >= 0 && n <= 50 ? n : 5;
-})();
+const { serviceFee } = require('./subscriptionConfig');
+const commissionPercent = serviceFee.percent;   // the service fee the customer pays on top of the rent when they pay through the app (companies pay nothing)
 const money = n => Math.round(Number(n) * 100) / 100;
 const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 const DAY = 86400000;
@@ -44,7 +41,7 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push, subs }) {
   const router = express.Router();
   // Rentals can be paid through AutoAid (Fygaro). Off until RENTALS_ONLINE_PAYMENT=true and the Fygaro keys are set.
   const onlinePay = () => process.env.RENTALS_ONLINE_PAYMENT === 'true' && !!subs && subs.gatewayReady();
-  const dueNow = b => money(Number(b.total) + Number(b.deposit || 0));   // rent plus the deposit, paid together
+  const dueNow = b => money(Number(b.total) + Number(b.deposit || 0) + (b.pay_mode === 'platform' ? Number(b.commission_amount || 0) : 0));   // rent, deposit and (paid through the app) the service fee on the rent
   const enabled = (req, res, next) => (auth.RENTALS.enabled ? next() : res.status(404).json({ error: 'Vehicle rentals are not switched on yet.' }));
   const customerOnly = [enabled, ...auth.requireRole('customer')];
   const anyParty = [enabled, ...auth.requireRole('customer', 'vendor', 'admin')];
@@ -231,7 +228,8 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push, subs }) {
       startDate: b.start_date, endDate: b.end_date, days: b.days, dailyRate: Number(b.daily_rate), total: Number(b.total), deposit: Number(b.deposit || 0), note: b.note || '', damageAuthorized: !!b.damage_authorized_at,
       customer: c ? { name: c.name, ...(deal && !isCustomer ? { phone: c.phone || '', parish: c.parish || '', hasLicence: !!c.licence_photo_path } : {}) } : { name: 'Removed customer' },
       vendor: v ? { id: v.id, name: vendorName(v), parish: v.parish || '', ...(deal && !isVendor ? { address: v.address || '', phone: v.phone || '' } : {}) } : { name: 'Removed vendor' },
-      ...(!isCustomer && b.commission_amount != null ? { commission: { percent: Number(b.commission_percent), amount: Number(b.commission_amount), settled: !!b.commission_settled_at } } : {}),
+      ...(b.pay_mode === 'platform' ? { serviceFee: { percent: commissionPercent, amount: Number(b.commission_amount || 0) } } : {}),
+      ...(!isCustomer && Number(b.commission_amount) > 0 ? { commission: { percent: Number(b.commission_percent), amount: Number(b.commission_amount), settled: !!b.commission_settled_at } } : {}),
       rating: b.rating || null, review: b.review || '', open: !isClosed(b),
       payMode: b.pay_mode || 'in_person', paid: b.pay_status === 'paid', paidAmount: b.paid_amount == null ? null : Number(b.paid_amount), amountDue: dueNow(b), paysOnline: onlinePay(), depositKept: Number(b.deposit_kept || 0), settled: !!b.settled_at,
       ...(isCustomer && b.status === 'accepted' && b.pay_mode === 'platform' && b.pay_status !== 'paid' && onlinePay()
@@ -318,11 +316,11 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push, subs }) {
     if (!b.vehicle_id) return res.status(409).json({ error: 'That vehicle has been removed.' });
     const busy = await busyRanges([b.vehicle_id], b.id);
     if (!isFree(busy.get(b.vehicle_id), b.start_date, b.end_date)) return res.status(409).json({ error: 'Those dates clash with another booking or a blocked day.' });
-    const commission = money(Number(b.total) * commissionPercent / 100);
     const online = onlinePay();
-    await update(b, { status: 'accepted', accepted_at: new Date().toISOString(), commission_percent: commissionPercent, commission_amount: commission, customer_unread: true, pay_mode: online ? 'platform' : 'in_person' });
+    const commission = online ? serviceFee.on(b.total) : 0;   // the fee is on the rent, not the deposit, and only on a payment through the app
+    await update(b, { status: 'accepted', accepted_at: new Date().toISOString(), commission_percent: online ? commissionPercent : 0, commission_amount: commission, customer_unread: true, pay_mode: online ? 'platform' : 'in_person' });
     await addMessage(b.id, req.user.id, 'system', online
-      ? 'The vendor accepted your rental. Pay ' + jmd(dueNow(b)) + ' securely in the app (rent ' + jmd(b.total) + (Number(b.deposit) ? ' plus the ' + jmd(b.deposit) + ' deposit' : '') + '). AutoAid 24/7 holds it, the vendor can hand the vehicle over once it shows as paid, and your deposit comes back after the return check, less anything due under the Rental Agreement.'
+      ? 'The vendor accepted your rental. Pay ' + jmd(money(dueNow(b) + commission)) + ' securely in the app (rent ' + jmd(b.total) + (Number(b.deposit) ? ' plus the ' + jmd(b.deposit) + ' deposit' : '') + ' plus the ' + commissionPercent + '% service fee on the rent, ' + jmd(commission) + '). AutoAid 24/7 holds it, the vendor can hand the vehicle over once it shows as paid, and your deposit comes back after the return check, less anything due under the Rental Agreement.'
       : 'The vendor accepted your rental. Collect the vehicle on ' + b.start_date + '. Their address and phone are now showing. Pay the vendor in person (rent ' + jmd(b.total) + (Number(b.deposit) ? ', deposit ' + jmd(b.deposit) : '') + ').');
     notify(b.customer_id, 'Your rental was accepted', 'Your rental of ' + b.vehicle_title + ' from ' + b.start_date + ' was accepted.');
     res.json({ ok: true });
@@ -402,13 +400,13 @@ module.exports = function rentalRoutes({ supabase, handle, auth, push, subs }) {
     const lateOwed = b.late_fee_status === 'due' ? Number(b.late_fee || 0) : 0;
     const lateTaken = money(Math.min(deposit, lateOwed));
     const keep = money(Math.min(Math.max(0, Number(keepFromDeposit) || 0), deposit - lateTaken));
-    const payout = money(rent - commission + lateTaken + keep), refund = money(deposit - lateTaken - keep);
+    const payout = money(rent + lateTaken + keep), refund = money(deposit - lateTaken - keep);
     const patch = { settled_at: new Date().toISOString(), payout_amount: payout, deposit_kept: money(lateTaken + keep), commission_settled_at: new Date().toISOString(), customer_unread: true, vendor_unread: true,
       ...(refund > 0 ? { refund_status: 'due', refund_amount: refund, refund_note: 'Deposit returned after the rental.' } : {}) };
     if (lateOwed > 0) { patch.late_fee_status = lateTaken >= lateOwed - 0.005 ? 'charged' : 'due'; patch.late_fee_note = lateTaken >= lateOwed - 0.005 ? 'Taken from the deposit.' : jmd(lateTaken) + ' taken from the deposit. ' + jmd(money(lateOwed - lateTaken)) + ' still to collect.'; }
     const done = await update(b, patch);
     await addMessage(b.id, null, 'system', 'The rental is settled. ' + (lateTaken ? 'Late fee taken from the deposit: ' + jmd(lateTaken) + '. ' : '') + (keep ? 'Kept from the deposit by decision: ' + jmd(keep) + '. ' : '') +
-      'The company is paid ' + jmd(payout) + ' (the rent less AutoAid 24/7\'s ' + (b.commission_percent || commissionPercent) + '% commission' + (lateTaken || keep ? ', plus the amounts above' : '') + '). ' + (refund > 0 ? 'Your deposit refund of ' + jmd(refund) + ' will be sent to your card.' : 'There is no deposit left to refund.'));
+      'The company is paid ' + jmd(payout) + ' (the full rent' + (lateTaken || keep ? ', plus the amounts above' : '') + '; the ' + (b.commission_percent || commissionPercent) + '% service fee was paid by the renter on top). ' + (refund > 0 ? 'Your deposit refund of ' + jmd(refund) + ' will be sent to your card.' : 'There is no deposit left to refund.'));
     alertAdmins('Rental to pay out', 'Booking #' + b.id + ' (' + b.vehicle_title + ') is settled. Pay the company ' + jmd(payout) + (refund > 0 ? ' and refund the renter ' + jmd(refund) + ' in Fygaro.' : '.'), '/admin.html');
     return done;
   }

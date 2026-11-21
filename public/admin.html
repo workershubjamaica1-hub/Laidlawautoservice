@@ -464,7 +464,6 @@ async function pollJobs() {
   $('jobsTab').textContent = 'Jobs' + (feed.incoming.length ? ' (' + feed.incoming.length + ' new)' : unread ? ' (' + unread + ')' : '');
   const notes = [];
   if (feed.payoutsDue) notes.push('AutoAid owes you ' + JobChat.jmd(feed.payoutsDue) + ' from jobs customers paid for online. It is sent to the bank details in My account.');
-  if (feed.feesDue) notes.push('AutoAid fees you owe from jobs paid in person: ' + JobChat.jmd(feed.feesDue) + '. Pay the shop and the admin marks it settled.');
   $('feesNote').hidden = !notes.length; $('feesNote').textContent = notes.join(' ');
 }
 $('onlineToggle').addEventListener('change', async (e) => {
@@ -513,7 +512,7 @@ async function loadParts() {
   if (!partsChat && !rentChat && !jobsLedger) return;
   try {
     const pl = partsChat ? await api('/parts/ledger') : null, rl = rentChat ? await api('/rentals/ledger') : null, jl = jobsLedger ? await api('/jobs/ledger') : null;
-    $('partsNote').textContent = 'Commission and fee rates: ' + [pl && 'parts ' + pl.commissionPercent + '%', rl && 'rentals ' + rl.commissionPercent + '% (of the rent, not the deposit)', jl && 'repair jobs ' + jl.commissionPercent + '%'].filter(Boolean).join(', ') + '. Customers pay vendors and technicians directly; they owe AutoAid the amount below. Press "Mark settled" after they pay you.';
+    $('partsNote').textContent = 'Service fee: ' + ((pl || rl || jl || {}).commissionPercent) + '% is added to the customer price on every payment made through the app (on a rental, to the rent only). Vendors, technicians and rental companies pay AutoAid nothing, so nothing is owed below.';
     const rows = [];
     for (const [kind, l, base, seg] of [['Parts', pl, '/parts', 'vendors'], ['Rentals', rl, '/rentals', 'vendors'], ['Repair jobs', jl, '/jobs', 'technicians']]) {
       if (!l) continue;

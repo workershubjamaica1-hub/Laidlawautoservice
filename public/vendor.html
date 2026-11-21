@@ -118,15 +118,15 @@
 
   <!-- SALES -->
   <div class="view" id="view-sales" data-view="sales">
-    <div class="page-head"><div><p class="eyebrow">Sales</p><h1>Sales and commission</h1><p class="welcome-sub">Customers pay you directly. AutoAid's commission is counted when a part order is marked picked up and paid, and when a rental vehicle is returned.</p></div></div>
+    <div class="page-head"><div><p class="eyebrow">Sales</p><h1>Your sales</h1><p class="welcome-sub">AutoAid 24/7 charges you nothing: you keep the full price of every sale and rental. When a customer pays through the app, a service fee is added to their price (it is not taken from you).</p></div></div>
     <section class="stats" aria-label="Totals">
       <div class="stat"><span class="tile blue"><span class="ic" style="--m: var(--d-doc)"></span></span><div class="stat-text"><b id="s-orders">0</b><span>Orders and rentals completed</span></div></div>
       <div class="stat"><span class="tile green"><span class="ic" style="--m: var(--d-check)"></span></span><div class="stat-text"><b id="s-sales">J$0</b><span>Total sales</span></div></div>
-      <div class="stat"><span class="tile warm"><span class="ic" style="--m: var(--d-wrench)"></span></span><div class="stat-text"><b id="s-owed">J$0</b><span>Commission due to AutoAid</span></div></div>
+      <div class="stat"><span class="tile warm"><span class="ic" style="--m: var(--d-wrench)"></span></span><div class="stat-text"><b id="s-owed">J$0</b><span>Owed to AutoAid (always nothing)</span></div></div>
     </section>
     <p class="note" id="s-note"></p>
     <div class="card flush">
-      <div class="srow-head" aria-hidden="true"><span>Item</span><span>Completed</span><span>Sale</span><span>Commission</span><span>Status</span></div>
+      <div class="srow-head" aria-hidden="true"><span>Item</span><span>Completed</span><span>Sale</span><span>Customer's service fee</span><span>Status</span></div>
       <div id="sales-list"><p class="empty">Nothing completed yet.</p></div>
     </div>
   </div>
@@ -358,8 +358,8 @@ async function loadSales() {
   }
   rows.sort((a, b) => String(b.completedAt).localeCompare(String(a.completedAt)));
   $('s-orders').textContent = orders; $('s-sales').textContent = jmd(sales); $('s-owed').textContent = jmd(owed);
-  $('s-note').textContent = 'AutoAid commission: ' + (notes.join(', ') || 'none yet') + '. Rental commission is on the rent, not the deposit. Pay AutoAid the amount due, and the admin will mark it settled.';
-  $('sales-list').innerHTML = rows.length ? rows.map(o => '<div class="srow"><b>' + esc(o.kind) + ': ' + esc(o.part) + '</b><span>' + esc(new Date(o.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) + '</span><span>' + jmd(o.total) + '</span><span>' + jmd(o.commission) + '</span><span><span class="pill st-' + (o.settled ? 'completed' : 'pending') + '">' + (o.settled ? 'Settled' : 'Due') + '</span></span></div>').join('')
+  $('s-note').textContent = 'You pay AutoAid nothing. The customer pays a ' + (got[0] ? got[0].d.commissionPercent : 3) + '% service fee on top of your price when they pay through the app (on a rental it is on the rent, not the deposit).';
+  $('sales-list').innerHTML = rows.length ? rows.map(o => '<div class="srow"><b>' + esc(o.kind) + ': ' + esc(o.part) + '</b><span>' + esc(new Date(o.completedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })) + '</span><span>' + jmd(o.total) + '</span><span>' + jmd(o.commission) + '</span><span><span class="pill st-completed">Paid in full</span></span></div>').join('')
     : '<p class="empty">Nothing completed yet.</p>';
 }
 
