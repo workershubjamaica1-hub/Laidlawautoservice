@@ -19,7 +19,9 @@
     { t: 'AutoAid AI, 24/7', d: 'Chat about any vehicle problem, any time of day or night.',
       i: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>' },
     { t: 'Technicians in your parish', d: 'Skilled professionals across all 14 parishes, close to you.',
-      i: '<path d="M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>' }
+      i: '<path d="M12 21s7-6 7-11a7 7 0 0 0-14 0c0 5 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/>' },
+    { t: 'Advertise here', d: 'Reach drivers across Jamaica. Call 876-496-5877 or tap to email us.', href: 'mailto:workershubjamaica1@gmail.com?subject=Advertising%20on%20AutoAid%2024%2F7',
+      i: '<path d="M3 10v4h3l7 4V6L6 10z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/>' }
   ];
 
   const box = document.querySelector('.slides');
@@ -31,7 +33,8 @@
   let cur = 0, timer = null;
 
   const slides = SERVICES.map((s, n) => {
-    const el = document.createElement('div');
+    const el = document.createElement(s.href ? 'a' : 'div');
+    if (s.href) { el.href = s.href; el.style.textDecoration = 'none'; }   // the address comes from the fixed list above
     el.className = 'slide'; el.setAttribute('role', 'group'); el.setAttribute('aria-roledescription', 'slide');
     el.setAttribute('aria-label', (n + 1) + ' of ' + SERVICES.length);
     const ico = document.createElement('div'); ico.className = 'ico';
