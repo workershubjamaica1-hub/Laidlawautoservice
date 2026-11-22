@@ -19,7 +19,6 @@ const events = require('./jobEvents');
 const bigJson = express.json({ limit: '6mb' });
 
 const { serviceFee } = require('./subscriptionConfig');
-const feePercent = serviceFee.percent;   // the service fee the customer pays on top when they pay through the app (technicians pay nothing)
 const ONLINE_WINDOW_MS = 150 * 1000;         // a technician counts as online while their screen keeps checking in
 const WIDEN_AFTER_MS = 2 * 60 * 1000;       // jobs reach technicians in other parishes after this long
 const WIDEN_URGENT_MS = 30 * 1000;          // emergencies spread much faster
@@ -162,7 +161,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
   async function agreeJob(row, extra = {}) {
     const online = extra.pay_mode === 'platform' && !row.premium_perk;   // the service fee exists only on a payment made through the app
     const fee = online ? serviceFee.on(row.quote_amount) : 0;
-    return setJob(row, { stage: 'agreed', agreed_at: new Date().toISOString(), eta_deadline: new Date(Date.now() + row.quote_eta_minutes * 60000).toISOString(), fee_percent: online ? feePercent : 0, fee_amount: fee, tech_unread: true, ...extra });
+    return setJob(row, { stage: 'agreed', agreed_at: new Date().toISOString(), eta_deadline: new Date(Date.now() + row.quote_eta_minutes * 60000).toISOString(), fee_percent: online ? serviceFee.percent : 0, fee_amount: fee, tech_unread: true, ...extra });
   }
   // The job is finished and accepted (by the customer, automatically, or by the admin after a complaint)
   async function closeJob(row, note) {
@@ -194,7 +193,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
       ...(!isCustomer && r.latitude != null ? { latitude: r.latitude, longitude: r.longitude } : {}),
       createdAt: r.created_at, updatedAt: r.updated_at, acceptedAt: r.accepted_at || null,
       quote: r.quote_amount == null ? null : { amount: Number(r.quote_amount), etaMinutes: r.quote_eta_minutes, note: r.quote_note || '' },
-      ...(r.quote_amount != null && !r.premium_perk ? { serviceFee: { percent: feePercent, amount: serviceFee.on(r.quote_amount), total: serviceFee.total(r.quote_amount) } } : {}),
+      ...(r.quote_amount != null && !r.premium_perk ? { serviceFee: { percent: serviceFee.percent, amount: serviceFee.on(r.quote_amount), total: serviceFee.total(r.quote_amount) } } : {}),
       agreedAt: r.agreed_at || null, etaDeadline: r.eta_deadline || null, arrivedAt: r.arrived_at || null, doneAt: r.done_at || null, completedAt: r.completed_at || null,
       amount: r.amount == null ? null : Number(r.amount), rating: r.rating || null, review: r.review || '',
       technician: t ? { id: t.id, name: t.name, verified: !!t.pro_verified, rating: t.stats ? t.stats.average : null, ratings: t.stats ? t.stats.ratings : 0, jobsDone: t.stats ? t.stats.jobs : 0, ...(sharePhones || !isCustomer ? { phone: t.phone || '' } : {}) } : null,
@@ -257,7 +256,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     const ledger = [];   // technicians owe AutoAid nothing any more: the fee is paid by the customer, through the app
     const payouts = mineAll.filter(r => r.stage === 'closed' && r.pay_mode === 'platform' && r.payout_amount != null && !r.payout_settled_at);
     res.json({
-      online: !!u.online, specialties: specialtiesOf(u), feePercent, emergenciesLocked: !u.pro_verified,
+      online: !!u.online, specialties: specialtiesOf(u), feePercent: serviceFee.percent, emergenciesLocked: !u.pro_verified,
       incoming: await shapeMany(incoming.sort((a, b) => (Number(!!b.urgent) - Number(!!a.urgent)) || Date.parse(b.created_at) - Date.parse(a.created_at)), req.user, r => ({ inYourParish: !r.parish || r.parish === u.parish })),
       mine: await shapeMany(mine.sort((a, b) => Date.parse(b.updated_at || b.created_at) - Date.parse(a.updated_at || a.created_at)), req.user),
       feesDue: money(ledger.reduce((s, r) => s + Number(r.fee_amount), 0)),
@@ -418,7 +417,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
       onlineTechs = all.filter(t => t.active !== false && t.approved !== false && reachable(t) && canTake(t, row)).length;
     }
     res.json({
-      feePercent, onlinePayment: onlinePayment(),
+      feePercent: serviceFee.percent, onlinePayment: onlinePayment(),
       order: shape(row, req.user, vehicles.get(row.vehicle_id), users, { ...(onlineTechs == null ? {} : { onlineTechs }), ...(row.photo_path ? { photoUrl: await auth.signedPhotoUrl(row.photo_path).catch(() => null) } : {}) }),
       messages: msgs.map(m => ({
         id: m.id, kind: m.kind, body: m.body, createdAt: m.created_at,
@@ -457,7 +456,7 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
       by.set(r.technician_id, v);
     }
     res.json({
-      commissionPercent: feePercent, vendors: [...by.values()].map(v => ({ ...v, owed: money(v.commission - v.settled) })),
+      commissionPercent: serviceFee.percent, vendors: [...by.values()].map(v => ({ ...v, owed: money(v.commission - v.settled) })),
       orders: req.user.role === 'staff' ? data.map(r => ({ id: r.id, part: r.category + ' job #' + r.id, total: Number(r.amount || 0), commission: Number(r.fee_amount), settled: !!r.fee_settled_at, completedAt: r.completed_at })) : undefined
     });
   }));
@@ -538,5 +537,5 @@ module.exports = function jobRoutes({ supabase, handle, auth, subs, push }) {
     res.json({ ok: true });
   }));
 
-  return { router, feePercent, ACTIVE, STATUS_OF, onlinePayment };
+  return { router, get feePercent() { return serviceFee.percent; }, ACTIVE, STATUS_OF, onlinePayment };
 };

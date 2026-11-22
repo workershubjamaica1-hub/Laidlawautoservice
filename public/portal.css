@@ -289,3 +289,8 @@ body[data-tab="dashboard"]:not(.viewing-tech) #bankPending { display: block; mar
 .ctl-state.on { background: #E3F6EA; color: #137A3C; }
 .ctl-state.off { background: #EEF1F5; color: #5B6775; }
 .ctl-warn { color: #B4322A !important; font-weight: 700; }
+.set-head { margin: 18px 0 8px; font-size: 14px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .04em; }
+.set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.set-field { display: flex; flex-direction: column; gap: 4px; font-weight: 700; font-size: 13.5px; }
+.set-field input { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.set-field small { font-weight: 500; color: var(--ink-soft); }

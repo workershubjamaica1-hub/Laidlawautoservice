@@ -12,10 +12,10 @@ const num = (v, fallback) => (v !== undefined && v !== '' && Number.isFinite(Num
 
 const config = {
   get enabled() { return String(process.env.SUBSCRIPTIONS_ENABLED || '').toLowerCase() === 'true'; },   // read live: the admin can switch it in the Control center
-  price: num(process.env.SUBSCRIPTION_PRICE, 0),
+  get price() { return num(process.env.SUBSCRIPTION_PRICE, 0); },   // the price, days and grace days are read live: the admin can change them in the Control center
   currency: (process.env.SUBSCRIPTION_CURRENCY || 'JMD').toUpperCase(),
-  days: num(process.env.SUBSCRIPTION_DAYS, 30),
-  graceDays: num(process.env.SUBSCRIPTION_GRACE_DAYS, 5)
+  get days() { return num(process.env.SUBSCRIPTION_DAYS, 30); },
+  get graceDays() { return num(process.env.SUBSCRIPTION_GRACE_DAYS, 5); }
 };
 const priceLabel = () => (config.price ? `${config.currency === 'JMD' ? 'J$' : config.currency + ' '}${config.price.toLocaleString('en-JM', { maximumFractionDigits: 2 })}` : '');
 
@@ -57,8 +57,8 @@ module.exports = { config, statusOf, priceLabel, DAY };
 // ---------------------------------------------------------------------------------------------------------------------
 const premium = {
   get enabled() { return String(process.env.PREMIUM_ENABLED || '').toLowerCase() === 'true'; },   // read live: the admin can switch it in the Control center
-  servicesPerYear: num(process.env.PREMIUM_SERVICES_PER_YEAR, 2),
-  gapDays: num(process.env.PREMIUM_SERVICE_GAP_DAYS, 60)
+  get servicesPerYear() { return num(process.env.PREMIUM_SERVICES_PER_YEAR, 2); },
+  get gapDays() { return num(process.env.PREMIUM_SERVICE_GAP_DAYS, 60); }
 };
 const money = n => `${config.currency === 'JMD' ? 'J$' : config.currency + ' '}${Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 })}`;
 const TIERS = [
@@ -108,11 +108,13 @@ function serviceAllowance(rows, status, now = Date.now()) {
 // receives the full agreed price and AutoAid keeps the fee. Jobs paid in person carry no fee (AutoAid cannot collect it).
 // ---------------------------------------------------------------------------------------------------------------------
 const serviceFee = (() => {
-  const n = Number(process.env.SERVICE_FEE_PERCENT);
-  const percent = process.env.SERVICE_FEE_PERCENT !== undefined && process.env.SERVICE_FEE_PERCENT !== '' && Number.isFinite(n) && n >= 0 && n <= 20 ? n : 3;
+  const percentNow = () => {   // read live: the admin can change it in the Control center
+    const n = Number(process.env.SERVICE_FEE_PERCENT);
+    return process.env.SERVICE_FEE_PERCENT !== undefined && process.env.SERVICE_FEE_PERCENT !== '' && Number.isFinite(n) && n >= 0 && n <= 20 ? n : 3;
+  };
   const round = x => Math.round(Number(x) * 100) / 100;
-  const on = amount => round(Number(amount) * percent / 100);
-  return { percent, on, total: amount => round(Number(amount) + on(amount)) };
+  const on = amount => round(Number(amount) * percentNow() / 100);
+  return { get percent() { return percentNow(); }, on, total: amount => round(Number(amount) + on(amount)) };
 })();
 module.exports.serviceFee = serviceFee;
 module.exports.premium = premium;

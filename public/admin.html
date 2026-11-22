@@ -139,8 +139,10 @@
       <h2 class="ctl-title">Control center</h2>
       <p class="hint">Switch features on and off, choose where AutoAid 24/7 is open and keep your payment details. Changes take effect straight away.</p>
       <div id="featureBox" class="ctl-grid"></div>
+      <div id="settingsBox" class="panel ctl-card" hidden></div>
       <div id="areaBox" class="panel ctl-card" hidden></div>
       <div id="bankBox" class="panel ctl-card" hidden></div>
+      <div id="auditBox" class="panel ctl-card" hidden></div>
     </div>
 
     <div class="panel" id="usersPanel" hidden>
@@ -347,7 +349,7 @@ async function load() {
       else if (me.role === 'staff') $('jobsTab').click();
     }
     await loadDashboard();
-    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); loadBankDetails(); loadServiceArea(); loadFeatures(); }
+    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); loadBankDetails(); loadServiceArea(); loadFeatures(); loadSettings(); loadAudit(); }
   } catch (err) {
     if (err.code !== 'subscription_required') $('appError').textContent = err.message;
     return;
@@ -431,14 +433,52 @@ async function loadServiceArea() {
   box.hidden = false;
   box.innerHTML = '<h3>Where AutoAid 24/7 is open</h3><p class="hint">Customers in a parish that is switched on can book mechanics, tow trucks, parts, accessories and Premium. Customers elsewhere see that we are not there yet. Rentals are open everywhere. Switch on a parish when you have technicians and sellers ready there.</p><div id="areaList" style="display:flex;flex-wrap:wrap;gap:8px 18px;margin:10px 0"></div><button class="btn safety small" id="areaSave" type="button">Save</button> <span id="areaMsg" class="hint"></span>';
   for (const p of d.all) {
-    const l = document.createElement('label'); l.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:150px';
+    const l = document.createElement('label'); l.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:230px;padding:8px 10px;border:1px solid var(--line);border-radius:12px';
+    const top = document.createElement('span'); top.style.cssText = 'display:flex;align-items:center;gap:6px;font-weight:700';
     const c = document.createElement('input'); c.type = 'checkbox'; c.value = p; c.checked = d.active.includes(p);
-    l.append(c, document.createTextNode(p)); $('areaList').appendChild(l);
+    top.append(c, document.createTextNode(p)); l.appendChild(top);
+    const s = (d.supply || {})[p];
+    if (s) { const info = document.createElement('small'); info.textContent = s.technicians + ' technicians (' + s.towing + ' towing) · ' + s.sellers + ' sellers · ' + s.rentals + ' rental · ' + s.customers + ' customers'; if (c.checked && !s.technicians) { info.textContent += ' · no technicians yet'; info.style.color = '#B4322A'; } l.appendChild(info); }
+    $('areaList').appendChild(l);
   }
   $('areaSave').addEventListener('click', async () => {
     const active = [...$('areaList').querySelectorAll('input:checked')].map(c => c.value);
     try { await api('/admin/service-area', { method: 'PUT', body: JSON.stringify({ active }) }); $('areaMsg').textContent = 'Saved. Open in: ' + active.join(', ') + '.'; } catch (err) { $('areaMsg').textContent = err.message; }
   });
+}
+// --- Prices and rates (saved here, they win over the Render settings of the same name) ---
+async function loadSettings() {
+  const box = $('settingsBox'); if (!box) return;
+  const d = await api('/admin/settings').catch(() => null); if (!d) return;
+  box.hidden = false; box.replaceChildren(el('h3', { textContent: 'Prices and rates' }), el('p', { className: 'hint', textContent: 'Change a number and press Save. It applies from the next customer action. Premium prices apply to new memberships only.' }));
+  const inputs = {};
+  for (const group of [...new Set(d.settings.map(s => s.group))]) {
+    const grid = el('div', { className: 'set-grid' });
+    for (const s of d.settings.filter(x => x.group === group)) {
+      const input = el('input', { type: 'number', value: s.value, min: s.min, max: s.max, step: s.step || 1 }); input.setAttribute('aria-label', s.label);
+      inputs[s.key] = { input, original: s.value };
+      grid.appendChild(el('label', { className: 'set-field' }, el('span', { textContent: s.label }), input, s.help ? el('small', { textContent: s.help }) : null));
+    }
+    box.append(el('h4', { className: 'set-head', textContent: group }), grid);
+  }
+  const msg = el('span', { className: 'hint' });
+  const save = el('button', { className: 'btn safety small', type: 'button', textContent: 'Save prices and rates' });
+  save.addEventListener('click', async () => {
+    const values = {};
+    for (const [k, v] of Object.entries(inputs)) if (Number(v.input.value) !== v.original) values[k] = v.input.value === '' ? null : Number(v.input.value);
+    if (!Object.keys(values).length) { msg.textContent = 'Nothing changed.'; return; }
+    try { await api('/admin/settings', { method: 'PUT', body: JSON.stringify({ values }) }); msg.textContent = 'Saved.'; loadSettings(); loadAudit(); } catch (err) { msg.textContent = err.message; }
+  });
+  box.append(save, ' ', msg);
+}
+// --- What admins changed recently ---
+async function loadAudit() {
+  const box = $('auditBox'); if (!box) return;
+  const d = await api('/admin/audit?limit=100').catch(() => null); if (!d) return;
+  box.hidden = false;
+  const rows = d.entries.length ? d.entries.map(e => el('tr', {}, el('td', { textContent: new Date(e.at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) }), el('td', { textContent: e.admin }), el('td', { textContent: e.action }))) : [el('tr', {}, el('td', { colSpan: 3, className: 'empty', textContent: 'Nothing yet. Changes you make appear here.' }))];
+  box.replaceChildren(el('h3', { textContent: 'Recent admin actions' }), el('p', { className: 'hint', textContent: 'The latest 100 changes made by admins: who did what and when.' }),
+    el('div', { className: 'table-wrap' }, el('table', {}, el('thead', {}, el('tr', {}, el('th', { textContent: 'When' }), el('th', { textContent: 'Admin' }), el('th', { textContent: 'What they did' }))), el('tbody', {}, ...rows))));
 }
 async function loadBankDetails() {
   const box = $('bankBox'); if (!box) return;
@@ -1268,7 +1308,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';
   $('usersPanel').hidden = b.dataset.tab !== 'users';
   $('controlPanel').hidden = b.dataset.tab !== 'control';
-  if (b.dataset.tab === 'control') loadFeatures();
+  if (b.dataset.tab === 'control') { loadFeatures(); loadServiceArea(); loadAudit(); }
   $('partsPanel').hidden = b.dataset.tab !== 'parts';
   $('accountPanel').hidden = b.dataset.tab !== 'account';
   if (b.dataset.tab === 'parts') loadParts();

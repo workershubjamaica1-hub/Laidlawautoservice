@@ -45,7 +45,21 @@ module.exports = function ({ supabase, handle, auth }) {
   // Anyone can see where we are open (the customer app shows a notice when their parish is not on the list)
   router.get('/service-area', handle(async (req, res) => res.json({ active: await list(), message: (await list()).length ? 'We are open in ' + sentence(await list()) + '.' : '' })));
 
-  router.get('/admin/service-area', adminOnly, handle(async (req, res) => res.json({ active: await list(), all: auth.PARISHES })));
+  // How many people are ready in each parish, so the admin can see where it is safe to open
+  async function supply() {
+    const { data, error } = await supabase.from('users').select('role, parish, approved, active, specialties, vendor_offers');
+    if (error) throw error;
+    const out = {}; for (const p of auth.PARISHES) out[p] = { customers: 0, technicians: 0, towing: 0, sellers: 0, rentals: 0 };
+    for (const u of data || []) {
+      const o = out[u.parish]; if (!o || u.active === false) continue;
+      const ready = u.approved !== false;
+      if (u.role === 'customer') o.customers++;
+      else if (u.role === 'staff' && ready) { o.technicians++; if (String(u.specialties || '').split(',').includes('towing')) o.towing++; }
+      else if (u.role === 'vendor' && ready) { const offers = String(u.vendor_offers || '').split(','); if (offers.includes('parts') || offers.includes('accessories')) o.sellers++; if (offers.includes('rentals')) o.rentals++; }
+    }
+    return out;
+  }
+  router.get('/admin/service-area', adminOnly, handle(async (req, res) => res.json({ active: await list(), all: auth.PARISHES, supply: await supply() })));
   router.put('/admin/service-area', adminOnly, handle(async (req, res) => {
     const asked = Array.isArray(req.body && req.body.active) ? req.body.active : null;
     if (!asked) return res.status(400).json({ error: 'Choose the parishes.' });

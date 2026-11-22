@@ -96,6 +96,11 @@ const { requireAuth } = auth;
 const noVendor = [requireAuth, (req, res, next) => (req.user.role === 'vendor' ? res.status(403).json({ error: 'You do not have access to this.' }) : next())];
 app.use('/auth', auth.router);
 
+// A record of what admins change (auditLog.js), shown in the admin Control center
+const audit = require('./auditLog')({ supabase, handle, auth });
+app.use(audit.middleware);
+app.use(audit.router);
+
 // Which parishes are open (parishConfig.js): mechanics, tow trucks, parts and Premium only serve customers in an open parish
 const area = require('./parishConfig')({ supabase, handle, auth });
 app.use(area.router);

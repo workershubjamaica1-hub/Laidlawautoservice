@@ -18,7 +18,6 @@ const INSTALL_TEXT = { shop: 'fitted at the seller\'s shop', mobile: 'fitted whe
 const MAX_OPEN_PER_CUSTOMER = 15;
 const MAX_MESSAGES_PER_ORDER = 500;
 const { serviceFee } = require('./subscriptionConfig');
-const commissionPercent = serviceFee.percent;   // the service fee the customer pays on top when they pay through the app (sellers pay nothing)
 const money = n => Math.round(Number(n) * 100) / 100;
 const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 
@@ -64,7 +63,7 @@ module.exports = function partsRoutes({ supabase, handle, auth, push, subs, area
       customer: c ? { name: c.name, ...(deal && !isCustomer ? { phone: c.phone || '', parish: c.parish || '' } : {}) } : { name: 'Removed customer' },
       vendor: v ? { id: v.id, name: vendorName(v), parish: v.parish || '', ...(deal && !isVendor ? { address: v.address || '', phone: v.phone || '' } : {}) } : { name: 'Removed vendor' },
       offer: o.offer_total == null ? null : { item: o.offer_item, condition: o.offer_condition, quantity: o.offer_quantity, unitPrice: Number(o.offer_unit_price), installFee: Number(o.offer_install_fee || 0), total: Number(o.offer_total) },
-      ...(o.offer_total != null && (o.pay_mode === 'platform' || (o.status === 'offered' && onlinePay())) ? (() => { const amount = o.pay_mode === 'platform' ? Number(o.commission_amount || 0) : serviceFee.on(o.offer_total); return { serviceFee: { percent: commissionPercent, amount, total: money(Number(o.offer_total) + amount) } }; })() : {}),
+      ...(o.offer_total != null && (o.pay_mode === 'platform' || (o.status === 'offered' && onlinePay())) ? (() => { const amount = o.pay_mode === 'platform' ? Number(o.commission_amount || 0) : serviceFee.on(o.offer_total); return { serviceFee: { percent: serviceFee.percent, amount, total: money(Number(o.offer_total) + amount) } }; })() : {}),
       ...(!isCustomer && Number(o.commission_amount) > 0 ? { commission: { percent: Number(o.commission_percent), amount: Number(o.commission_amount), settled: !!o.commission_settled_at } } : {}),
       rating: o.rating || null, review: o.review || '', open: !isClosed(o),
       payMode: o.pay_mode || 'in_person', paid: o.pay_status === 'paid', paidAmount: o.paid_amount == null ? null : Number(o.paid_amount), paysOnline: onlinePay(), settled: !!o.settled_at,
@@ -126,7 +125,7 @@ module.exports = function partsRoutes({ supabase, handle, auth, push, subs, area
     const list = data.filter(u => u.approved !== false && u.active !== false && u.email_verified !== false && offersKind(u, kind))
       .map(u => ({ id: u.id, name: vendorName(u), parish: u.parish || '', about: u.experience || '', nearYou: !!req.user.parish && u.parish === req.user.parish }))
       .sort((a, b) => (b.nearYou - a.nearYou) || a.name.localeCompare(b.name));
-    res.json({ commissionPercent, vendors: list });
+    res.json({ commissionPercent: serviceFee.percent, vendors: list });
   }));
 
   // --- Start an order chat with a vendor ---
@@ -250,10 +249,10 @@ module.exports = function partsRoutes({ supabase, handle, auth, push, subs, area
     if (req.body && req.body.accept === true) {
       const online = onlinePay();
       const commission = online ? serviceFee.on(o.offer_total) : 0;   // only a payment through the app carries the service fee
-      await update(o, { status: 'accepted', accepted_at: new Date().toISOString(), commission_percent: online ? commissionPercent : 0, commission_amount: commission, vendor_unread: true, pay_mode: online ? 'platform' : 'in_person' });
+      await update(o, { status: 'accepted', accepted_at: new Date().toISOString(), commission_percent: online ? serviceFee.percent : 0, commission_amount: commission, vendor_unread: true, pay_mode: online ? 'platform' : 'in_person' });
       const acc = o.kind === 'accessory';
       if (online) {
-        await addMessage(o.id, req.user.id, 'system', 'Offer accepted. Pay ' + jmd(money(Number(o.offer_total) + commission)) + ' securely in the app (' + jmd(o.offer_total) + ' plus the ' + commissionPercent + '% service fee, ' + jmd(commission) + '). AutoAid 24/7 holds it, the seller ' + (acc && o.install_mode && o.install_mode !== 'none' ? 'fits it' : 'hands it over') + ' once it shows as paid, and the seller is paid after you confirm you are happy. Their address and phone are now showing.');
+        await addMessage(o.id, req.user.id, 'system', 'Offer accepted. Pay ' + jmd(money(Number(o.offer_total) + commission)) + ' securely in the app (' + jmd(o.offer_total) + ' plus the ' + serviceFee.percent + '% service fee, ' + jmd(commission) + '). AutoAid 24/7 holds it, the seller ' + (acc && o.install_mode && o.install_mode !== 'none' ? 'fits it' : 'hands it over') + ' once it shows as paid, and the seller is paid after you confirm you are happy. Their address and phone are now showing.');
         notify(o.vendor_id, 'Offer accepted', 'The customer accepted your offer of ' + jmd(o.offer_total) + ' for ' + o.part + '. They will now pay in the app; you will be told when it is paid.');
         return res.json({ ok: true });
       }
@@ -316,7 +315,7 @@ module.exports = function partsRoutes({ supabase, handle, auth, push, subs, area
     const payout = money(Number(o.offer_total));   // the seller gets the full price; the customer paid the service fee on top
     const now = new Date().toISOString();
     const done = await update(o, { settled_at: now, payout_amount: payout, commission_settled_at: now, vendor_unread: true, customer_unread: true });
-    await addMessage(o.id, null, 'system', (note || 'The customer confirmed.') + ' The ' + (o.kind === 'accessory' ? 'seller' : 'vendor') + ' will be paid ' + jmd(payout) + ' (the full price: the customer paid the ' + (o.commission_percent || commissionPercent) + '% service fee on top). Thank you!');
+    await addMessage(o.id, null, 'system', (note || 'The customer confirmed.') + ' The ' + (o.kind === 'accessory' ? 'seller' : 'vendor') + ' will be paid ' + jmd(payout) + ' (the full price: the customer paid the ' + (o.commission_percent || serviceFee.percent) + '% service fee on top). Thank you!');
     alertAdmins('Order to pay out', 'Order #' + o.id + ' (' + o.part + ') is confirmed. Pay the seller ' + jmd(payout) + '.', '/admin.html');
     return done;
   }
@@ -438,7 +437,7 @@ module.exports = function partsRoutes({ supabase, handle, auth, push, subs, area
     }
     const vendors = [...by.values()].map(v => ({ ...v, owed: money(v.commission - v.settled) }));
     res.json({
-      commissionPercent, vendors,
+      commissionPercent: serviceFee.percent, vendors,
       orders: req.user.role === 'vendor' ? data.map(o => ({ id: o.id, kind: o.kind || 'part', part: o.part, total: Number(o.offer_total), commission: Number(o.commission_amount || 0), settled: !!o.commission_settled_at, completedAt: o.completed_at })) : undefined
     });
   }));
@@ -453,5 +452,5 @@ module.exports = function partsRoutes({ supabase, handle, auth, push, subs, area
     res.json({ settled: data.length });
   }));
 
-  return { router, commissionPercent, onlinePayment: onlinePay, sweep };
+  return { router, get commissionPercent() { return serviceFee.percent; }, onlinePayment: onlinePay, sweep };
 };
