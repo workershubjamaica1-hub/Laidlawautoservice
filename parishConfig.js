@@ -32,7 +32,10 @@ module.exports = function ({ supabase, handle, auth }) {
     if (w.error) throw w.error;
     cache = parishes; cachedAt = Date.now();
   }
-  const sentence = names => names.length <= 1 ? (names[0] || 'no parish yet') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  const sentence = list => {
+    const names = list.map(p => p === 'St. Catherine' ? 'St. Catherine (including Portmore)' : p);   // people say Portmore and may not know it is in St. Catherine
+    return names.length <= 1 ? (names[0] || 'no parish yet') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  };
 
   // null when the parish is served (or not known), otherwise the sentence to show the customer
   async function blocked(parish) {
