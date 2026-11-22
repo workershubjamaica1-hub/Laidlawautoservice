@@ -16,7 +16,7 @@ const MAX_PENDING_PER_CUSTOMER = 5;
 const money = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigits: 2 });
 const bigJson = express.json({ limit: '6mb' });
 
-module.exports = function bankRoutes({ supabase, handle, auth, push, subs }) {
+module.exports = function bankRoutes({ supabase, handle, auth, push, subs, area }) {
   const router = express.Router();
   const customerOnly = auth.requireRole('customer');
   const adminOnly = auth.requireRole('admin');
@@ -55,6 +55,7 @@ module.exports = function bankRoutes({ supabase, handle, auth, push, subs }) {
 
   router.post('/premium/bank-request', customerOnly, handle(async (req, res) => {
     if (!premium.enabled) return res.status(400).json({ error: 'Premium is not available yet.' });
+    { const closed = await area.blocked(req.user.parish); if (closed) return res.status(400).json({ error: closed }); }
     const details = await getDetails();
     if (!details) return res.status(503).json({ error: 'Bank transfer details are not set up yet. Please contact AutoAid 24/7 to join.' });
     const v = await supabase.from('vehicles').select('*').eq('id', Number(req.body && req.body.vehicleId)).eq('user_id', req.user.id).maybeSingle();

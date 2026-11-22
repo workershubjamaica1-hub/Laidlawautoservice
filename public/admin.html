@@ -147,6 +147,7 @@
         <pre id="emailTestOut" style="white-space:pre-wrap;margin:10px 0 0;font:13px/1.5 inherit"></pre>
       </details>
       <div id="subBox" class="subinfo" hidden></div>
+      <div id="areaBox" class="panel" hidden></div>
       <div id="bankBox" class="panel" hidden></div>
       <div id="guideBox" class="panel" hidden></div>
       </div>
@@ -339,7 +340,7 @@ async function load() {
       else if (me.role === 'staff') $('jobsTab').click();
     }
     await loadDashboard();
-    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); loadBankDetails(); }
+    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); loadBankDetails(); loadServiceArea(); }
   } catch (err) {
     if (err.code !== 'subscription_required') $('appError').textContent = err.message;
     return;
@@ -394,6 +395,22 @@ $('bankPending').addEventListener('click', async (e) => {
     await loadBiz(); await load();
   } catch (err) { $('appError').textContent = err.message; }
 });
+// --- Where AutoAid 24/7 is open: mechanics, tow trucks, parts and Premium only serve customers in these parishes (rentals are open everywhere) ---
+async function loadServiceArea() {
+  const box = $('areaBox'); if (!box) return;
+  const d = await api('/admin/service-area').catch(() => null); if (!d) return;
+  box.hidden = false;
+  box.innerHTML = '<h3>Where AutoAid 24/7 is open</h3><p class="hint">Customers in a parish that is switched on can book mechanics, tow trucks, parts, accessories and Premium. Customers elsewhere see that we are not there yet. Rentals are open everywhere. Switch on a parish when you have technicians and sellers ready there.</p><div id="areaList" style="display:flex;flex-wrap:wrap;gap:8px 18px;margin:10px 0"></div><button class="btn safety small" id="areaSave" type="button">Save</button> <span id="areaMsg" class="hint"></span>';
+  for (const p of d.all) {
+    const l = document.createElement('label'); l.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:150px';
+    const c = document.createElement('input'); c.type = 'checkbox'; c.value = p; c.checked = d.active.includes(p);
+    l.append(c, document.createTextNode(p)); $('areaList').appendChild(l);
+  }
+  $('areaSave').addEventListener('click', async () => {
+    const active = [...$('areaList').querySelectorAll('input:checked')].map(c => c.value);
+    try { await api('/admin/service-area', { method: 'PUT', body: JSON.stringify({ active }) }); $('areaMsg').textContent = 'Saved. Open in: ' + active.join(', ') + '.'; } catch (err) { $('areaMsg').textContent = err.message; }
+  });
+}
 async function loadBankDetails() {
   const box = $('bankBox'); if (!box) return;
   const d = await api('/admin/bank-details').catch(() => ({ text: '' }));

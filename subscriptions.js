@@ -53,7 +53,7 @@ const KINDS = {
   provider: { field: 'subscription_paid_until', role: 'staff' }
 };
 
-module.exports = function createSubscriptions({ supabase, handle, auth }) {
+module.exports = function createSubscriptions({ supabase, handle, auth, area }) {
   const router = express.Router();
 
   const getUser = async id => {
@@ -174,6 +174,7 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
 
   router.post('/premium/checkout', customerOnly, handle(async (req, res) => {
     if (!premium.enabled) return res.status(400).json({ error: 'Premium is not available yet.' });
+    { const closed = await area.blocked(req.user.parish); if (closed) return res.status(400).json({ error: closed }); }
     const v = await supabase.from('vehicles').select('*').eq('id', Number(req.body && req.body.vehicleId)).eq('user_id', req.user.id).maybeSingle();
     if (v.error) throw v.error;
     if (!v.data) return res.status(400).json({ error: 'Choose one of your vehicles.' });
@@ -186,6 +187,7 @@ module.exports = function createSubscriptions({ supabase, handle, auth }) {
   // Book a free service for a member vehicle: creates a job that a technician can take. Uses up one service until it is cancelled.
   router.post('/premium/redeem', customerOnly, handle(async (req, res) => {
     if (!premium.enabled) return res.status(400).json({ error: 'Premium is not available yet.' });
+    { const closed = await area.blocked(req.user.parish); if (closed) return res.status(400).json({ error: closed }); }
     const v = await supabase.from('vehicles').select('*').eq('id', Number(req.body && req.body.vehicleId)).eq('user_id', req.user.id).maybeSingle();
     if (v.error) throw v.error;
     if (!v.data) return res.status(400).json({ error: 'Choose one of your vehicles.' });

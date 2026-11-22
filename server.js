@@ -96,8 +96,12 @@ const { requireAuth } = auth;
 const noVendor = [requireAuth, (req, res, next) => (req.user.role === 'vendor' ? res.status(403).json({ error: 'You do not have access to this.' }) : next())];
 app.use('/auth', auth.router);
 
+// Which parishes are open (parishConfig.js): mechanics, tow trucks, parts and Premium only serve customers in an open parish
+const area = require('./parishConfig')({ supabase, handle, auth });
+app.use(area.router);
+
 // Monthly subscription for service providers (subscriptions.js). Off until SUBSCRIPTIONS_ENABLED=true.
-const subs = require('./subscriptions')({ supabase, handle, auth });
+const subs = require('./subscriptions')({ supabase, handle, auth, area });
 app.use(subs.router);
 const isCustomer = req => req.user.role === 'customer';
 
@@ -401,6 +405,7 @@ app.post('/service-request', ...noVendor, handle(async (req, res) => {
   if (!description || !description.trim()) {
     return res.status(400).json({ error: 'Describe what the vehicle is doing.' });
   }
+  if (isCustomer(req)) { const closed = await area.blocked(req.user.parish); if (closed) return res.status(400).json({ error: closed }); }
   const { data, error } = await supabase.from('service_requests').insert({
     vehicle_id: vid,
     category,   // e.g. "diagnostics", "mechanical", "tire"
@@ -555,17 +560,17 @@ const jobs = require('./jobRoutes')({ supabase, handle, auth, subs, push });
 app.use(jobs.router);
 
 // --- Emergency requests: roadside assistance and wrecker (emergencyRoutes.js) ---
-app.use(require('./emergencyRoutes')({ supabase, handle, auth }));
+app.use(require('./emergencyRoutes')({ supabase, handle, auth, area }));
 
 // --- Parts marketplace: order parts from approved vendors in a chat (partsRoutes.js). Off until PARTS_ENABLED=true. ---
-const parts = require('./partsRoutes')({ supabase, handle, auth, push, subs });
+const parts = require('./partsRoutes')({ supabase, handle, auth, push, subs, area });
 app.use(parts.router);
 
 // --- Vehicle rentals: rental companies list vehicles, customers book them (rentalRoutes.js). Off until RENTALS_ENABLED=true. ---
 const rentals = require('./rentalRoutes')({ supabase, handle, auth, push, subs });
 
 // --- Premium paid by bank transfer: the customer asks, the admin confirms when the money arrives (bankRoutes.js) ---
-const bank = require('./bankRoutes')({ supabase, handle, auth, push, subs });
+const bank = require('./bankRoutes')({ supabase, handle, auth, push, subs, area });
 app.use(bank.router);
 if (process.env.PUSH_FAKE === '1') app.post('/_parts_sweep', handle(async (req, res) => res.json(await parts.sweep(Number(req.body && req.body.ageMs) || undefined))));   // tests only
 if (process.env.PUSH_FAKE === '1') {   // tests only: move a booking's dates back, and run the overdue / auto-agree check now

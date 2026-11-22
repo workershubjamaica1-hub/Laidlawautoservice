@@ -24,7 +24,7 @@ const jmd = n => 'J$' + Number(n).toLocaleString('en-JM', { maximumFractionDigit
 
 const AUTO_CONFIRM_MS = 3 * 24 * 60 * 60 * 1000;   // a customer who never confirms or reports a problem is taken to be happy after 3 days
 
-module.exports = function partsRoutes({ supabase, handle, auth, push, subs }) {
+module.exports = function partsRoutes({ supabase, handle, auth, push, subs, area }) {
   const router = express.Router();
   // Orders can be paid through AutoAid (Fygaro). Off until PARTS_ONLINE_PAYMENT=true and the Fygaro keys are set.
   const onlinePay = () => process.env.PARTS_ONLINE_PAYMENT === 'true' && !!subs && subs.gatewayReady();
@@ -132,6 +132,7 @@ module.exports = function partsRoutes({ supabase, handle, auth, push, subs }) {
   // --- Start an order chat with a vendor ---
   router.post('/parts/orders', ...customerOnly, handle(async (req, res) => {
     const b = req.body || {};
+    { const closed = await area.blocked(req.user.parish); if (closed) return res.status(400).json({ error: closed }); }
     const kind = kindOf(b.kind), accessory = kind === 'accessory';
     const part = String(b.part || '').trim();
     if (part.length < 3 || part.length > 150) return res.status(400).json({ error: accessory ? 'Say what you want (3 to 150 characters), e.g. "LED headlight bulbs" or "black leather seat covers".' : 'Say which part you need (3 to 150 characters), e.g. "front brake pads".' });

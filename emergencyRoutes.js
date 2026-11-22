@@ -15,7 +15,7 @@ const MAX_ACTIVE = 3;       // open or on-the-way requests one customer can have
 const MAX_PER_HOUR = 5;
 const HOUR = 3600 * 1000;
 
-module.exports = function emergencyRoutes({ supabase, handle, auth }) {
+module.exports = function emergencyRoutes({ supabase, handle, auth, area }) {
   const router = express.Router();
   const customerOnly = auth.requireRole('customer');
   const staffUp = auth.requireWorker;   // staff and admin; a provider with a lapsed subscription is stopped (402)
@@ -51,6 +51,7 @@ module.exports = function emergencyRoutes({ supabase, handle, auth }) {
     if (phoneCheck.error) return res.status(400).json({ error: phoneCheck.error });
     const parish = auth.PARISHES.includes(b.parish) ? b.parish : req.user.parish;
     if (!parish) return res.status(400).json({ error: 'Choose the parish you are in.' });
+    { const closed = await area.blocked(parish); if (closed) return res.status(400).json({ error: closed }); }
     const note = String(b.note || '').trim().slice(0, 500);
 
     let vehicleId = null;
