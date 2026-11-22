@@ -273,3 +273,19 @@ body[data-tab="dashboard"]:not(.viewing-tech) #bankPending { display: block; mar
 .pf-row span { color: #5B6B80; }
 .pf-row b { text-align: right; overflow-wrap: anywhere; }
 .pf-car { padding: 6px 0 10px; }
+
+/* ------------------------------------------------------------------ Control center (admin) */
+.tabs button[data-tab="control"] { --i: var(--i-wrench); }
+.ctl-title { margin: 0 0 4px; }
+.ctl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin: 16px 0; }
+.ctl-card { margin: 0 0 16px; }
+.ctl-grid .ctl-card { margin: 0; }
+.ctl-card h3 { margin: 0 0 8px; }
+.ctl-row { display: flex; align-items: flex-start; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); }
+.ctl-row:first-of-type { border-top: 0; }
+.ctl-row .grow b { display: inline-block; margin-right: 8px; }
+.ctl-row .grow small { display: block; margin-top: 4px; color: var(--ink-soft); }
+.ctl-state { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 800; letter-spacing: .04em; }
+.ctl-state.on { background: #E3F6EA; color: #137A3C; }
+.ctl-state.off { background: #EEF1F5; color: #5B6775; }
+.ctl-warn { color: #B4322A !important; font-weight: 700; }

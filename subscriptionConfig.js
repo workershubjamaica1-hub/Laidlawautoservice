@@ -11,7 +11,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const num = (v, fallback) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : fallback);
 
 const config = {
-  enabled: String(process.env.SUBSCRIPTIONS_ENABLED || '').toLowerCase() === 'true',
+  get enabled() { return String(process.env.SUBSCRIPTIONS_ENABLED || '').toLowerCase() === 'true'; },   // read live: the admin can switch it in the Control center
   price: num(process.env.SUBSCRIPTION_PRICE, 0),
   currency: (process.env.SUBSCRIPTION_CURRENCY || 'JMD').toUpperCase(),
   days: num(process.env.SUBSCRIPTION_DAYS, 30),
@@ -56,7 +56,7 @@ module.exports = { config, statusOf, priceLabel, DAY };
 // every 365 days while it stays active.
 // ---------------------------------------------------------------------------------------------------------------------
 const premium = {
-  enabled: String(process.env.PREMIUM_ENABLED || '').toLowerCase() === 'true',
+  get enabled() { return String(process.env.PREMIUM_ENABLED || '').toLowerCase() === 'true'; },   // read live: the admin can switch it in the Control center
   servicesPerYear: num(process.env.PREMIUM_SERVICES_PER_YEAR, 2),
   gapDays: num(process.env.PREMIUM_SERVICE_GAP_DAYS, 60)
 };

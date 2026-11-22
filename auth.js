@@ -70,8 +70,8 @@ const VERIFY = {
   cooldownMs: (process.env.EMAIL_RESEND_SECONDS !== undefined && Number.isFinite(Number(process.env.EMAIL_RESEND_SECONDS)) ? Number(process.env.EMAIL_RESEND_SECONDS) : 60) * 1000,
   maxAttempts: 5
 };
-const PARTS = { enabled: String(process.env.PARTS_ENABLED || '').toLowerCase() === 'true' };
-const RENTALS = { enabled: String(process.env.RENTALS_ENABLED || '').toLowerCase() === 'true' };
+const PARTS = { get enabled() { return String(process.env.PARTS_ENABLED || '').toLowerCase() === 'true'; } };   // read live: the admin can switch it in the Control center
+const RENTALS = { get enabled() { return String(process.env.RENTALS_ENABLED || '').toLowerCase() === 'true'; } };
 const BUSINESS = process.env.BUSINESS_NAME || 'AutoAid 24/7';
 const TERMS_VERSION = '2026-10-25';   // bump when the Terms or Privacy Notice change in a way people should agree to again
 const PHOTO_BUCKET = 'chassis-photos';

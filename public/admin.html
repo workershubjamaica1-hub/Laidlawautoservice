@@ -40,6 +40,7 @@
     <nav class="tabs" role="group" aria-label="Section">
       <button data-tab="jobs" id="jobsTab" aria-pressed="false" hidden>Jobs</button>
       <button data-tab="dashboard" aria-pressed="true">My dashboard</button>
+      <button data-tab="control" id="controlTab" aria-pressed="false" hidden>Control center</button>
       <button data-tab="emergencies" id="emergTab" aria-pressed="false">Emergencies</button>
       <button data-tab="requests" id="requestsTab" aria-pressed="false">Service requests</button>
       <button data-tab="vehicles" aria-pressed="false">Vehicles</button>
@@ -134,6 +135,14 @@
       <div id="rentBookings" class="card flush" hidden></div>
     </div>
 
+    <div class="panel" id="controlPanel" hidden>
+      <h2 class="ctl-title">Control center</h2>
+      <p class="hint">Switch features on and off, choose where AutoAid 24/7 is open and keep your payment details. Changes take effect straight away.</p>
+      <div id="featureBox" class="ctl-grid"></div>
+      <div id="areaBox" class="panel ctl-card" hidden></div>
+      <div id="bankBox" class="panel ctl-card" hidden></div>
+    </div>
+
     <div class="panel" id="usersPanel" hidden>
       <div class="seg" role="group" aria-label="Users sections"><button type="button" data-usec="people" aria-pressed="true">People</button><button type="button" data-usec="settings" aria-pressed="false">Settings</button></div>
       <div id="usec-settings" hidden>
@@ -147,8 +156,6 @@
         <pre id="emailTestOut" style="white-space:pre-wrap;margin:10px 0 0;font:13px/1.5 inherit"></pre>
       </details>
       <div id="subBox" class="subinfo" hidden></div>
-      <div id="areaBox" class="panel" hidden></div>
-      <div id="bankBox" class="panel" hidden></div>
       <div id="guideBox" class="panel" hidden></div>
       </div>
       <div id="usec-people">
@@ -321,7 +328,7 @@ async function load() {
       AccountUI.mountSecurity($('acctSecurity'), { api, canDelete: me.role !== 'admin', onTokenChange: t => { token = t; } });
       $('who').textContent = me.name + ' (' + me.role + ')';
       $('who-dot').textContent = (me.name || '?').trim().charAt(0).toUpperCase();
-      $('usersTab').hidden = me.role !== 'admin';
+      $('usersTab').hidden = me.role !== 'admin'; $('controlTab').hidden = me.role !== 'admin';
       document.body.dataset.role = me.role;
       if (me.role === 'admin') document.querySelector('.tabs button[data-tab="dashboard"]').textContent = 'Overview';
       $('portalTitle').textContent = (me.role === 'admin' ? 'Admin' : 'Technician portal');
@@ -340,7 +347,7 @@ async function load() {
       else if (me.role === 'staff') $('jobsTab').click();
     }
     await loadDashboard();
-    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); loadBankDetails(); loadServiceArea(); }
+    if (me.role === 'admin') { users = await api('/admin/users'); subInfo = await api('/admin/subscription-info'); setupParts(); loadBiz(); loadGuide(); loadBankDetails(); loadServiceArea(); loadFeatures(); }
   } catch (err) {
     if (err.code !== 'subscription_required') $('appError').textContent = err.message;
     return;
@@ -395,6 +402,28 @@ $('bankPending').addEventListener('click', async (e) => {
     await loadBiz(); await load();
   } catch (err) { $('appError').textContent = err.message; }
 });
+// --- Control center: the on and off switches ---
+async function loadFeatures() {
+  const box = $('featureBox'); if (!box) return;
+  const d = await api('/admin/features').catch(() => null); if (!d) return;
+  box.replaceChildren();
+  for (const group of [...new Set(d.flags.map(f => f.group))]) {
+    const card = el('div', { className: 'panel ctl-card' }, el('h3', { textContent: group }));
+    for (const f of d.flags.filter(x => x.group === group)) {
+      const input = el('input', { type: 'checkbox', checked: f.on }); input.setAttribute('role', 'switch'); input.setAttribute('aria-label', f.label);
+      const sw = el('label', { className: 'switch' }, input, el('span', { className: 'slider' }));
+      const note = f.needsGateway && !d.gatewayReady ? el('small', { className: 'ctl-warn', textContent: 'Card payments (Fygaro) are not set up yet, so this stays off for customers even if you switch it on.' }) : null;
+      const row = el('div', { className: 'ctl-row' }, sw, el('div', { className: 'grow' }, el('b', { textContent: f.label }), el('span', { className: 'ctl-state ' + (f.on ? 'on' : 'off'), textContent: f.on ? 'ON' : 'OFF' }), el('small', { textContent: f.help }), note));
+      input.addEventListener('change', async () => {
+        input.disabled = true;
+        try { await api('/admin/features', { method: 'PUT', body: JSON.stringify({ key: f.key, on: input.checked }) }); await loadFeatures(); }
+        catch (err) { $('appError').textContent = err.message; input.checked = !input.checked; input.disabled = false; }
+      });
+      card.appendChild(row);
+    }
+    box.appendChild(card);
+  }
+}
 // --- Where AutoAid 24/7 is open: mechanics, tow trucks, parts and Premium only serve customers in these parishes (rentals are open everywhere) ---
 async function loadServiceArea() {
   const box = $('areaBox'); if (!box) return;
@@ -1238,6 +1267,8 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   $('requestsPanel').hidden = b.dataset.tab !== 'requests';
   $('vehiclesPanel').hidden = b.dataset.tab !== 'vehicles';
   $('usersPanel').hidden = b.dataset.tab !== 'users';
+  $('controlPanel').hidden = b.dataset.tab !== 'control';
+  if (b.dataset.tab === 'control') loadFeatures();
   $('partsPanel').hidden = b.dataset.tab !== 'parts';
   $('accountPanel').hidden = b.dataset.tab !== 'account';
   if (b.dataset.tab === 'parts') loadParts();

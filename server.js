@@ -103,6 +103,7 @@ app.use(area.router);
 // Monthly subscription for service providers (subscriptions.js). Off until SUBSCRIPTIONS_ENABLED=true.
 const subs = require('./subscriptions')({ supabase, handle, auth, area });
 app.use(subs.router);
+app.use(require('./featureFlags')({ supabase, handle, auth, subs }).router);   // the admin's on/off switches (Control center)
 const isCustomer = req => req.user.role === 'customer';
 
 // Vehicle categories
